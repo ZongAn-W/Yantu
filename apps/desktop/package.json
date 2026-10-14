@@ -1,0 +1,10 @@
+{
+  "name": "@planner/desktop",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "tauri build"
+  }
+}
