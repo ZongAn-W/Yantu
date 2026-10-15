@@ -2,7 +2,6 @@ import type { PlannerData } from "@planner/engine";
 import { isPlannerData, normalizePlannerData } from "./data";
 
 export const STORAGE_SCHEMA_VERSION = 1;
-export const STORAGE_METADATA_KEY = "sjtu-study-planner:sync-meta-v1";
 
 export interface PlannerStorageMetadata {
   version: number;
@@ -22,9 +21,20 @@ export interface PlannerStorageSnapshot {
 export interface PlannerStorage {
   readonly kind: "browser" | "desktop";
   load(key: string): Promise<PlannerStorageSnapshot>;
-  save(key: string, data: PlannerData, metadata: PlannerStorageMetadata): Promise<void>;
+  save(key: string, data: PlannerData, metadata: PlannerStorageMetadata, recovery?: boolean): Promise<void>;
   importJson(): Promise<unknown | null>;
   exportJson(data: PlannerData): Promise<void>;
+}
+
+function parseMetadata(value: unknown): PlannerStorageMetadata {
+  if (!value || typeof value !== "object") throw new Error("同步元数据格式异常。");
+  const metadata = { ...emptyMetadata(), ...value } as PlannerStorageMetadata;
+  if (metadata.version !== STORAGE_SCHEMA_VERSION || !Number.isSafeInteger(metadata.revision)
+      || metadata.revision < 0 || typeof metadata.pending !== "boolean"
+      || (metadata.base !== null && !isPlannerData(metadata.base))) {
+    throw new Error("同步基线或版本号异常，请从备份恢复。");
+  }
+  return metadata;
 }
 
 const emptyMetadata = (): PlannerStorageMetadata => ({
@@ -45,9 +55,7 @@ function parseEnvelope(raw: string | null): { data: PlannerData | null; metadata
   if (envelope.version !== STORAGE_SCHEMA_VERSION || !isPlannerData(envelope.data)) {
     throw new Error("本地数据版本不兼容。");
   }
-  const metadata = envelope.metadata && typeof envelope.metadata === "object"
-    ? { ...emptyMetadata(), ...(envelope.metadata as Partial<PlannerStorageMetadata>) }
-    : emptyMetadata();
+  const metadata = parseMetadata(envelope.metadata ?? emptyMetadata());
   return { data: envelope.data, metadata };
 }
 
@@ -66,9 +74,17 @@ export class BrowserPlannerStorage implements PlannerStorage {
 
   async load(key: string): Promise<PlannerStorageSnapshot> {
     try {
-      const parsed = parseEnvelope(localStorage.getItem(key));
+      const raw = localStorage.getItem(key);
+      if (!raw) {
+        const backupRaw = localStorage.getItem(`${key}:backup`);
+        if (backupRaw) {
+          const backup = parseEnvelope(backupRaw);
+          if (backup.data) return { ...backup, recovered: true, error: "主数据缺失，已从最近备份恢复。" };
+        }
+      }
+      const parsed = parseEnvelope(raw);
       const rawMeta = localStorage.getItem(`${key}:meta`);
-      const metadata = rawMeta ? { ...parsed.metadata, ...JSON.parse(rawMeta) } : parsed.metadata;
+      const metadata = rawMeta ? parseMetadata(JSON.parse(rawMeta)) : parsed.metadata;
       return { ...parsed, metadata, recovered: false };
     } catch (error) {
       try {
@@ -85,10 +101,23 @@ export class BrowserPlannerStorage implements PlannerStorage {
     }
   }
 
-  async save(key: string, data: PlannerData, metadata: PlannerStorageMetadata): Promise<void> {
+  async save(key: string, data: PlannerData, metadata: PlannerStorageMetadata, recovery = false): Promise<void> {
     // localStorage has no atomic primitive; retain the previous value in a separate backup key.
     const previous = localStorage.getItem(key);
-    if (previous) localStorage.setItem(`${key}:backup`, previous);
+    if (previous) {
+      try {
+        const snapshot = parseEnvelope(previous);
+        const rawMeta = localStorage.getItem(`${key}:meta`);
+        const priorMetadata = rawMeta ? parseMetadata(JSON.parse(rawMeta)) : snapshot.metadata;
+        localStorage.setItem(`${key}:backup`, JSON.stringify({ version: STORAGE_SCHEMA_VERSION, data: snapshot.data, metadata: priorMetadata }));
+      } catch (error) {
+        if (!recovery) {
+          const backup = localStorage.getItem(`${key}:backup`);
+          if (!backup) throw new Error(`本地数据无法读取，已停止覆盖原数据：${String(error)}`);
+          try { parseEnvelope(backup); } catch { throw new Error(`主数据和最近备份都无法读取，已停止覆盖原数据：${String(error)}`); }
+        }
+      }
+    }
     // Keep the established browser key as raw PlannerData so existing exports,
     // Playwright fixtures, and older browser sessions remain compatible.
     localStorage.setItem(key, JSON.stringify(data));
@@ -100,6 +129,7 @@ export class BrowserPlannerStorage implements PlannerStorage {
       const input = document.createElement("input");
       input.type = "file";
       input.accept = "application/json,.json";
+      input.oncancel = () => resolve(null);
       input.onchange = () => {
         const file = input.files?.[0];
         if (!file) return resolve(null);
@@ -123,32 +153,37 @@ type TauriBridge = {
 };
 
 async function tauriBridge(): Promise<TauriBridge | null> {
-  const tauriWindow = window as Window & { __TAURI_INTERNALS__?: unknown };
-  if (!tauriWindow.__TAURI_INTERNALS__ && !["tauri:", "https://tauri.localhost"].some((prefix) => window.location.href.startsWith(prefix))) return null;
+  if (!isDesktopRuntime()) return null;
   const { invoke } = await import("@tauri-apps/api/core");
   return { invoke };
 }
 
-class DesktopPlannerStorage implements PlannerStorage {
+export class DesktopPlannerStorage implements PlannerStorage {
   readonly kind = "desktop" as const;
+  private writes: Promise<void> = Promise.resolve();
 
   async load(key: string): Promise<PlannerStorageSnapshot> {
     const bridge = await tauriBridge();
     if (!bridge) return new BrowserPlannerStorage().load(key);
     try {
-      const result = await bridge.invoke<PlannerStorageSnapshot>("read_planner_data");
-      return { ...result, recovered: Boolean(result.recovered) };
+      await this.writes.catch(() => {});
+      const result = await bridge.invoke<PlannerStorageSnapshot>("read_planner_data", { key });
+      if (result.data !== null && !isPlannerData(result.data)) throw new Error("本地计划内容无效，请导入有效备份。");
+      return { ...result, metadata: parseMetadata(result.metadata), recovered: Boolean(result.recovered) };
     } catch (error) {
       return { data: null, metadata: emptyMetadata(), recovered: false, error: String(error) };
     }
   }
 
-  async save(_key: string, data: PlannerData, metadata: PlannerStorageMetadata): Promise<void> {
-    const bridge = await tauriBridge();
-    if (!bridge) return new BrowserPlannerStorage().save(_key, data, metadata);
-    await bridge.invoke("write_planner_data", {
-      envelope: { version: STORAGE_SCHEMA_VERSION, data, metadata },
+  save(key: string, data: PlannerData, metadata: PlannerStorageMetadata, recovery = false): Promise<void> {
+    const envelope = JSON.parse(JSON.stringify({ version: STORAGE_SCHEMA_VERSION, data, metadata }));
+    const next = this.writes.catch(() => {}).then(async () => {
+      const bridge = await tauriBridge();
+      if (!bridge) throw new Error("桌面存储连接不可用。");
+      await bridge.invoke("write_planner_data", { key, envelope, recovery });
     });
+    this.writes = next;
+    return next;
   }
 
   async importJson(): Promise<unknown | null> {
@@ -184,12 +219,18 @@ export function isDesktopRuntime(): boolean {
   );
 }
 
+let plannerStorage: PlannerStorage | undefined;
 export function createPlannerStorage(): PlannerStorage {
-  return isDesktopRuntime() ? new DesktopPlannerStorage() : new BrowserPlannerStorage();
+  return plannerStorage ??= isDesktopRuntime() ? new DesktopPlannerStorage() : new BrowserPlannerStorage();
 }
 
 export function defaultStorageMetadata(): PlannerStorageMetadata { return emptyMetadata(); }
 
 export function normalizeStorageData(value: unknown): PlannerData | null {
-  return normalizePlannerData(value);
+  const raw = normalizePlannerData(value);
+  if (raw) return raw;
+  if (value && typeof value === "object" && "version" in value && value.version === STORAGE_SCHEMA_VERSION && "data" in value) {
+    return normalizePlannerData(value.data);
+  }
+  return null;
 }

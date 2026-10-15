@@ -30,6 +30,7 @@ import {
   SubjectLabel,
   ReplanDialog,
   UndoButton,
+  DailyReviewEditor,
 } from "./components";
 import {
   today,
@@ -56,6 +57,7 @@ export function Dashboard() {
   const [edit, setEdit] = useState<ScheduleBlock[]>();
   const [record, setRecord] = useState<ScheduleBlock[]>();
   const [replan, setReplan] = useState(false);
+  const [review, setReview] = useState(false);
   const pending = groups.filter((group) =>
     group.some((block) => block.status !== "completed" &&
       data.tasks.find((task) => task.id === block.task_id)?.status !== "completed"),
@@ -83,10 +85,10 @@ export function Dashboard() {
             {dateLabel} · 距离初试 {examDays} 天
           </p>
         </div>
-        <button className="primary" onClick={() => setReplan(true)}>
+        <div className="page-heading-actions"><button onClick={() => setReview(true)}><Check size={16} />结束今天</button><button className="primary" onClick={() => setReplan(true)}>
           <RefreshCw size={17} />
           智能重排
-        </button>
+        </button></div>
       </div>
       <div className="dashboard-grid">
         <section className="timeline-panel today-study-panel">
@@ -257,6 +259,7 @@ export function Dashboard() {
         />
       )}
       {replan && <ReplanDialog onClose={() => setReplan(false)} />}
+      {review && <DailyReviewEditor date={date} onClose={() => setReview(false)} />}
     </>
   );
 }

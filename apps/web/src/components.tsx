@@ -17,6 +17,7 @@ import {
   Minus,
   Plus,
   ChevronDown,
+  WandSparkles,
 } from "lucide-react";
 import type {
   Task,
@@ -36,6 +37,7 @@ import {
   stagesForCourse,
 } from "@planner/engine";
 import { usePlanner } from "./store";
+import { apiRecordLog } from "./api";
 import {
   today,
   uid,
@@ -46,7 +48,9 @@ import {
   priorityLabels,
   refreshTaskProgress,
   dayStats,
+  groupDailyBlocks,
 } from "./utils";
+import { apiSettleDay } from "./api";
 
 export function Modal({
   title,
@@ -436,7 +440,7 @@ export function moveTaskDay(
 export function ActualTimeEditor({ blocks, onClose }: {
   blocks: ScheduleBlock[]; onClose: () => void;
 }) {
-  const { data, setData } = usePlanner();
+  const { data, setData, apiConfigured, refreshApiData } = usePlanner();
   const task = data.tasks.find((item) => item.id === blocks[0]?.task_id);
   const date = blocks[0]?.date ?? today();
   const [subjectId, setSubjectId] = useState<SubjectId>(task?.subject_id ?? data.subjects[0]?.id);
@@ -453,9 +457,9 @@ export function ActualTimeEditor({ blocks, onClose }: {
     setCategoryId(id); changeMinutes(data.logs.filter((log) => log.task_id === id && log.date === date).reduce((sum, log) => sum + log.minutes, 0));
   };
   return <Modal title="记录实际用时" onClose={onClose}>
-    <form className="actual-time-form" onSubmit={(event) => {
+    <form className="actual-time-form" onSubmit={async (event) => {
       event.preventDefault();
-      try { setData((current) => recordTaskDayMinutes(current, categoryId, date, minutes)); onClose(); }
+      try { setData((current) => recordTaskDayMinutes(current, categoryId, date, minutes)); if (apiConfigured) { await apiRecordLog({ item_id: categoryId, date, minutes }); await refreshApiData(); } onClose(); }
       catch (caught) { setError(String((caught as Error).message)); }
     }}>
       <p className="dialog-subtitle actual-time-date"><CalendarDays size={15} aria-hidden="true" />{date} · 当天累计用时</p>
@@ -581,6 +585,7 @@ export function TaskDayRow({ blocks, draggable = false, onEdit, onRecord, onDrag
   const course = data.subjects.find((item) => item.id === task.subject_id);
   const rate = planned > 0 ? Math.round(actual / planned * 100) : 0;
   const tone = { "--course-color": course?.color ?? "#275e91" } as React.CSSProperties;
+  const advice = blocks.find((block) => block.advice_text)?.advice_text;
   return <article className={`study-row ${completed ? "done" : ""} ${actual >= planned && planned > 0 ? "time-reached" : ""}`} style={tone}
     draggable={draggable && actual === 0 && blocks.every((block) => !block.is_fixed && block.status !== "completed") && !task.is_fixed}
     onDragStart={onDragStart} data-testid="schedule-block" data-block-id={blocks[0].id}
@@ -616,9 +621,30 @@ export function TaskDayRow({ blocks, draggable = false, onEdit, onRecord, onDrag
     </div>
     <details className="study-row-details">
       <summary>学习内容 <ChevronDown size={13} aria-hidden="true" /></summary>
-      <div>{task.description && <p>{task.description}</p>}<span className="study-item-deadline"><CalendarDays size={13} />事项截止 {task.deadline}</span></div>
+      <div>{advice && <p className="study-advice"><WandSparkles size={13} />今日建议：{advice}</p>}{task.description && <p>{task.description}</p>}<span className="study-item-deadline"><CalendarDays size={13} />事项截止 {task.deadline}</span></div>
     </details>
   </article>;
+}
+
+export function DailyReviewEditor({ date, onClose }: { date: string; onClose: () => void }) {
+  const { data, setData, apiConfigured, refreshApiData } = usePlanner();
+  const groups = groupDailyBlocks(data.blocks.filter((block) => block.date === date), data.tasks);
+  const [entries, setEntries] = useState(() => groups.map((group) => ({
+    item_id: group[0].task_id,
+    actual_minutes: data.logs.filter((log) => log.task_id === group[0].task_id && log.date === date).reduce((sum, log) => sum + log.minutes, 0),
+    completion_status: (group.every((block) => block.status === "completed") ? "completed" : "not_started") as "not_started" | "partial" | "completed" | "skipped",
+    feedback: "",
+  })));
+  const [feedback, setFeedback] = useState("");
+  const [error, setError] = useState("");
+  const update = (itemId: string, change: Partial<typeof entries[number]>) => setEntries((current) => current.map((entry) => entry.item_id === itemId ? { ...entry, ...change } : entry));
+  return <Modal title={`${date} · 结束今天`} onClose={onClose}>
+    <p className="dialog-subtitle">记录今天完成到哪里，服务器会据此调整后续安排。</p>
+    <div className="review-list">{entries.map((entry) => { const task = data.tasks.find((item) => item.id === entry.item_id); return <div className="review-row" key={entry.item_id}><strong>{data.subjects.find((subject) => subject.id === task?.subject_id)?.name} · {task?.title}</strong><label>实际用时<input type="number" min={0} max={1440} step={1} value={entry.actual_minutes} onChange={(event) => update(entry.item_id, { actual_minutes: Number(event.target.value) })} /></label><label>完成程度<select value={entry.completion_status} onChange={(event) => update(entry.item_id, { completion_status: event.target.value as typeof entry.completion_status })}><option value="not_started">未开始</option><option value="partial">部分完成</option><option value="completed">已完成</option><option value="skipped">跳过</option></select></label><label>卡点或反馈<input value={entry.feedback} onChange={(event) => update(entry.item_id, { feedback: event.target.value })} placeholder="可选" /></label></div>; })}</div>
+    <label>今天整体反馈<textarea value={feedback} onChange={(event) => setFeedback(event.target.value)} placeholder="例如：上午效率低，复合函数求导仍不熟。" /></label>
+    {error && <p className="error" role="alert">{error}</p>}
+    <footer className="dialog-actions"><button onClick={onClose}>取消</button><button className="primary" onClick={async () => { try { setData((current) => entries.reduce((next, entry) => { const recorded = recordTaskDayMinutes(next, entry.item_id, date, entry.actual_minutes); return { ...recorded, blocks: recorded.blocks.map((block) => block.task_id === entry.item_id && block.date === date ? { ...block, status: entry.completion_status === "completed" ? "completed" : "planned", completion_status: entry.completion_status, feedback: entry.feedback, updated_at: now() } : block) }; }, current)); if (apiConfigured) { await apiSettleDay(date, { feedback, entries }); await refreshApiData(); } onClose(); } catch (caught) { setError(caught instanceof Error ? caught.message : String(caught)); } }}><Check size={16} />保存并调整后续计划</button></footer>
+  </Modal>;
 }
 
 export function FixedEditor({ onClose }: { onClose: () => void }) {

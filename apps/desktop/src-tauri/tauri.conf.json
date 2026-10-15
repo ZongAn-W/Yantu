@@ -4,9 +4,9 @@
   "version": "1.0.0",
   "identifier": "cn.sjtu.studyplanner",
   "build": {
-    "beforeDevCommand": "npm run dev -w apps/web -- --host 127.0.0.1",
+    "beforeDevCommand": "npm run dev -w apps/web -- --host 127.0.0.1 --port 1420",
     "beforeBuildCommand": "npm run build -w apps/web",
-    "devUrl": "http://127.0.0.1:5173",
+    "devUrl": "http://127.0.0.1:1420",
     "frontendDist": "../../web/dist"
   },
   "app": {
@@ -27,6 +27,11 @@
   "bundle": {
     "active": true,
     "targets": ["nsis", "msi"],
-    "windows": { "webviewInstallMode": { "type": "downloadBootstrapper" } }
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.ico"],
+    "windows": {
+      "webviewInstallMode": { "type": "offlineInstaller" },
+      "nsis": { "languages": ["SimpChinese"] },
+      "wix": { "language": "zh-CN" }
+    }
   }
 }

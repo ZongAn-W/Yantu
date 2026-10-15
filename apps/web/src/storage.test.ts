@@ -3,7 +3,6 @@ import { createInitialData } from "./data";
 import {
   BrowserPlannerStorage,
   defaultStorageMetadata,
-  STORAGE_METADATA_KEY,
   STORAGE_SCHEMA_VERSION,
 } from "./storage";
 
@@ -45,6 +44,17 @@ describe("BrowserPlannerStorage", () => {
     expect(loaded.recovered).toBe(true);
     expect(loaded.data?.profile.target_school).toBe(first.profile.target_school);
     expect(loaded.error).toContain("主数据损坏");
+  });
+
+  it("主数据丢失时也从最近备份恢复", async () => {
+    const storage = new BrowserPlannerStorage();
+    const data = createInitialData("2026-10-14");
+    await storage.save("planner", data, defaultStorageMetadata());
+    await storage.save("planner", { ...data, profile: { ...data.profile, target_school: "second" } }, defaultStorageMetadata());
+    localStorage.removeItem("planner");
+    const loaded = await storage.load("planner");
+    expect(loaded.recovered).toBe(true);
+    expect(loaded.data?.profile.target_school).toBe(data.profile.target_school);
   });
 
   it("写入失败时不会覆盖旧数据", async () => {

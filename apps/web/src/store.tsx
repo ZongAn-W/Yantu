@@ -17,6 +17,7 @@ import {
 } from "@supabase/supabase-js";
 import type { PlannerData, ReplanChange, ReplanRun } from "@planner/engine";
 import { mergeTaskDayLogs } from "@planner/engine";
+import { apiConfigured, apiGetProfile, apiLogin, apiLogout, apiMe, apiRegister, apiSnapshot, type ApiUser } from "./api";
 import {
   createInitialData,
   LOCAL_STORAGE_KEY,
@@ -25,8 +26,10 @@ import {
 import {
   createPlannerStorage,
   defaultStorageMetadata,
+  isDesktopRuntime,
   type PlannerStorage,
   type PlannerStorageMetadata,
+  type PlannerStorageSnapshot,
 } from "./storage";
 
 export type SyncStatus =
@@ -37,9 +40,7 @@ export type SyncStatus =
   | "connected"
   | "offline"
   | "error";
-const env = (
-  import.meta as ImportMeta & { env: Record<string, string | undefined> }
-).env;
+const env = import.meta.env;
 const cloudUrl = env.VITE_SUPABASE_URL?.trim();
 const cloudKey = (
   env.VITE_SUPABASE_PUBLISHABLE_KEY || env.VITE_SUPABASE_ANON_KEY
@@ -68,8 +69,8 @@ export const syncStatusNames: Record<SyncStatus, string> = {
   connecting: "正在连接云端",
   syncing: "正在同步",
   connected: "云端已同步",
-  offline: "离线 · 更改已保存在本机",
-  error: "同步失败 · 更改已保存在本机",
+  offline: "离线 · 等待同步",
+  error: "云端同步失败",
 };
 
 interface PlannerContextValue {
@@ -78,12 +79,21 @@ interface PlannerContextValue {
   syncStatus: SyncStatus;
   syncMessage: string;
   cloudConfigured: boolean;
+  apiConfigured: boolean;
+  apiUser: ApiUser | null;
+  apiOnboardingComplete: boolean;
+  refreshApiData: () => Promise<void>;
   session: Session | null;
-  user: User | null;
+  user: User | ApiUser | null;
   signIn: (email: string, password: string) => Promise<void>;
   signUp: (email: string, password: string) => Promise<void>;
   signOut: () => Promise<void>;
   retrySync: () => Promise<void>;
+  storageStatus: "loading" | "saving" | "saved" | "error" | "recovered";
+  storageMessage: string;
+  storageBlocked: boolean;
+  retryStorage: () => Promise<void>;
+  restoreData: (data: PlannerData) => Promise<void>;
 }
 
 const PlannerContext = createContext<PlannerContextValue | null>(null);
@@ -92,17 +102,6 @@ const cloudStorageKey = (userId: string) =>
 const clone = <T,>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const same = (left: unknown, right: unknown) =>
   JSON.stringify(left) === JSON.stringify(right);
-
-function readLocal(key: string): PlannerData | null {
-  try {
-    const saved = localStorage.getItem(key);
-    if (!saved) return null;
-    const parsed = JSON.parse(saved) as { data?: unknown };
-    return normalizePlannerData(parsed?.data ?? parsed);
-  } catch {
-    return null;
-  }
-}
 
 /** Retag the complete graph, including immutable replan snapshots, at account boundaries. */
 function forUser(data: PlannerData, userId: string): PlannerData {
@@ -240,14 +239,18 @@ async function pullCloud(): Promise<{
 }
 
 export function PlannerProvider({ children }: { children: ReactNode }) {
-  const [data, setInternalData] = useState<PlannerData>(
-    () => readLocal(LOCAL_STORAGE_KEY) ?? createInitialData(),
-  );
+  const [data, setInternalData] = useState<PlannerData>(() => createInitialData());
   const [session, setSession] = useState<Session | null>(null);
+  const [apiUser, setApiUser] = useState<ApiUser | null>(null);
+  const [apiOnboardingComplete, setApiOnboardingComplete] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(
-    client ? "login_required" : "demo",
+    client || apiConfigured ? "login_required" : "demo",
   );
   const [syncMessage, setSyncMessage] = useState(configurationError);
+  const [hydrated, setHydrated] = useState(false);
+  const [storageStatus, setStorageStatus] = useState<PlannerContextValue["storageStatus"]>("loading");
+  const [storageMessage, setStorageMessage] = useState("");
+  const [storageBlocked, setStorageBlocked] = useState(false);
   const dataRef = useRef(data);
   const baseRef = useRef<PlannerData>(clone(data));
   const userRef = useRef<string | null>(null);
@@ -258,12 +261,16 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
   const inFlightRef = useRef(false);
   const needsRefreshRef = useRef(false);
   const storageRef = useRef<PlannerStorage>(createPlannerStorage());
-  const hydratedRef = useRef(false);
+  const storageBlockedRef = useRef(false);
+  const savePromiseRef = useRef<Promise<void>>(Promise.resolve());
+  const saveSequenceRef = useRef(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const flushRef = useRef<() => Promise<void>>(async () => {});
   const refreshRef = useRef<() => Promise<void>>(async () => {});
+  const retryRef = useRef<() => Promise<void>>(async () => {});
 
-  const persist = useCallback((value: PlannerData, key: string, metadata?: Partial<PlannerStorageMetadata>) => {
+  const persist = useCallback((value: PlannerData, key: string, metadata?: Partial<PlannerStorageMetadata>, recovery = false) => {
+    if (storageBlockedRef.current && !recovery) return Promise.resolve();
     const nextMetadata: PlannerStorageMetadata = {
       ...defaultStorageMetadata(),
       revision: revisionRef.current,
@@ -272,23 +279,52 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       updatedAt: new Date().toISOString(),
       ...metadata,
     };
-    void storageRef.current.save(key, value, nextMetadata).catch((error) => {
-      setSyncMessage(`本机数据保存失败：${error instanceof Error ? error.message : String(error)}。原有数据已保留。`);
-      setSyncStatus("error");
+    const sequence = ++saveSequenceRef.current;
+    setStorageStatus("saving");
+    const saving = storageRef.current.save(key, value, nextMetadata, recovery);
+    savePromiseRef.current = saving;
+    void saving.then(() => {
+      if (sequence === saveSequenceRef.current) {
+        setStorageStatus("saved");
+        setStorageMessage((message) => message.startsWith("本机数据保存失败") || message.startsWith("退出前保存失败") ? "" : message);
+      }
+    }, (error) => {
+      setStorageStatus("error");
+      setStorageMessage(`本机数据保存失败：${error instanceof Error ? error.message : String(error)}。请重试保存或导出当前数据后再退出。`);
     });
+    return saving;
   }, []);
 
   const applyData = useCallback(
     (value: PlannerData) => {
       dataRef.current = value;
       setInternalData(value);
-      persist(
+      void persist(
         value,
         userRef.current ? cloudStorageKey(userRef.current) : LOCAL_STORAGE_KEY,
-      );
+      ).catch(() => {});
     },
     [persist],
   );
+
+  const refreshApiData = useCallback(async () => {
+    if (!apiConfigured) return;
+    try {
+      const profile = await apiGetProfile();
+      if (!profile.profile) {
+        setApiOnboardingComplete(false);
+        return;
+      }
+      const remote = await apiSnapshot();
+      setApiOnboardingComplete(true);
+      applyData(remote.data);
+      setSyncStatus("connected");
+      setSyncMessage("服务器计划已同步。");
+    } catch (error) {
+      setSyncStatus("error");
+      setSyncMessage(error instanceof Error ? error.message : String(error));
+    }
+  }, [applyData]);
 
   const scheduleFlush = useCallback(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -299,6 +335,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
 
   const setData = useCallback<Dispatch<SetStateAction<PlannerData>>>(
     (action) => {
+      if (storageBlockedRef.current) return;
       let value =
         typeof action === "function" ? action(dataRef.current) : action;
       const normalized = normalizePlannerData(value);
@@ -308,7 +345,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       if (userRef.current) {
         pendingRef.current = true;
         if (readyRef.current) {
-          setSyncStatus("syncing");
+          setSyncStatus(navigator.onLine ? "syncing" : "offline");
           scheduleFlush();
         }
       }
@@ -322,6 +359,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       !client ||
       !userRef.current ||
       !readyRef.current ||
+      storageBlockedRef.current ||
       inFlightRef.current ||
       !pendingRef.current
     )
@@ -329,6 +367,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
     inFlightRef.current = true;
     const generation = generationRef.current;
     try {
+      await savePromiseRef.current;
       // Serial writes prevent late responses from losing newer UI changes.
       for (let attempt = 0; pendingRef.current && attempt < 5; attempt += 1) {
         if (generation !== generationRef.current) return;
@@ -365,7 +404,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
           ? "正在合并设备更改…"
           : "数据已保存到云端，支持多设备实时同步。",
       );
-      persist(dataRef.current, userRef.current ? cloudStorageKey(userRef.current) : LOCAL_STORAGE_KEY);
+      await persist(dataRef.current, userRef.current ? cloudStorageKey(userRef.current) : LOCAL_STORAGE_KEY);
     } catch (error) {
       if (generation === generationRef.current) {
         setSyncStatus(navigator.onLine ? "error" : "offline");
@@ -385,7 +424,7 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         void refreshRef.current();
       }
     }
-  }, [applyData]);
+  }, [applyData, persist]);
   flushRef.current = flush;
 
   const refresh = useCallback(async () => {
@@ -440,33 +479,100 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
   }, [applyData]);
   refreshRef.current = refresh;
 
+  const adoptSnapshot = useCallback((snapshot: PlannerStorageSnapshot) => {
+    const blocked = Boolean(snapshot.error && !snapshot.data);
+    storageBlockedRef.current = blocked;
+    setStorageBlocked(blocked);
+    setStorageMessage(snapshot.error ?? "");
+    setStorageStatus(blocked ? "error" : snapshot.recovered ? "recovered" : "saved");
+    if (snapshot.data) {
+      dataRef.current = snapshot.data;
+      baseRef.current = clone(snapshot.metadata.base ?? snapshot.data);
+      revisionRef.current = snapshot.metadata.revision;
+      pendingRef.current = snapshot.metadata.pending;
+      setInternalData(snapshot.data);
+    }
+    return !blocked;
+  }, []);
+
+  const retryStorage = useCallback(async () => {
+    const key = userRef.current ? cloudStorageKey(userRef.current) : LOCAL_STORAGE_KEY;
+    if (storageBlockedRef.current) {
+      const snapshot = await storageRef.current.load(key);
+      if (!adoptSnapshot(snapshot)) return;
+      if (snapshot.data) await persist(snapshot.data, key, snapshot.metadata, true);
+      else await persist(dataRef.current, key);
+    } else {
+      await persist(dataRef.current, key);
+    }
+  }, [adoptSnapshot, persist]);
+
+  const restoreData = useCallback(async (value: PlannerData) => {
+    if (!normalizePlannerData(value)) throw new Error("备份格式不正确，原数据已保留。");
+    const restored = userRef.current ? forUser(value, userRef.current) : value;
+    const key = userRef.current ? cloudStorageKey(userRef.current) : LOCAL_STORAGE_KEY;
+    const pending = Boolean(userRef.current);
+    await persist(restored, key, { pending }, true);
+    pendingRef.current = pending;
+    dataRef.current = restored;
+    setInternalData(restored);
+    storageBlockedRef.current = false;
+    setStorageBlocked(false);
+    setStorageMessage("已从 JSON 恢复，原有损坏文件已保留。");
+    if (pending) scheduleFlush();
+  }, [persist, scheduleFlush]);
+
   useEffect(() => {
     let disposed = false;
     void storageRef.current.load(LOCAL_STORAGE_KEY).then((snapshot) => {
       if (disposed) return;
-      if (snapshot.data) {
-        dataRef.current = snapshot.data;
-        baseRef.current = snapshot.metadata.base ? clone(snapshot.metadata.base) : clone(snapshot.data);
-        revisionRef.current = snapshot.metadata.revision;
-        pendingRef.current = snapshot.metadata.pending;
-        setInternalData(snapshot.data);
-        if (snapshot.error) {
-          setSyncStatus("error");
-          setSyncMessage(`${snapshot.error} 当前已载入恢复数据，请尽快导出备份。`);
-        }
-      } else if (snapshot.error) {
-        setSyncStatus("error");
-        setSyncMessage(`${snapshot.error} 未覆盖原数据，请导出备份或从 JSON 恢复。`);
-      } else {
-        persist(dataRef.current, LOCAL_STORAGE_KEY);
+      if (adoptSnapshot(snapshot)) {
+        if (snapshot.recovered && snapshot.data) void persist(snapshot.data, LOCAL_STORAGE_KEY, snapshot.metadata, true).catch(() => {});
+        else if (!snapshot.data) void persist(dataRef.current, LOCAL_STORAGE_KEY).catch(() => {});
       }
-      hydratedRef.current = true;
+      setHydrated(true);
     });
     return () => { disposed = true; };
-  }, [persist]);
+  }, [adoptSnapshot, persist]);
 
   useEffect(() => {
-    if (!client) return;
+    if (!apiConfigured || !hydrated) return;
+    let disposed = false;
+    void apiMe().then(async ({ user }) => {
+      if (disposed) return;
+      setApiUser(user);
+      await refreshApiData();
+    }).catch(() => {
+      if (!disposed) setSyncStatus("login_required");
+    });
+    return () => { disposed = true; };
+  }, [hydrated, refreshApiData]);
+
+  useEffect(() => {
+    if (!isDesktopRuntime()) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void import("@tauri-apps/api/window").then(async ({ getCurrentWindow }) => {
+      const appWindow = getCurrentWindow();
+      const stop = await appWindow.onCloseRequested(async (event) => {
+        event.preventDefault();
+        try {
+          await savePromiseRef.current;
+          await appWindow.destroy();
+        } catch (error) {
+          setStorageStatus("error");
+          setStorageMessage(`退出前保存失败：${String(error)}。请重试保存或导出当前数据。`);
+        }
+      });
+      if (disposed) stop(); else unlisten = stop;
+    }).catch((error) => {
+      setStorageMessage(`关闭窗口的保存保护未启用：${String(error)}`);
+    });
+    return () => { disposed = true; unlisten?.(); };
+  }, []);
+
+  useEffect(() => {
+    if (!client || apiConfigured || !hydrated || storageBlocked) return;
     let disposed = false;
     let channel: ReturnType<SupabaseClient["channel"]> | null = null;
     let realtimeTimer: ReturnType<typeof setTimeout> | null = null;
@@ -475,7 +581,9 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       if (disposed) return;
       setSession(nextSession);
       const nextUser = nextSession?.user.id ?? null;
-      if (nextUser === userRef.current) return;
+      if (nextUser === userRef.current && (readyRef.current || !nextUser)) return;
+      await savePromiseRef.current.catch(() => {});
+      if (disposed) return;
       generationRef.current += 1;
       const generation = generationRef.current;
       if (channel) {
@@ -489,7 +597,9 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       userRef.current = nextUser;
       if (!nextUser) {
         const localSnapshot = await storageRef.current.load(LOCAL_STORAGE_KEY);
-        applyData(localSnapshot.data ?? createInitialData());
+        if (disposed || generation !== generationRef.current) return;
+        if (!adoptSnapshot(localSnapshot)) return;
+        if (!localSnapshot.data) applyData(createInitialData());
         setSyncStatus("login_required");
         setSyncMessage("本地 Demo 可继续使用。登录后自动同步云端计划。");
         return;
@@ -497,28 +607,39 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       setSyncStatus("connecting");
       const cachedSnapshot = await storageRef.current.load(cloudStorageKey(nextUser));
       const localSnapshot = await storageRef.current.load(LOCAL_STORAGE_KEY);
+      if (disposed || generation !== generationRef.current) return;
+      if (!cachedSnapshot.data && localSnapshot.error && !localSnapshot.data) {
+        adoptSnapshot(localSnapshot);
+        return;
+      }
+      if (!adoptSnapshot(cachedSnapshot)) return;
       const cached = cachedSnapshot.data;
       const startingLocal = forUser(
         cached ?? localSnapshot.data ?? createInitialData(),
         nextUser,
       );
-      applyData(startingLocal);
-      baseRef.current = clone(startingLocal);
+      dataRef.current = startingLocal;
+      setInternalData(startingLocal);
+      baseRef.current = clone(cachedSnapshot.metadata.base ?? startingLocal);
+      revisionRef.current = cachedSnapshot.metadata.revision;
+      pendingRef.current = cachedSnapshot.metadata.pending;
       try {
+        await persist(startingLocal, cloudStorageKey(nextUser));
         const remote = await pullCloud();
         if (disposed || generation !== generationRef.current) return;
         revisionRef.current = remote.revision;
         if (remote.data) {
-          const hasConnectingEdits = !same(startingLocal, dataRef.current);
+          const hasConnectingEdits = pendingRef.current || !same(startingLocal, dataRef.current);
           const combined = hasConnectingEdits
-            ? mergePlans(startingLocal, dataRef.current, remote.data)
+            ? mergePlans(baseRef.current, dataRef.current, remote.data)
             : remote.data;
           baseRef.current = clone(remote.data);
-          applyData(combined);
           pendingRef.current = hasConnectingEdits;
+          applyData(combined);
         } else {
           // Import Demo only when this account truly has no cloud profile.
           pendingRef.current = true;
+          applyData(dataRef.current);
         }
         readyRef.current = true;
         if (pendingRef.current) await flushRef.current();
@@ -585,13 +706,16 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       .getSession()
       .then(({ data: auth }) => adoptSession(auth.session));
     const online = () => {
-      void flushRef.current().then(() => refreshRef.current());
+      void retryRef.current();
     };
     const offline = () => {
       if (userRef.current) setSyncStatus("offline");
     };
     window.addEventListener("online", online);
     window.addEventListener("offline", offline);
+    const retryTimer = window.setInterval(() => {
+      if (navigator.onLine && userRef.current) void retryRef.current();
+    }, 30_000);
     return () => {
       disposed = true;
       generationRef.current += 1;
@@ -599,12 +723,20 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       if (channel) void client!.removeChannel(channel);
       if (realtimeTimer) clearTimeout(realtimeTimer);
       if (debounceRef.current) clearTimeout(debounceRef.current);
+      clearInterval(retryTimer);
       window.removeEventListener("online", online);
       window.removeEventListener("offline", offline);
     };
-  }, [applyData, persist]);
+  }, [adoptSnapshot, applyData, hydrated, persist, storageBlocked]);
 
   const signIn = useCallback(async (email: string, password: string) => {
+    if (apiConfigured) {
+      const result = await apiLogin(email, password);
+      setApiUser(result.user);
+      setSyncStatus("connecting");
+      await refreshApiData();
+      return;
+    }
     if (!client)
       throw new Error(
         "请在 apps/web/.env.local 配置 Supabase 后重启开发服务器。",
@@ -614,9 +746,15 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
       password,
     });
     if (error) throw new Error(error.message);
-  }, []);
+  }, [refreshApiData]);
 
   const signUp = useCallback(async (email: string, password: string) => {
+    if (apiConfigured) {
+      const result = await apiRegister(email, password);
+      setApiUser(result.user);
+      setSyncStatus("connecting");
+      return;
+    }
     if (!client)
       throw new Error(
         "请在 apps/web/.env.local 配置 Supabase 后重启开发服务器。",
@@ -631,6 +769,13 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
+    if (apiConfigured) {
+      await apiLogout();
+      setApiUser(null);
+      setApiOnboardingComplete(false);
+      setSyncStatus("login_required");
+      return;
+    }
     if (!client) return;
     await flushRef.current();
     const { error } = await client.auth.signOut();
@@ -638,8 +783,12 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const retrySync = useCallback(async () => {
-    if (!readyRef.current && userRef.current) {
+    if (!userRef.current || storageBlockedRef.current) return;
+    const generation = generationRef.current;
+    try {
+    if (!readyRef.current) {
       const remote = await pullCloud();
+      if (generation !== generationRef.current) return;
       if (remote.data) {
         const merged = pendingRef.current
           ? mergePlans(baseRef.current, dataRef.current, remote.data)
@@ -647,12 +796,21 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         baseRef.current = clone(remote.data);
         revisionRef.current = remote.revision;
         applyData(merged);
-      } else pendingRef.current = true;
+      } else {
+        pendingRef.current = true;
+        applyData(dataRef.current);
+      }
       readyRef.current = true;
     }
     await flushRef.current();
     await refreshRef.current();
+    } catch (error) {
+      if (generation !== generationRef.current) return;
+      setSyncStatus(navigator.onLine ? "error" : "offline");
+      setSyncMessage(`同步失败，本机更改已保留：${String((error as { message?: string })?.message ?? error)}`);
+    }
   }, [applyData]);
+  retryRef.current = retrySync;
 
   return (
     <PlannerContext.Provider
@@ -661,16 +819,25 @@ export function PlannerProvider({ children }: { children: ReactNode }) {
         setData,
         syncStatus,
         syncMessage,
-        cloudConfigured: Boolean(client),
+        cloudConfigured: Boolean(client || apiConfigured),
+        apiConfigured,
+        apiUser,
+        apiOnboardingComplete,
+        refreshApiData,
         session,
-        user: session?.user ?? null,
+        user: session?.user ?? apiUser,
         signIn,
         signUp,
         signOut,
         retrySync,
+        storageStatus,
+        storageMessage,
+        storageBlocked,
+        retryStorage,
+        restoreData,
       }}
     >
-      {children}
+      {hydrated ? children : <p className="notice" role="status">正在读取本机计划…</p>}
     </PlannerContext.Provider>
   );
 }

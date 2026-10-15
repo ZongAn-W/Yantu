@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   NavLink,
   Navigate,
@@ -32,8 +32,9 @@ import {
 import { Dashboard, Tasks, Calendar, Progress } from "./pages";
 import { Modal } from "./components";
 import { now } from "./utils";
-import { createInitialData, isPlannerData, localDate } from "./data";
-import { createPlannerStorage, isDesktopRuntime } from "./storage";
+import { createInitialData, localDate } from "./data";
+import { createPlannerStorage, isDesktopRuntime, normalizeStorageData } from "./storage";
+import { Onboarding } from "./onboarding";
 
 function Shell() {
   const location = useLocation();
@@ -42,18 +43,38 @@ function Shell() {
     syncStatus,
     syncMessage,
     cloudConfigured,
+    apiConfigured,
+    apiUser,
+    apiOnboardingComplete,
     signIn,
     signUp,
     signOut,
     setData,
     user,
+    storageStatus,
+    storageMessage,
+    storageBlocked,
+    retryStorage,
+    restoreData,
   } = usePlanner();
+  const [transferMessage, setTransferMessage] = useState("");
+  const recoveryInputRef = useRef<HTMLInputElement>(null);
+  const storageStatusText = {
+    loading: "正在读取本机数据",
+    saving: "正在保存到本机",
+    saved: "已保存到本机",
+    error: "本机存储异常",
+    recovered: "已从备份恢复",
+  }[storageStatus];
   const [open, setOpen] = useState(false),
     [auth, setAuth] = useState(false),
     [email, setEmail] = useState(""),
     [password, setPassword] = useState(""),
     [authMode, setAuthMode] = useState<"login" | "signup">("login"),
     [authError, setAuthError] = useState("");
+  useEffect(() => {
+    if (apiConfigured && !apiUser) setAuth(true);
+  }, [apiConfigured, apiUser]);
   const nav = [
     { to: "/", label: "今日", icon: CheckCircle2 },
     { to: "/calendar", label: "日历", icon: CalendarDays },
@@ -62,48 +83,40 @@ function Shell() {
     { to: "/settings", label: "设置", icon: Settings },
   ];
   async function exportData() {
-    await createPlannerStorage().exportJson(data);
+    try {
+      await createPlannerStorage().exportJson(data);
+      setTransferMessage("");
+    } catch (error) {
+      setTransferMessage(`导出失败：${String(error)}。请重新选择可写入的位置。`);
+    }
   }
   async function importData(file?: File) {
-    if (!file && isDesktopRuntime()) {
-      try {
-        const value = await createPlannerStorage().importJson();
-        if (value === null) return;
-        if (!isPlannerData(value)) throw new Error("文件格式不正确");
-        setData(value);
-      } catch (e) {
-        alert(String(e));
-      }
-      return;
+    try {
+      const value = file ? JSON.parse(await file.text()) : await createPlannerStorage().importJson();
+      if (value === null) return;
+      const normalized = normalizeStorageData(value);
+      if (!normalized) throw new Error("文件格式不正确，原有数据已保留。");
+      await restoreData(normalized);
+      setTransferMessage("数据已恢复并保存到本机。");
+    } catch (error) {
+      setTransferMessage(`恢复失败：${String(error)}`);
     }
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      try {
-        const value = JSON.parse(String(reader.result));
-        if (!isPlannerData(value)) throw new Error("文件格式不正确");
-        setData(value);
-      } catch (e) {
-        alert(String(e));
-      }
-    };
-    reader.readAsText(file);
   }
   const authContent = !cloudConfigured ? (
     <>
-      <p>未配置 Supabase，当前使用浏览器本地 Demo。刷新页面数据仍会保留。</p>
+      <p>未配置 Supabase，当前使用本地 Demo。</p>
       <p className="muted">
         配置项：VITE_SUPABASE_URL、VITE_SUPABASE_ANON_KEY（或
         VITE_SUPABASE_PUBLISHABLE_KEY）
       </p>
       <div className="sync-local">
         <span className="status-dot demo" />
-        本地数据已保存
+        {storageStatusText}
       </div>
     </>
   ) : user ? (
     <>
-      <p>已登录，事项、每日计划和实际学习记录会通过 Supabase 同步。</p>
+      <p>{apiConfigured ? "已登录，课程、事项、每日计划和实际学习记录保存在服务器。" : "已登录，事项、每日计划和实际学习记录会通过 Supabase 同步。"}</p>
       <button
         className="danger"
         onClick={async () => {
@@ -245,6 +258,7 @@ function Shell() {
             {nav.find((n) => n.to === location.pathname)?.label || "研途"}
           </div>
           <div className="topbar-actions">
+            {isDesktopRuntime() && <span className="storage-status" role="status">{storageStatusText}</span>}
             <span className="sync-pill">
               <span className={`status-dot ${syncStatus}`} />
               {syncStatusNames[syncStatus as SyncStatus] || syncStatus}
@@ -259,7 +273,20 @@ function Shell() {
           </div>
         </header>
         <main>
-          <Routes>
+          {(storageMessage || transferMessage) && (
+            <div className="notice storage-notice" role={storageStatus === "error" ? "alert" : "status"}>
+              <p>{transferMessage || storageMessage}</p>
+              <div className="settings-actions">
+                <button onClick={() => { void retryStorage().catch(() => {}); }}>
+                  <RefreshCw size={16} />{storageBlocked ? "重新读取数据" : "重试保存"}
+                </button>
+                <button onClick={() => { if (isDesktopRuntime()) void importData(); else recoveryInputRef.current?.click(); }}><Upload size={16} />从 JSON 恢复</button>
+                {!storageBlocked && <button onClick={() => { void exportData(); }}><Download size={16} />导出当前数据</button>}
+                <input ref={recoveryInputRef} type="file" accept="application/json" hidden aria-label="选择恢复文件" onChange={(event) => { const file = event.target.files?.[0]; if (file) void importData(file); event.target.value = ""; }} />
+              </div>
+            </div>
+          )}
+          {storageBlocked ? <p role="alert">本地数据读取失败，已停止编辑和同步。请选择重新读取，或从 JSON 备份恢复。</p> : apiConfigured && apiUser && !apiOnboardingComplete ? <Onboarding /> : <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/calendar" element={<Calendar />} />
             <Route path="/tasks" element={<Tasks />} />
@@ -276,12 +303,12 @@ function Shell() {
               }
             />
             <Route path="*" element={<Navigate to="/" replace />} />
-          </Routes>
+          </Routes>}
         </main>
       </div>
       {auth && (
         <Modal
-          title={cloudConfigured ? "账号与云端同步" : "账号与同步"}
+          title={apiConfigured ? "服务器账号" : cloudConfigured ? "账号与云端同步" : "账号与同步"}
           onClose={() => {
             setAuth(false);
             setAuthError("");
@@ -305,7 +332,7 @@ function SettingsPage({
   onImport: (file?: File) => void;
   setSettings: (v: boolean) => void;
 }) {
-  const { data, setData, syncStatus, syncMessage, cloudConfigured } = usePlanner();
+  const { data, setData, syncStatus, syncMessage, cloudConfigured, apiConfigured } = usePlanner();
   const [saved, setSaved] = useState(false);
   return (
     <>
@@ -514,9 +541,11 @@ function SettingsPage({
                 type="file"
                 accept="application/json"
                 hidden
-                onChange={(e) =>
-                  e.target.files?.[0] && onImport(e.target.files[0])
-                }
+                aria-label="恢复数据"
+                onChange={(e) => {
+                  if (e.target.files?.[0]) onImport(e.target.files[0]);
+                  e.target.value = "";
+                }}
               />
             </label>
             <button
@@ -534,7 +563,7 @@ function SettingsPage({
           </p>
         </section>
         <section className="settings-section connection">
-          <h2>Supabase</h2>
+          <h2>{apiConfigured ? "服务器连接" : "Supabase"}</h2>
           <div className="connection-row">
             <span
               className={`status-dot ${cloudConfigured ? "connected" : "demo"}`}
@@ -542,12 +571,12 @@ function SettingsPage({
             <div>
               <strong>
                 {cloudConfigured
-                  ? "已检测到 Supabase 配置"
+                  ? apiConfigured ? "已连接 Node API" : "已检测到 Supabase 配置"
                   : "未配置 Supabase 环境变量"}
               </strong>
               <p>
                 {cloudConfigured
-                  ? "登录后启用多设备同步与 Realtime。"
+                  ? apiConfigured ? "登录后启用服务器保存、AI 规划和动态结算。" : "登录后启用多设备同步与 Realtime。"
                   : "本地 Demo 已完整可用；配置 .env 后重启开发服务器即可切换。配置项：VITE_SUPABASE_URL、VITE_SUPABASE_ANON_KEY。"}
               </p>
             </div>

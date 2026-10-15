@@ -39,6 +39,11 @@ export interface ScheduleBlock {
   status: "planned" | "completed";
   created_at: string;
   updated_at: string;
+  /** Optional server-generated daily learning guidance. */
+  advice_text?: string;
+  advice_topics?: string[];
+  completion_status?: "not_started" | "partial" | "completed" | "skipped";
+  feedback?: string;
 }
 export interface TimeLog {
   id: string;

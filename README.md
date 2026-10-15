@@ -18,6 +18,7 @@ npm run dev
 npm run typecheck
 npm test
 npm run build
+npm run desktop:test
 $env:PLAYWRIGHT_BROWSERS_PATH = 'D:\_projects\sjtu-study-planner\.playwright-browsers'
 npx playwright install chromium
 npm run test:e2e
@@ -50,11 +51,11 @@ npm run desktop:build
 
 ## 桌面数据、备份与迁移
 
-桌面版把计划保存到 Tauri 应用数据目录：`%APPDATA%\cn.sjtu.studyplanner\planner-data.json`。每次写入先把旧文件复制为 `planner-data.json.bak`，再通过临时文件替换主文件；启动发现主文件损坏时会自动读取最近备份，并在设置页显示恢复结果。主文件和备份都不可读取时不会覆盖数据，会显示错误并保留恢复/导入入口。
+桌面版把本地 Demo 保存到 Tauri 应用数据目录：`%APPDATA%\cn.sjtu.studyplanner\planner-data.json`；登录账号的离线缓存保存为同目录下的 `planner-account-<用户ID>.json`，与 Demo 分离。每次写入先验证并保存最近备份，再通过临时文件替换主文件；启动发现主文件损坏时会自动读取最近备份、把损坏文件另存为 `.corrupt-*`，并在界面显示恢复结果。主文件和备份都不可读取时会停止编辑和同步，不会覆盖原数据；可以重试读取、导出当前可读数据或从 JSON 恢复。
 
 在网页版“设置 → 数据管理”点击“导出本地数据”，然后在桌面版点击同一处的“恢复数据”并选择 JSON 文件，即可迁移浏览器计划。桌面版导出使用 Windows 系统保存对话框；网页版继续使用浏览器下载。建议定期把导出的 JSON 保存到 OneDrive、U 盘或其他独立位置，恢复时选择该文件即可。
 
-未配置 Supabase 时，网页版和桌面版都提供完整本地 Demo，离线修改会持续保存，不需要登录。配置 `VITE_SUPABASE_URL` 与 `VITE_SUPABASE_ANON_KEY`（或 publishable key）并重启后，桌面版仍先写本地文件，再在网络可用时自动同步；待同步标记、revision 和同步基线都随本地数据保存。退出应用后再次打开会继续同步。云端写入失败或版本冲突不会覆盖本地修改，现有合并逻辑会保留双方独立编辑并在设置页显示同步状态。
+未配置 Supabase 时，网页版和桌面版都提供完整本地 Demo，离线修改会持续保存，不需要登录。配置 `VITE_SUPABASE_URL` 与 `VITE_SUPABASE_ANON_KEY`（或 publishable key）并重启后，桌面版仍先写本地账号文件，再在网络可用时自动同步；待同步标记、revision 和同步基线都随本地数据保存。退出应用前会等待最后一次写入完成，重新打开会继续同步；恢复网络后自动重试。云端写入失败或版本冲突不会覆盖本地修改，现有合并逻辑会保留双方独立编辑并在设置页显示同步状态。
 
 `npm test` 运行独立排程算法测试；Playwright 覆盖桌面与 Pixel 7 手机视口。`npm run build` 先做 TypeScript 检查，再生成 `apps/web/dist`。所有源码、依赖缓存和测试产物可保留在 D 盘。
 
@@ -106,8 +107,36 @@ VITE_SUPABASE_ANON_KEY=YOUR_PUBLIC_ANON_KEY
 ## 目录
 
 ```text
+apps/api/                  Node.js / Fastify API、AI 接口与 PostgreSQL schema
 apps/web/                 React / TypeScript / Vite 应用与本地/云端存储
 packages/planner-engine/  独立排程引擎、共享类型、Vitest 测试
 supabase/migrations/      PostgreSQL schema、RLS、Realtime、兼容迁移
 tests/                    Playwright 页面与移动端交互测试
 ```
+
+## Node API、AI 与 Docker
+
+新流程可以使用自有服务器上的 Node API。API 负责注册登录、备考资料、AI 课程与事项草案、每日建议和每日结算；浏览器不会接触 AI 密钥。复制 `apps/api/.env.example` 为 `apps/api/.env`，填写 `JWT_ACCESS_SECRET`、`JWT_REFRESH_SECRET`、`WEB_ORIGIN`，以及兼容 OpenAI Chat Completions 的 `AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL`。不填写 AI 密钥时，服务器使用确定性草案和建议回退，便于本地验证完整流程。
+
+本地启动 API（需要 PostgreSQL）：
+
+```powershell
+npm run api:dev
+```
+
+Linux 服务器使用 Docker：
+
+```bash
+cd apps/api
+cp .env.example .env
+# 编辑 .env，至少修改两个 JWT secret、WEB_ORIGIN 和 AI 配置
+docker compose up --build -d
+```
+
+然后在 `apps/web/.env.local` 设置：
+
+```dotenv
+VITE_API_URL=http://127.0.0.1:8787
+```
+
+重启 Vite 后，注册入口会进入分步备考向导。用户确认 AI 草案后，服务器生成直到考试日的每日安排；“结束今天”会提交实际用时、完成程度和反馈，并自动调整后续安排。服务器不可用时，原有 localStorage Demo 仍可运行；API 模式下正式账号数据保存在 PostgreSQL。
