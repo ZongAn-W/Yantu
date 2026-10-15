@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "研途学习工作台",
+  "productName": "不白学",
   "version": "1.0.0",
   "identifier": "cn.sjtu.studyplanner",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "研途 · 上海交大 408 学习工作台",
+        "title": "不白学 · 考研执行台",
         "width": 1280,
         "height": 820,
         "minWidth": 760,

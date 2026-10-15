@@ -1,8 +1,8 @@
 [package]
 name = "sjtu-study-planner"
 version = "1.0.0"
-description = "上海交大 408 考研学习工作台"
-authors = ["SJTU Study Planner"]
+description = "不白学 - 考研学习计划工具"
+authors = ["不白学"]
 edition = "2021"
 
 [lib]

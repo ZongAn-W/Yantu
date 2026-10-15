@@ -157,7 +157,7 @@ function Shell() {
           密码
           <input
             type="password"
-            minLength={6}
+            minLength={8}
             required
             autoComplete={
               authMode === "login" ? "current-password" : "new-password"
@@ -199,8 +199,8 @@ function Shell() {
             <GraduationCap size={20} />
           </div>
           <div>
-            <strong>研途</strong>
-            <span>学习工作台</span>
+            <strong>不白学</strong>
+            <span>考研执行台</span>
           </div>
           <button
             className="mobile-close icon-button"
@@ -255,7 +255,7 @@ function Shell() {
             <Menu />
           </button>
           <div className="breadcrumb">
-            {nav.find((n) => n.to === location.pathname)?.label || "研途"}
+            {nav.find((n) => n.to === location.pathname)?.label || "不白学"}
           </div>
           <div className="topbar-actions">
             {isDesktopRuntime() && <span className="storage-status" role="status">{storageStatusText}</span>}

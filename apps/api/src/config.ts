@@ -1,6 +1,11 @@
 import "dotenv/config";
 
 const required = (name: string, fallback = "") => process.env[name]?.trim() || fallback;
+const aiReasoningEffort = required("AI_REASONING_EFFORT", "max");
+
+if (!["none", "low", "high", "max"].includes(aiReasoningEffort)) {
+  throw new Error("AI_REASONING_EFFORT must be one of: none, low, high, max");
+}
 
 export const config = {
   port: Number(process.env.PORT || 8787),
@@ -10,7 +15,8 @@ export const config = {
   webOrigin: required("WEB_ORIGIN", "http://127.0.0.1:5173"),
   aiBaseUrl: required("AI_BASE_URL", "https://api.openai.com/v1").replace(/\/$/, ""),
   aiApiKey: required("AI_API_KEY"),
-  aiModel: required("AI_MODEL", "gpt-4o-mini"),
+  aiModel: required("AI_MODEL", "deepseek-flash"),
+  aiReasoningEffort,
 };
 
 if (process.env.NODE_ENV === "production" &&

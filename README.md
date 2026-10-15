@@ -1,4 +1,4 @@
-# 研途 · 上海交大 408 考研学习工作台
+# 不白学 · 考研执行台
 
 面向上海理工大学计算机专业大三学生的单用户统考计划工具。首页直接进入今日学习任务。每日学习计划只列任务与时长，学习顺序由你决定；固定课程、考试和休息可保留具体时刻。
 
@@ -116,7 +116,7 @@ tests/                    Playwright 页面与移动端交互测试
 
 ## Node API、AI 与 Docker
 
-新流程可以使用自有服务器上的 Node API。API 负责注册登录、备考资料、AI 课程与事项草案、每日建议和每日结算；浏览器不会接触 AI 密钥。复制 `apps/api/.env.example` 为 `apps/api/.env`，填写 `JWT_ACCESS_SECRET`、`JWT_REFRESH_SECRET`、`WEB_ORIGIN`，以及兼容 OpenAI Chat Completions 的 `AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL`。不填写 AI 密钥时，服务器使用确定性草案和建议回退，便于本地验证完整流程。
+新流程可以使用自有服务器上的 Node API。API 负责注册登录、备考资料、AI 课程与事项草案、每日建议和每日结算；浏览器不会接触 AI 密钥。复制 `apps/api/.env.example` 为 `apps/api/.env`，填写 `JWT_ACCESS_SECRET`、`JWT_REFRESH_SECRET`、`WEB_ORIGIN`，以及兼容 OpenAI Chat Completions 的 `AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL` 和 `AI_REASONING_EFFORT`。DeepSeek V4.1 Flash 使用 `AI_BASE_URL=https://api.deepseek.com`、`AI_MODEL=deepseek-flash`；`AI_REASONING_EFFORT=max` 启用最大推理强度。不填写 AI 密钥时，服务器使用确定性草案和建议回退，便于本地验证完整流程。
 
 本地启动 API（需要 PostgreSQL）：
 

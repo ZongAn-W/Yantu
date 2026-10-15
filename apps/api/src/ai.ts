@@ -36,6 +36,7 @@ async function callModel(profile: ProfileInput): Promise<PlanDraft> {
     headers: { "content-type": "application/json", authorization: `Bearer ${config.aiApiKey}` },
     body: JSON.stringify({
       model: config.aiModel,
+      reasoning_effort: config.aiReasoningEffort,
       temperature: 0.2,
       response_format: { type: "json_object" },
       messages: [
@@ -53,14 +54,14 @@ async function callModel(profile: ProfileInput): Promise<PlanDraft> {
 
 export async function createPlanDraft(profile: ProfileInput) {
   if (!config.aiApiKey) return fallback(profile);
-  try { return await callModel(profile); } catch { return fallback(profile); }
+  return callModel(profile);
 }
 
 export async function adviceFor(item: { title: string; description: string }, date: string, feedback = "") {
   const fallbackAdvice = () => ({ advice_text: `${item.title}：${item.description || "完成本事项的一个小段落并记录卡点。"}`, advice_topics: feedback ? ["根据昨日反馈复习", date] : [date] });
   if (!config.aiApiKey) return fallbackAdvice();
   try {
-    const response = await fetch(`${config.aiBaseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${config.aiApiKey}` }, body: JSON.stringify({ model: config.aiModel, temperature: 0.2, response_format: { type: "json_object" }, messages: [{ role: "system", content: "只返回 JSON：{advice_text:string,advice_topics:string[]}" }, { role: "user", content: JSON.stringify({ item, date, feedback }) }] }) });
+    const response = await fetch(`${config.aiBaseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${config.aiApiKey}` }, body: JSON.stringify({ model: config.aiModel, reasoning_effort: config.aiReasoningEffort, temperature: 0.2, response_format: { type: "json_object" }, messages: [{ role: "system", content: "只返回 JSON：{advice_text:string,advice_topics:string[]}" }, { role: "user", content: JSON.stringify({ item, date, feedback }) }] }) });
     if (!response.ok) throw new Error("AI advice failed");
     const body = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
     const parsed = JSON.parse(body.choices?.[0]?.message?.content || "{}");

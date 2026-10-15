@@ -1,4 +1,4 @@
-# 研途学习工作台
+# 不白学 · 考研执行台
 <!-- impeccable:product-schema 1 -->
 ## Platform
 web

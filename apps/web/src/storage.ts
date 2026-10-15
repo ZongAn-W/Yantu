@@ -64,7 +64,7 @@ function browserDownload(data: PlannerData): void {
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `sjtu-study-planner-${new Date().toISOString().slice(0, 10)}.json`;
+  anchor.download = `不白学-${new Date().toISOString().slice(0, 10)}.json`;
   anchor.click();
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
@@ -204,7 +204,7 @@ export class DesktopPlannerStorage implements PlannerStorage {
     if (!bridge) return new BrowserPlannerStorage().exportJson(data);
     const { save } = await import("@tauri-apps/plugin-dialog");
     const selected = await save({
-      defaultPath: `sjtu-study-planner-${new Date().toISOString().slice(0, 10)}.json`,
+      defaultPath: `不白学-${new Date().toISOString().slice(0, 10)}.json`,
       filters: [{ name: "JSON", extensions: ["json"] }],
     });
     if (selected) await bridge.invoke("write_json_file", { path: selected, data });
