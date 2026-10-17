@@ -17,6 +17,7 @@ class TaskDraft {
     required this.earliestDate,
     required this.isFixed,
     required this.status,
+    this.deadlineKind = ItemDateKind.deadline,
   });
 
   final String title;
@@ -29,6 +30,9 @@ class TaskDraft {
   final bool isFixed;
   final TaskStatus status;
 
+  /// 截止日期是真实日期，还是仅表示本期安排边界。
+  final ItemDateKind deadlineKind;
+
   TaskDraft copyWith({
     String? title,
     String? description,
@@ -39,6 +43,7 @@ class TaskDraft {
     String? earliestDate,
     bool? isFixed,
     TaskStatus? status,
+    ItemDateKind? deadlineKind,
   }) => TaskDraft(
     title: title ?? this.title,
     description: description ?? this.description,
@@ -49,6 +54,7 @@ class TaskDraft {
     earliestDate: earliestDate ?? this.earliestDate,
     isFixed: isFixed ?? this.isFixed,
     status: status ?? this.status,
+    deadlineKind: deadlineKind ?? this.deadlineKind,
   );
 
   static TaskDraft blank(PlannerData data, String today) => TaskDraft(
@@ -73,6 +79,7 @@ class TaskDraft {
     earliestDate: task.earliestDate ?? task.deadline,
     isFixed: task.isFixed,
     status: task.status,
+    deadlineKind: task.deadlineKind,
   );
 }
 
@@ -102,10 +109,11 @@ PlannerData applyTaskDraft(
   final subjectId = draft.subjectId.trim();
   final error = validateTaskDraft(
     draft,
-    completedMinutes: data.tasks
-        .where((task) => task.id == taskId)
-        .firstOrNull
-        ?.completedMinutes ??
+    completedMinutes:
+        data.tasks
+            .where((task) => task.id == taskId)
+            .firstOrNull
+            ?.completedMinutes ??
         0,
   );
   if (error != null) throw StateError(error);
@@ -138,6 +146,7 @@ PlannerData applyTaskDraft(
           completedMinutes: 0,
           priority: draft.priority,
           deadline: draft.deadline,
+          deadlineKind: draft.deadlineKind,
           earliestDate: draft.earliestDate,
           isFixed: draft.isFixed,
           status: draft.status,
@@ -161,6 +170,7 @@ PlannerData applyTaskDraft(
                 estimatedMinutes: draft.estimatedMinutes,
                 priority: draft.priority,
                 deadline: draft.deadline,
+                deadlineKind: draft.deadlineKind,
                 earliestDate: draft.earliestDate,
                 isFixed: draft.isFixed,
                 status: draft.status,
@@ -206,10 +216,9 @@ ScheduleResult scheduleTaskDay(
 }) {
   final task = data.tasks.where((item) => item.id == taskId).firstOrNull;
   if (task == null) throw StateError('请先创建并选择事项');
+  if (task.status == TaskStatus.archived) throw StateError('已归档事项不可安排');
   final remaining = unscheduledTaskMinutes(data, task, from: date);
-  final requested = minutes == null
-      ? remaining
-      : math.min(remaining, minutes);
+  final requested = minutes == null ? remaining : math.min(remaining, minutes);
   if (requested <= 0) {
     throw StateError('请填写大于零的安排时长');
   }

@@ -37,7 +37,7 @@ PlannerData progressFixture() {
 }
 
 void main() {
-  test('totals, remaining budget and exam date come from the plan', () {
+  test('totals, remaining budget and target date come from the plan', () {
     final data = progressFixture();
     final metrics = progressMetrics(
       data,
@@ -51,7 +51,7 @@ void main() {
       reason: '预算扣除各事项 completed_minutes；日志由 refreshTaskProgress 汇总',
     );
     expect(metrics.overallMinutes, 15600 + 600);
-    expect(metrics.examDate, '2027-12-25');
+    expect(metrics.targetDate, '2027-12-25');
     expect(metrics.week, hasLength(7));
     expect(metrics.week.last, '2026-10-16');
     expect(metrics.week.first, '2026-10-10');
@@ -137,7 +137,10 @@ void main() {
     expect(paced.forecast, isNotNull);
     expect(paced.paceMinutes, 35);
     expect(paced.lagging, isTrue);
-    expect(paced.forecast!.compareTo(base.profile.examDate), greaterThan(0));
+    expect(
+      paced.forecast!.compareTo(base.profile.resolvedTargetDate),
+      greaterThan(0),
+    );
   });
 
   test('heat map covers the month with a Monday-leading offset', () {

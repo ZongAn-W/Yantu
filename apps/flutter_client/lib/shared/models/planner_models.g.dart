@@ -98,10 +98,36 @@ _Profile _$ProfileFromJson(Map<String, dynamic> json) => $checkedCreate(
         'planning_mode',
         (v) => $enumDecodeNullable(_$PlanningModeEnumMap, v),
       ),
-      targetSchool: $checkedConvert('target_school', (v) => v as String),
-      targetProgram: $checkedConvert('target_program', (v) => v as String),
-      examDate: $checkedConvert('exam_date', (v) => v as String),
-      examEndDate: $checkedConvert('exam_end_date', (v) => v as String),
+      goalText: $checkedConvert('goal_text', (v) => v as String? ?? ''),
+      goalType: $checkedConvert(
+        'goal_type',
+        (v) => $enumDecodeNullable(_$GoalTypeEnumMap, v) ?? GoalType.other,
+      ),
+      goalSubtype: $checkedConvert('goal_subtype', (v) => v as String? ?? ''),
+      targetDate: $checkedConvert('target_date', (v) => v as String? ?? ''),
+      targetDateConfirmed: $checkedConvert(
+        'target_date_confirmed',
+        (v) => v as bool? ?? false,
+      ),
+      planStartDate: $checkedConvert(
+        'plan_start_date',
+        (v) => v as String? ?? '',
+      ),
+      planEndDate: $checkedConvert('plan_end_date', (v) => v as String? ?? ''),
+      weeklyMinutes: $checkedConvert(
+        'weekly_minutes',
+        (v) => (v as Map<String, dynamic>?)?.map(
+          (k, e) => MapEntry(k, (e as num).toInt()),
+        ),
+      ),
+      constraints: $checkedConvert('constraints', (v) => v as String? ?? ''),
+      targetSchool: $checkedConvert('target_school', (v) => v as String? ?? ''),
+      targetProgram: $checkedConvert(
+        'target_program',
+        (v) => v as String? ?? '',
+      ),
+      examDate: $checkedConvert('exam_date', (v) => v as String? ?? ''),
+      examEndDate: $checkedConvert('exam_end_date', (v) => v as String? ?? ''),
       dailyLimitMinutes: $checkedConvert(
         'daily_limit_minutes',
         (v) => (v as num).toInt(),
@@ -133,6 +159,14 @@ _Profile _$ProfileFromJson(Map<String, dynamic> json) => $checkedCreate(
   fieldKeyMap: const {
     'userId': 'user_id',
     'storedPlanningMode': 'planning_mode',
+    'goalText': 'goal_text',
+    'goalType': 'goal_type',
+    'goalSubtype': 'goal_subtype',
+    'targetDate': 'target_date',
+    'targetDateConfirmed': 'target_date_confirmed',
+    'planStartDate': 'plan_start_date',
+    'planEndDate': 'plan_end_date',
+    'weeklyMinutes': 'weekly_minutes',
     'targetSchool': 'target_school',
     'targetProgram': 'target_program',
     'examDate': 'exam_date',
@@ -149,6 +183,15 @@ _Profile _$ProfileFromJson(Map<String, dynamic> json) => $checkedCreate(
 Map<String, dynamic> _$ProfileToJson(_Profile instance) => <String, dynamic>{
   'user_id': instance.userId,
   'planning_mode': ?_$PlanningModeEnumMap[instance.storedPlanningMode],
+  'goal_text': instance.goalText,
+  'goal_type': _$GoalTypeEnumMap[instance.goalType]!,
+  'goal_subtype': instance.goalSubtype,
+  'target_date': instance.targetDate,
+  'target_date_confirmed': instance.targetDateConfirmed,
+  'plan_start_date': instance.planStartDate,
+  'plan_end_date': instance.planEndDate,
+  'weekly_minutes': ?instance.weeklyMinutes,
+  'constraints': instance.constraints,
   'target_school': instance.targetSchool,
   'target_program': instance.targetProgram,
   'exam_date': instance.examDate,
@@ -165,6 +208,14 @@ Map<String, dynamic> _$ProfileToJson(_Profile instance) => <String, dynamic>{
 const _$PlanningModeEnumMap = {
   PlanningMode.daily: 'daily',
   PlanningMode.timed: 'timed',
+};
+
+const _$GoalTypeEnumMap = {
+  GoalType.exam: 'exam',
+  GoalType.course: 'course',
+  GoalType.skill: 'skill',
+  GoalType.selfStudy: 'self_study',
+  GoalType.other: 'other',
 };
 
 _Subject _$SubjectFromJson(Map<String, dynamic> json) =>
@@ -207,6 +258,12 @@ _Task _$TaskFromJson(Map<String, dynamic> json) => $checkedCreate(
       ),
       priority: $checkedConvert('priority', (v) => _priority(v)),
       deadline: $checkedConvert('deadline', (v) => v as String),
+      deadlineKind: $checkedConvert(
+        'deadline_kind',
+        (v) =>
+            $enumDecodeNullable(_$ItemDateKindEnumMap, v) ??
+            ItemDateKind.deadline,
+      ),
       earliestDate: $checkedConvert('earliest_date', (v) => v as String?),
       isFixed: $checkedConvert('is_fixed', (v) => v as bool),
       status: $checkedConvert(
@@ -223,6 +280,7 @@ _Task _$TaskFromJson(Map<String, dynamic> json) => $checkedCreate(
     'subjectId': 'subject_id',
     'estimatedMinutes': 'estimated_minutes',
     'completedMinutes': 'completed_minutes',
+    'deadlineKind': 'deadline_kind',
     'earliestDate': 'earliest_date',
     'isFixed': 'is_fixed',
     'createdAt': 'created_at',
@@ -240,11 +298,17 @@ Map<String, dynamic> _$TaskToJson(_Task instance) => <String, dynamic>{
   'completed_minutes': instance.completedMinutes,
   'priority': instance.priority,
   'deadline': instance.deadline,
+  'deadline_kind': _$ItemDateKindEnumMap[instance.deadlineKind]!,
   'earliest_date': ?instance.earliestDate,
   'is_fixed': instance.isFixed,
   'status': _$TaskStatusEnumMap[instance.status]!,
   'created_at': instance.createdAt,
   'updated_at': instance.updatedAt,
+};
+
+const _$ItemDateKindEnumMap = {
+  ItemDateKind.deadline: 'deadline',
+  ItemDateKind.planEnd: 'plan_end',
 };
 
 const _$TaskStatusEnumMap = {
@@ -253,6 +317,7 @@ const _$TaskStatusEnumMap = {
   TaskStatus.completed: 'completed',
   TaskStatus.delayed: 'delayed',
   TaskStatus.conflict: 'conflict',
+  TaskStatus.archived: 'archived',
 };
 
 _ScheduleBlock _$ScheduleBlockFromJson(Map<String, dynamic> json) =>

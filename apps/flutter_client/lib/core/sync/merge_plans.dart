@@ -84,9 +84,9 @@ MergeResult mergePlans(
       before['profile'],
       here['profile'],
       there['profile'],
-      '备考设置',
+      '学习目标设置',
     ),
-    'phases': merge(before['phases'], here['phases'], there['phases'], '备考阶段'),
+    'phases': merge(before['phases'], here['phases'], there['phases'], '学习阶段'),
   };
   if ([before, here, there].any((json) => json['daily_feedback'] != null)) {
     result['daily_feedback'] = merge(

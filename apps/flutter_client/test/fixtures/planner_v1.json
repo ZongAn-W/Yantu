@@ -3,6 +3,14 @@
   "profile": {
     "user_id": "1d4fba85-b73c-48c9-8039-fafdd77c607c",
     "planning_mode": "daily",
+    "goal_text": "准备计算机专业研究生考试",
+    "goal_type": "exam",
+    "goal_subtype": "考研",
+    "target_date": "2027-12-25",
+    "target_date_confirmed": false,
+    "plan_start_date": "2026-10-01",
+    "plan_end_date": "2027-12-26",
+    "constraints": "",
     "target_school": "上海交通大学",
     "target_program": "计算机相关专业 · 408 统考（待正式报考确认）",
     "exam_date": "2027-12-25",
@@ -13,7 +21,16 @@
     "subject_limit_minutes": 240,
     "study_start_minute": 480,
     "study_end_minute": 1320,
-    "foundation": "上海理工大学计算机专业大三；绩点 3.4；年级排名 30 几；六级 350；408 相关课程约 4.0。仅规划统考，不考虑推免。"
+    "foundation": "上海理工大学计算机专业大三；绩点 3.4；年级排名 30 几；六级 350；408 相关课程约 4.0。仅规划统考，不考虑推免。",
+    "weekly_minutes": {
+      "0": 480,
+      "1": 480,
+      "2": 480,
+      "3": 480,
+      "4": 480,
+      "5": 480,
+      "6": 480
+    }
   },
   "subjects": [
     {
@@ -39,7 +56,8 @@
       "is_fixed": false,
       "status": "not_started",
       "created_at": "2026-10-16T12:40:00.528Z",
-      "updated_at": "2026-10-16T12:40:00.528Z"
+      "updated_at": "2026-10-16T12:40:00.528Z",
+      "deadline_kind": "deadline"
     }
   ],
   "blocks": [

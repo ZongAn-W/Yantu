@@ -67,7 +67,9 @@ class ProgressMetrics {
     required this.totalActual,
     required this.remainingMinutes,
     required this.overallMinutes,
-    required this.examDate,
+    required this.targetDate,
+    required this.targetConfirmed,
+    required this.cycleEnd,
     required this.forecast,
     required this.paceMinutes,
     required this.lagging,
@@ -87,8 +89,12 @@ class ProgressMetrics {
   final int remainingMinutes;
   final int overallMinutes;
 
-  /// Exam date from the profile, shown as the burndown target.
-  final String examDate;
+  /// 用户目标日期，可能为空；与本次规划周期分别表达。
+  final String targetDate;
+  final bool targetConfirmed;
+
+  /// 本次规划周期的结束日期。
+  final String cycleEnd;
 
   /// `null` until there is at least one study record.
   final String? forecast;
@@ -112,9 +118,12 @@ ProgressMetrics progressMetrics(
   final week = [for (var index = 6; index >= 0; index--) addDate(date, -index)];
   final weekSet = week.toSet();
   final taskById = {for (final task in data.tasks) task.id: task};
+  final activeTasks = data.tasks
+      .where((task) => task.status != TaskStatus.archived)
+      .toList();
 
   final totalActual = data.logs.fold<int>(0, (sum, log) => sum + log.minutes);
-  final remainingMinutes = data.tasks.fold<int>(
+  final remainingMinutes = activeTasks.fold<int>(
     0,
     (sum, task) =>
         sum + math.max(0, task.estimatedMinutes - task.completedMinutes),
@@ -141,10 +150,13 @@ ProgressMetrics progressMetrics(
   } else {
     final projected = addDate(date, (remainingMinutes / pace).ceil());
     forecast = projected;
-    lagging = projected.compareTo(data.profile.examDate) > 0;
+    final horizon = data.profile.resolvedTargetDate.isNotEmpty
+        ? data.profile.resolvedTargetDate
+        : data.profile.resolvedPlanEnd(date);
+    lagging = projected.compareTo(horizon) > 0;
   }
 
-  final overall = data.tasks.fold<int>(
+  final overall = activeTasks.fold<int>(
     0,
     (sum, task) => sum + task.estimatedMinutes,
   );
@@ -184,7 +196,9 @@ ProgressMetrics progressMetrics(
     final day = addDate(monthStartDate, index);
     final stats = dayStats(data, day);
     final hasPlan = data.blocks.any((block) => block.date == day);
-    final hasActual = data.logs.any((log) => log.date == day && log.minutes > 0);
+    final hasActual = data.logs.any(
+      (log) => log.date == day && log.minutes > 0,
+    );
     if (day.compareTo(date) <= 0 && hasPlan && !hasActual) interrupted++;
     heatCells.add(
       HeatCell(
@@ -192,24 +206,25 @@ ProgressMetrics progressMetrics(
         actual: stats.actual,
         planned: stats.planned,
         rate: stats.rate,
-        level: stats.actual == 0
-            ? 0
-            : math.min(4, (stats.actual / 120).ceil()),
+        level: stats.actual == 0 ? 0 : math.min(4, (stats.actual / 120).ceil()),
         past: day.compareTo(date) <= 0,
       ),
     );
   }
 
-  final burnDays = [for (var index = 14; index >= 0; index--) addDate(date, -index)];
+  final burnDays = [
+    for (var index = 14; index >= 0; index--) addDate(date, -index),
+  ];
   final burnValues = [
     for (final day in burnDays)
       math.max(
         0,
         overall -
-            data.tasks.fold<int>(0, (sum, task) {
+            activeTasks.fold<int>(0, (sum, task) {
               final logged = data.logs
                   .where(
-                    (log) => log.taskId == task.id && log.date.compareTo(day) <= 0,
+                    (log) =>
+                        log.taskId == task.id && log.date.compareTo(day) <= 0,
                   )
                   .fold<int>(0, (inner, log) => inner + log.minutes);
               return sum + math.min(task.estimatedMinutes, logged);
@@ -219,7 +234,7 @@ ProgressMetrics progressMetrics(
 
   final subjectProgress = <SubjectProgress>[];
   for (final subject in data.subjects) {
-    final tasks = data.tasks
+    final tasks = activeTasks
         .where((task) => task.subjectId == subject.id)
         .toList();
     final estimated = tasks.fold<int>(
@@ -230,10 +245,9 @@ ProgressMetrics progressMetrics(
       0,
       (sum, task) => sum + task.completedMinutes,
     );
-    final actual = tasks.fold<int>(
-      0,
-      (sum, task) => sum + taskTotalMinutes(data, task.id),
-    );
+    final actual = data.tasks
+        .where((task) => task.subjectId == subject.id)
+        .fold<int>(0, (sum, task) => sum + taskTotalMinutes(data, task.id));
     subjectProgress.add(
       SubjectProgress(
         subject: subject,
@@ -251,7 +265,9 @@ ProgressMetrics progressMetrics(
     totalActual: totalActual,
     remainingMinutes: remainingMinutes,
     overallMinutes: overall,
-    examDate: data.profile.examDate,
+    targetDate: data.profile.resolvedTargetDate,
+    targetConfirmed: data.profile.targetDateConfirmed,
+    cycleEnd: data.profile.resolvedPlanEnd(date),
     forecast: forecast,
     paceMinutes: pace.isFinite ? pace : 0,
     lagging: lagging,

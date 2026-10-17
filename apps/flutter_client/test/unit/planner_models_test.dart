@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:sjtu_study_planner_client/core/storage/planner_json.dart';
 import 'package:sjtu_study_planner_client/shared/models/planner_models.dart';
 
 JsonMap readPlannerFixture() => JsonMap.from(
@@ -59,6 +60,68 @@ void main() {
       expect(() => PlannerData.fromJson(source), throwsA(isA<Exception>()));
     },
   );
+
+  test('a goal without a target date survives export, validation and import', () {
+    final json = readPlannerFixture();
+    final profile = JsonMap.from(json['profile'] as Map)
+      ..['goal_text'] = '长期阅读中国近现代史'
+      ..['goal_type'] = 'self_study'
+      ..['goal_subtype'] = ''
+      ..['target_date'] = ''
+      ..['target_date_confirmed'] = false
+      ..['plan_start_date'] = '2026-10-17'
+      ..['plan_end_date'] = '2026-11-13'
+      // 新文档不再写旧镜像字段；客户端把缺失的镜像保留为空字符串。
+      ..['exam_date'] = ''
+      ..['exam_end_date'] = ''
+      ..['weekly_minutes'] = {
+        '0': 0,
+        '1': 120,
+        '2': 0,
+        '3': 120,
+        '4': 0,
+        '5': 120,
+        '6': 0,
+      };
+    final tasks = [
+      for (final row in json['tasks'] as List)
+        JsonMap.from(row as Map)..['deadline_kind'] = 'plan_end',
+    ];
+    final source = JsonMap.from(json)
+      ..['profile'] = profile
+      ..['tasks'] = tasks;
+    final encoded = jsonEncode(source);
+    final parsed = parsePlannerJson(encoded);
+    expect(parsed.profile.resolvedTargetDate, isEmpty);
+    expect(parsed.profile.goalType, GoalType.selfStudy);
+    expect(parsed.profile.resolvedPlanEnd('2026-10-17'), '2026-11-13');
+    expect(parsed.profile.weekMinutes['2'], 0);
+    expect(parsed.tasks.single.deadlineKind, ItemDateKind.planEnd);
+    expect(parsed.toJson(), source);
+  });
+
+  test('legacy plans without the new fields read as an unknown date and a real deadline', () {
+    final source = readPlannerFixture();
+    final profile = JsonMap.from(source['profile'] as Map)
+      ..remove('goal_text')
+      ..remove('goal_type')
+      ..remove('target_date')
+      ..remove('plan_start_date')
+      ..remove('plan_end_date')
+      ..remove('weekly_minutes');
+    final task = JsonMap.from((source['tasks'] as List).single as Map)
+      ..remove('deadline_kind');
+    final parsed = PlannerData.fromJson(
+      JsonMap.from(source)
+        ..['profile'] = profile
+        ..['tasks'] = [task],
+    );
+    expect(parsed.profile.goalType, GoalType.other);
+    expect(parsed.profile.resolvedTargetDate, '2027-12-25');
+    expect(parsed.profile.resolvedPlanEnd('2026-10-17'), '2027-12-26');
+    expect(parsed.profile.weekMinutes['1'], parsed.profile.dailyLimitMinutes);
+    expect(parsed.tasks.single.deadlineKind, ItemDateKind.deadline);
+  });
 
   test(
     'sync metadata preserves revision, pending, base and camelCase updatedAt',

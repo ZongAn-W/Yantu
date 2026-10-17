@@ -11,13 +11,18 @@ const aiConfig = vi.hoisted(() => ({
 
 vi.mock("./config.js", () => ({ config: aiConfig }));
 
-const profile = ProfileSchema.parse({ exam_type: "考研", exam_date: "2027-12-25" });
+const profile = ProfileSchema.parse({
+  goal_text: "从零学习 Python，能处理 CSV 并完成数据分析练习",
+  goal_type: "skill",
+  plan_start_date: "2026-10-17",
+  plan_end_date: "2027-12-25",
+});
 const draft = {
   courses: [{ id: "math", name: "数学", description: "数学复习", priority: 3 }],
   items: [{
     id: "math-1", course_id: "math", title: "极限练习", description: "练习极限计算",
     completion_criteria: "完成练习并订正", estimated_minutes: 60,
-    deadline: "2027-12-25", priority: 3,
+    deadline: "2027-12-25", deadline_kind: "deadline", priority: 3,
   }],
   analysis_summary: "按当前进度安排练习",
   assumptions: [],
@@ -43,9 +48,10 @@ describe("AI plan draft generation", () => {
     const result = await createPlanDraft(profile);
 
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(result.courses.map((course) => course.name)).toEqual(["数学", "英语", "专业课", "政治"]);
-    expect(result.items).toHaveLength(8);
-    expect(result.items.every((item) => item.deadline === profile.exam_date)).toBe(true);
+    expect(result.courses.map((course) => course.name)).toEqual(["基础入门", "动手练习", "综合实践"]);
+    expect(result.items).toHaveLength(6);
+    expect(result.items.every((item) => item.deadline === profile.plan_end_date)).toBe(true);
+    expect(result.items.every((item) => item.deadline_kind === "plan_end")).toBe(true);
   });
 
   it("returns validated model output using the configured model and reasoning effort", async () => {

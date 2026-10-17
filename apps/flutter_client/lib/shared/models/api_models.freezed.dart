@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$OnboardingProfile {
 
- String get examType; String get examDate; String get targetSchool; String get targetProgram; String get currentProgress; Map<String, int> get weeklyMinutes; String get constraintsText;
+ String get goalText; String get goalType; String get goalSubtype; String get targetDate; bool get targetDateConfirmed; String get planStartDate; String get planEndDate; String get targetSchool; String get targetProgram; String get currentProgress; Map<String, int> get weeklyMinutes; String get constraintsText;
 /// Create a copy of OnboardingProfile
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $OnboardingProfileCopyWith<OnboardingProfile> get copyWith => _$OnboardingProfil
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is OnboardingProfile&&(identical(other.examType, examType) || other.examType == examType)&&(identical(other.examDate, examDate) || other.examDate == examDate)&&(identical(other.targetSchool, targetSchool) || other.targetSchool == targetSchool)&&(identical(other.targetProgram, targetProgram) || other.targetProgram == targetProgram)&&(identical(other.currentProgress, currentProgress) || other.currentProgress == currentProgress)&&const DeepCollectionEquality().equals(other.weeklyMinutes, weeklyMinutes)&&(identical(other.constraintsText, constraintsText) || other.constraintsText == constraintsText));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is OnboardingProfile&&(identical(other.goalText, goalText) || other.goalText == goalText)&&(identical(other.goalType, goalType) || other.goalType == goalType)&&(identical(other.goalSubtype, goalSubtype) || other.goalSubtype == goalSubtype)&&(identical(other.targetDate, targetDate) || other.targetDate == targetDate)&&(identical(other.targetDateConfirmed, targetDateConfirmed) || other.targetDateConfirmed == targetDateConfirmed)&&(identical(other.planStartDate, planStartDate) || other.planStartDate == planStartDate)&&(identical(other.planEndDate, planEndDate) || other.planEndDate == planEndDate)&&(identical(other.targetSchool, targetSchool) || other.targetSchool == targetSchool)&&(identical(other.targetProgram, targetProgram) || other.targetProgram == targetProgram)&&(identical(other.currentProgress, currentProgress) || other.currentProgress == currentProgress)&&const DeepCollectionEquality().equals(other.weeklyMinutes, weeklyMinutes)&&(identical(other.constraintsText, constraintsText) || other.constraintsText == constraintsText));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,examType,examDate,targetSchool,targetProgram,currentProgress,const DeepCollectionEquality().hash(weeklyMinutes),constraintsText);
+int get hashCode => Object.hash(runtimeType,goalText,goalType,goalSubtype,targetDate,targetDateConfirmed,planStartDate,planEndDate,targetSchool,targetProgram,currentProgress,const DeepCollectionEquality().hash(weeklyMinutes),constraintsText);
 
 @override
 String toString() {
-  return 'OnboardingProfile(examType: $examType, examDate: $examDate, targetSchool: $targetSchool, targetProgram: $targetProgram, currentProgress: $currentProgress, weeklyMinutes: $weeklyMinutes, constraintsText: $constraintsText)';
+  return 'OnboardingProfile(goalText: $goalText, goalType: $goalType, goalSubtype: $goalSubtype, targetDate: $targetDate, targetDateConfirmed: $targetDateConfirmed, planStartDate: $planStartDate, planEndDate: $planEndDate, targetSchool: $targetSchool, targetProgram: $targetProgram, currentProgress: $currentProgress, weeklyMinutes: $weeklyMinutes, constraintsText: $constraintsText)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $OnboardingProfileCopyWith<$Res>  {
   factory $OnboardingProfileCopyWith(OnboardingProfile value, $Res Function(OnboardingProfile) _then) = _$OnboardingProfileCopyWithImpl;
 @useResult
 $Res call({
- String examType, String examDate, String targetSchool, String targetProgram, String currentProgress, Map<String, int> weeklyMinutes, String constraintsText
+ String goalText, String goalType, String goalSubtype, String targetDate, bool targetDateConfirmed, String planStartDate, String planEndDate, String targetSchool, String targetProgram, String currentProgress, Map<String, int> weeklyMinutes, String constraintsText
 });
 
 
@@ -65,10 +65,15 @@ class _$OnboardingProfileCopyWithImpl<$Res>
 
 /// Create a copy of OnboardingProfile
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? examType = null,Object? examDate = null,Object? targetSchool = null,Object? targetProgram = null,Object? currentProgress = null,Object? weeklyMinutes = null,Object? constraintsText = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? goalText = null,Object? goalType = null,Object? goalSubtype = null,Object? targetDate = null,Object? targetDateConfirmed = null,Object? planStartDate = null,Object? planEndDate = null,Object? targetSchool = null,Object? targetProgram = null,Object? currentProgress = null,Object? weeklyMinutes = null,Object? constraintsText = null,}) {
   return _then(_self.copyWith(
-examType: null == examType ? _self.examType : examType // ignore: cast_nullable_to_non_nullable
-as String,examDate: null == examDate ? _self.examDate : examDate // ignore: cast_nullable_to_non_nullable
+goalText: null == goalText ? _self.goalText : goalText // ignore: cast_nullable_to_non_nullable
+as String,goalType: null == goalType ? _self.goalType : goalType // ignore: cast_nullable_to_non_nullable
+as String,goalSubtype: null == goalSubtype ? _self.goalSubtype : goalSubtype // ignore: cast_nullable_to_non_nullable
+as String,targetDate: null == targetDate ? _self.targetDate : targetDate // ignore: cast_nullable_to_non_nullable
+as String,targetDateConfirmed: null == targetDateConfirmed ? _self.targetDateConfirmed : targetDateConfirmed // ignore: cast_nullable_to_non_nullable
+as bool,planStartDate: null == planStartDate ? _self.planStartDate : planStartDate // ignore: cast_nullable_to_non_nullable
+as String,planEndDate: null == planEndDate ? _self.planEndDate : planEndDate // ignore: cast_nullable_to_non_nullable
 as String,targetSchool: null == targetSchool ? _self.targetSchool : targetSchool // ignore: cast_nullable_to_non_nullable
 as String,targetProgram: null == targetProgram ? _self.targetProgram : targetProgram // ignore: cast_nullable_to_non_nullable
 as String,currentProgress: null == currentProgress ? _self.currentProgress : currentProgress // ignore: cast_nullable_to_non_nullable
@@ -159,10 +164,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String examType,  String examDate,  String targetSchool,  String targetProgram,  String currentProgress,  Map<String, int> weeklyMinutes,  String constraintsText)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String goalText,  String goalType,  String goalSubtype,  String targetDate,  bool targetDateConfirmed,  String planStartDate,  String planEndDate,  String targetSchool,  String targetProgram,  String currentProgress,  Map<String, int> weeklyMinutes,  String constraintsText)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _OnboardingProfile() when $default != null:
-return $default(_that.examType,_that.examDate,_that.targetSchool,_that.targetProgram,_that.currentProgress,_that.weeklyMinutes,_that.constraintsText);case _:
+return $default(_that.goalText,_that.goalType,_that.goalSubtype,_that.targetDate,_that.targetDateConfirmed,_that.planStartDate,_that.planEndDate,_that.targetSchool,_that.targetProgram,_that.currentProgress,_that.weeklyMinutes,_that.constraintsText);case _:
   return orElse();
 
 }
@@ -180,10 +185,10 @@ return $default(_that.examType,_that.examDate,_that.targetSchool,_that.targetPro
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String examType,  String examDate,  String targetSchool,  String targetProgram,  String currentProgress,  Map<String, int> weeklyMinutes,  String constraintsText)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String goalText,  String goalType,  String goalSubtype,  String targetDate,  bool targetDateConfirmed,  String planStartDate,  String planEndDate,  String targetSchool,  String targetProgram,  String currentProgress,  Map<String, int> weeklyMinutes,  String constraintsText)  $default,) {final _that = this;
 switch (_that) {
 case _OnboardingProfile():
-return $default(_that.examType,_that.examDate,_that.targetSchool,_that.targetProgram,_that.currentProgress,_that.weeklyMinutes,_that.constraintsText);case _:
+return $default(_that.goalText,_that.goalType,_that.goalSubtype,_that.targetDate,_that.targetDateConfirmed,_that.planStartDate,_that.planEndDate,_that.targetSchool,_that.targetProgram,_that.currentProgress,_that.weeklyMinutes,_that.constraintsText);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -200,10 +205,10 @@ return $default(_that.examType,_that.examDate,_that.targetSchool,_that.targetPro
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String examType,  String examDate,  String targetSchool,  String targetProgram,  String currentProgress,  Map<String, int> weeklyMinutes,  String constraintsText)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String goalText,  String goalType,  String goalSubtype,  String targetDate,  bool targetDateConfirmed,  String planStartDate,  String planEndDate,  String targetSchool,  String targetProgram,  String currentProgress,  Map<String, int> weeklyMinutes,  String constraintsText)?  $default,) {final _that = this;
 switch (_that) {
 case _OnboardingProfile() when $default != null:
-return $default(_that.examType,_that.examDate,_that.targetSchool,_that.targetProgram,_that.currentProgress,_that.weeklyMinutes,_that.constraintsText);case _:
+return $default(_that.goalText,_that.goalType,_that.goalSubtype,_that.targetDate,_that.targetDateConfirmed,_that.planStartDate,_that.planEndDate,_that.targetSchool,_that.targetProgram,_that.currentProgress,_that.weeklyMinutes,_that.constraintsText);case _:
   return null;
 
 }
@@ -214,12 +219,17 @@ return $default(_that.examType,_that.examDate,_that.targetSchool,_that.targetPro
 /// @nodoc
 @JsonSerializable()
 
-class _OnboardingProfile implements OnboardingProfile {
-  const _OnboardingProfile({required this.examType, required this.examDate, this.targetSchool = '', this.targetProgram = '', this.currentProgress = '', final  Map<String, int> weeklyMinutes = const {'0' : 0, '1' : 0, '2' : 0, '3' : 0, '4' : 0, '5' : 0, '6' : 0}, this.constraintsText = ''}): _weeklyMinutes = weeklyMinutes;
+class _OnboardingProfile extends OnboardingProfile {
+  const _OnboardingProfile({this.goalText = '', this.goalType = 'other', this.goalSubtype = '', this.targetDate = '', this.targetDateConfirmed = false, this.planStartDate = '', this.planEndDate = '', this.targetSchool = '', this.targetProgram = '', this.currentProgress = '', final  Map<String, int> weeklyMinutes = const {'0' : 0, '1' : 0, '2' : 0, '3' : 0, '4' : 0, '5' : 0, '6' : 0}, this.constraintsText = ''}): _weeklyMinutes = weeklyMinutes,super._();
   factory _OnboardingProfile.fromJson(Map<String, dynamic> json) => _$OnboardingProfileFromJson(json);
 
-@override final  String examType;
-@override final  String examDate;
+@override@JsonKey() final  String goalText;
+@override@JsonKey() final  String goalType;
+@override@JsonKey() final  String goalSubtype;
+@override@JsonKey() final  String targetDate;
+@override@JsonKey() final  bool targetDateConfirmed;
+@override@JsonKey() final  String planStartDate;
+@override@JsonKey() final  String planEndDate;
 @override@JsonKey() final  String targetSchool;
 @override@JsonKey() final  String targetProgram;
 @override@JsonKey() final  String currentProgress;
@@ -245,16 +255,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _OnboardingProfile&&(identical(other.examType, examType) || other.examType == examType)&&(identical(other.examDate, examDate) || other.examDate == examDate)&&(identical(other.targetSchool, targetSchool) || other.targetSchool == targetSchool)&&(identical(other.targetProgram, targetProgram) || other.targetProgram == targetProgram)&&(identical(other.currentProgress, currentProgress) || other.currentProgress == currentProgress)&&const DeepCollectionEquality().equals(other._weeklyMinutes, _weeklyMinutes)&&(identical(other.constraintsText, constraintsText) || other.constraintsText == constraintsText));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _OnboardingProfile&&(identical(other.goalText, goalText) || other.goalText == goalText)&&(identical(other.goalType, goalType) || other.goalType == goalType)&&(identical(other.goalSubtype, goalSubtype) || other.goalSubtype == goalSubtype)&&(identical(other.targetDate, targetDate) || other.targetDate == targetDate)&&(identical(other.targetDateConfirmed, targetDateConfirmed) || other.targetDateConfirmed == targetDateConfirmed)&&(identical(other.planStartDate, planStartDate) || other.planStartDate == planStartDate)&&(identical(other.planEndDate, planEndDate) || other.planEndDate == planEndDate)&&(identical(other.targetSchool, targetSchool) || other.targetSchool == targetSchool)&&(identical(other.targetProgram, targetProgram) || other.targetProgram == targetProgram)&&(identical(other.currentProgress, currentProgress) || other.currentProgress == currentProgress)&&const DeepCollectionEquality().equals(other._weeklyMinutes, _weeklyMinutes)&&(identical(other.constraintsText, constraintsText) || other.constraintsText == constraintsText));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,examType,examDate,targetSchool,targetProgram,currentProgress,const DeepCollectionEquality().hash(_weeklyMinutes),constraintsText);
+int get hashCode => Object.hash(runtimeType,goalText,goalType,goalSubtype,targetDate,targetDateConfirmed,planStartDate,planEndDate,targetSchool,targetProgram,currentProgress,const DeepCollectionEquality().hash(_weeklyMinutes),constraintsText);
 
 @override
 String toString() {
-  return 'OnboardingProfile(examType: $examType, examDate: $examDate, targetSchool: $targetSchool, targetProgram: $targetProgram, currentProgress: $currentProgress, weeklyMinutes: $weeklyMinutes, constraintsText: $constraintsText)';
+  return 'OnboardingProfile(goalText: $goalText, goalType: $goalType, goalSubtype: $goalSubtype, targetDate: $targetDate, targetDateConfirmed: $targetDateConfirmed, planStartDate: $planStartDate, planEndDate: $planEndDate, targetSchool: $targetSchool, targetProgram: $targetProgram, currentProgress: $currentProgress, weeklyMinutes: $weeklyMinutes, constraintsText: $constraintsText)';
 }
 
 
@@ -265,7 +275,7 @@ abstract mixin class _$OnboardingProfileCopyWith<$Res> implements $OnboardingPro
   factory _$OnboardingProfileCopyWith(_OnboardingProfile value, $Res Function(_OnboardingProfile) _then) = __$OnboardingProfileCopyWithImpl;
 @override @useResult
 $Res call({
- String examType, String examDate, String targetSchool, String targetProgram, String currentProgress, Map<String, int> weeklyMinutes, String constraintsText
+ String goalText, String goalType, String goalSubtype, String targetDate, bool targetDateConfirmed, String planStartDate, String planEndDate, String targetSchool, String targetProgram, String currentProgress, Map<String, int> weeklyMinutes, String constraintsText
 });
 
 
@@ -282,10 +292,15 @@ class __$OnboardingProfileCopyWithImpl<$Res>
 
 /// Create a copy of OnboardingProfile
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? examType = null,Object? examDate = null,Object? targetSchool = null,Object? targetProgram = null,Object? currentProgress = null,Object? weeklyMinutes = null,Object? constraintsText = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? goalText = null,Object? goalType = null,Object? goalSubtype = null,Object? targetDate = null,Object? targetDateConfirmed = null,Object? planStartDate = null,Object? planEndDate = null,Object? targetSchool = null,Object? targetProgram = null,Object? currentProgress = null,Object? weeklyMinutes = null,Object? constraintsText = null,}) {
   return _then(_OnboardingProfile(
-examType: null == examType ? _self.examType : examType // ignore: cast_nullable_to_non_nullable
-as String,examDate: null == examDate ? _self.examDate : examDate // ignore: cast_nullable_to_non_nullable
+goalText: null == goalText ? _self.goalText : goalText // ignore: cast_nullable_to_non_nullable
+as String,goalType: null == goalType ? _self.goalType : goalType // ignore: cast_nullable_to_non_nullable
+as String,goalSubtype: null == goalSubtype ? _self.goalSubtype : goalSubtype // ignore: cast_nullable_to_non_nullable
+as String,targetDate: null == targetDate ? _self.targetDate : targetDate // ignore: cast_nullable_to_non_nullable
+as String,targetDateConfirmed: null == targetDateConfirmed ? _self.targetDateConfirmed : targetDateConfirmed // ignore: cast_nullable_to_non_nullable
+as bool,planStartDate: null == planStartDate ? _self.planStartDate : planStartDate // ignore: cast_nullable_to_non_nullable
+as String,planEndDate: null == planEndDate ? _self.planEndDate : planEndDate // ignore: cast_nullable_to_non_nullable
 as String,targetSchool: null == targetSchool ? _self.targetSchool : targetSchool // ignore: cast_nullable_to_non_nullable
 as String,targetProgram: null == targetProgram ? _self.targetProgram : targetProgram // ignore: cast_nullable_to_non_nullable
 as String,currentProgress: null == currentProgress ? _self.currentProgress : currentProgress // ignore: cast_nullable_to_non_nullable
@@ -574,7 +589,7 @@ as int,
 /// @nodoc
 mixin _$ItemDraft {
 
- String get id; String get courseId; String get title; String get description; String get completionCriteria; int get estimatedMinutes; String? get earliestDate; String get deadline; int get priority;
+ String get id; String get courseId; String get title; String get description; String get completionCriteria; int get estimatedMinutes; String? get earliestDate; String get deadline; ItemDateKind get deadlineKind; int get priority;
 /// Create a copy of ItemDraft
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -587,16 +602,16 @@ $ItemDraftCopyWith<ItemDraft> get copyWith => _$ItemDraftCopyWithImpl<ItemDraft>
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is ItemDraft&&(identical(other.id, id) || other.id == id)&&(identical(other.courseId, courseId) || other.courseId == courseId)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.completionCriteria, completionCriteria) || other.completionCriteria == completionCriteria)&&(identical(other.estimatedMinutes, estimatedMinutes) || other.estimatedMinutes == estimatedMinutes)&&(identical(other.earliestDate, earliestDate) || other.earliestDate == earliestDate)&&(identical(other.deadline, deadline) || other.deadline == deadline)&&(identical(other.priority, priority) || other.priority == priority));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ItemDraft&&(identical(other.id, id) || other.id == id)&&(identical(other.courseId, courseId) || other.courseId == courseId)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.completionCriteria, completionCriteria) || other.completionCriteria == completionCriteria)&&(identical(other.estimatedMinutes, estimatedMinutes) || other.estimatedMinutes == estimatedMinutes)&&(identical(other.earliestDate, earliestDate) || other.earliestDate == earliestDate)&&(identical(other.deadline, deadline) || other.deadline == deadline)&&(identical(other.deadlineKind, deadlineKind) || other.deadlineKind == deadlineKind)&&(identical(other.priority, priority) || other.priority == priority));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,courseId,title,description,completionCriteria,estimatedMinutes,earliestDate,deadline,priority);
+int get hashCode => Object.hash(runtimeType,id,courseId,title,description,completionCriteria,estimatedMinutes,earliestDate,deadline,deadlineKind,priority);
 
 @override
 String toString() {
-  return 'ItemDraft(id: $id, courseId: $courseId, title: $title, description: $description, completionCriteria: $completionCriteria, estimatedMinutes: $estimatedMinutes, earliestDate: $earliestDate, deadline: $deadline, priority: $priority)';
+  return 'ItemDraft(id: $id, courseId: $courseId, title: $title, description: $description, completionCriteria: $completionCriteria, estimatedMinutes: $estimatedMinutes, earliestDate: $earliestDate, deadline: $deadline, deadlineKind: $deadlineKind, priority: $priority)';
 }
 
 
@@ -607,7 +622,7 @@ abstract mixin class $ItemDraftCopyWith<$Res>  {
   factory $ItemDraftCopyWith(ItemDraft value, $Res Function(ItemDraft) _then) = _$ItemDraftCopyWithImpl;
 @useResult
 $Res call({
- String id, String courseId, String title, String description, String completionCriteria, int estimatedMinutes, String? earliestDate, String deadline, int priority
+ String id, String courseId, String title, String description, String completionCriteria, int estimatedMinutes, String? earliestDate, String deadline, ItemDateKind deadlineKind, int priority
 });
 
 
@@ -624,7 +639,7 @@ class _$ItemDraftCopyWithImpl<$Res>
 
 /// Create a copy of ItemDraft
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? courseId = null,Object? title = null,Object? description = null,Object? completionCriteria = null,Object? estimatedMinutes = null,Object? earliestDate = freezed,Object? deadline = null,Object? priority = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? courseId = null,Object? title = null,Object? description = null,Object? completionCriteria = null,Object? estimatedMinutes = null,Object? earliestDate = freezed,Object? deadline = null,Object? deadlineKind = null,Object? priority = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,courseId: null == courseId ? _self.courseId : courseId // ignore: cast_nullable_to_non_nullable
@@ -634,7 +649,8 @@ as String,completionCriteria: null == completionCriteria ? _self.completionCrite
 as String,estimatedMinutes: null == estimatedMinutes ? _self.estimatedMinutes : estimatedMinutes // ignore: cast_nullable_to_non_nullable
 as int,earliestDate: freezed == earliestDate ? _self.earliestDate : earliestDate // ignore: cast_nullable_to_non_nullable
 as String?,deadline: null == deadline ? _self.deadline : deadline // ignore: cast_nullable_to_non_nullable
-as String,priority: null == priority ? _self.priority : priority // ignore: cast_nullable_to_non_nullable
+as String,deadlineKind: null == deadlineKind ? _self.deadlineKind : deadlineKind // ignore: cast_nullable_to_non_nullable
+as ItemDateKind,priority: null == priority ? _self.priority : priority // ignore: cast_nullable_to_non_nullable
 as int,
   ));
 }
@@ -720,10 +736,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String courseId,  String title,  String description,  String completionCriteria,  int estimatedMinutes,  String? earliestDate,  String deadline,  int priority)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String courseId,  String title,  String description,  String completionCriteria,  int estimatedMinutes,  String? earliestDate,  String deadline,  ItemDateKind deadlineKind,  int priority)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _ItemDraft() when $default != null:
-return $default(_that.id,_that.courseId,_that.title,_that.description,_that.completionCriteria,_that.estimatedMinutes,_that.earliestDate,_that.deadline,_that.priority);case _:
+return $default(_that.id,_that.courseId,_that.title,_that.description,_that.completionCriteria,_that.estimatedMinutes,_that.earliestDate,_that.deadline,_that.deadlineKind,_that.priority);case _:
   return orElse();
 
 }
@@ -741,10 +757,10 @@ return $default(_that.id,_that.courseId,_that.title,_that.description,_that.comp
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String courseId,  String title,  String description,  String completionCriteria,  int estimatedMinutes,  String? earliestDate,  String deadline,  int priority)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String courseId,  String title,  String description,  String completionCriteria,  int estimatedMinutes,  String? earliestDate,  String deadline,  ItemDateKind deadlineKind,  int priority)  $default,) {final _that = this;
 switch (_that) {
 case _ItemDraft():
-return $default(_that.id,_that.courseId,_that.title,_that.description,_that.completionCriteria,_that.estimatedMinutes,_that.earliestDate,_that.deadline,_that.priority);case _:
+return $default(_that.id,_that.courseId,_that.title,_that.description,_that.completionCriteria,_that.estimatedMinutes,_that.earliestDate,_that.deadline,_that.deadlineKind,_that.priority);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -761,10 +777,10 @@ return $default(_that.id,_that.courseId,_that.title,_that.description,_that.comp
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String courseId,  String title,  String description,  String completionCriteria,  int estimatedMinutes,  String? earliestDate,  String deadline,  int priority)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String courseId,  String title,  String description,  String completionCriteria,  int estimatedMinutes,  String? earliestDate,  String deadline,  ItemDateKind deadlineKind,  int priority)?  $default,) {final _that = this;
 switch (_that) {
 case _ItemDraft() when $default != null:
-return $default(_that.id,_that.courseId,_that.title,_that.description,_that.completionCriteria,_that.estimatedMinutes,_that.earliestDate,_that.deadline,_that.priority);case _:
+return $default(_that.id,_that.courseId,_that.title,_that.description,_that.completionCriteria,_that.estimatedMinutes,_that.earliestDate,_that.deadline,_that.deadlineKind,_that.priority);case _:
   return null;
 
 }
@@ -776,7 +792,7 @@ return $default(_that.id,_that.courseId,_that.title,_that.description,_that.comp
 @JsonSerializable()
 
 class _ItemDraft implements ItemDraft {
-  const _ItemDraft({required this.id, required this.courseId, required this.title, this.description = '', this.completionCriteria = '', required this.estimatedMinutes, this.earliestDate, required this.deadline, this.priority = 2});
+  const _ItemDraft({required this.id, required this.courseId, required this.title, this.description = '', this.completionCriteria = '', required this.estimatedMinutes, this.earliestDate, required this.deadline, this.deadlineKind = ItemDateKind.deadline, this.priority = 2});
   factory _ItemDraft.fromJson(Map<String, dynamic> json) => _$ItemDraftFromJson(json);
 
 @override final  String id;
@@ -787,6 +803,7 @@ class _ItemDraft implements ItemDraft {
 @override final  int estimatedMinutes;
 @override final  String? earliestDate;
 @override final  String deadline;
+@override@JsonKey() final  ItemDateKind deadlineKind;
 @override@JsonKey() final  int priority;
 
 /// Create a copy of ItemDraft
@@ -802,16 +819,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ItemDraft&&(identical(other.id, id) || other.id == id)&&(identical(other.courseId, courseId) || other.courseId == courseId)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.completionCriteria, completionCriteria) || other.completionCriteria == completionCriteria)&&(identical(other.estimatedMinutes, estimatedMinutes) || other.estimatedMinutes == estimatedMinutes)&&(identical(other.earliestDate, earliestDate) || other.earliestDate == earliestDate)&&(identical(other.deadline, deadline) || other.deadline == deadline)&&(identical(other.priority, priority) || other.priority == priority));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ItemDraft&&(identical(other.id, id) || other.id == id)&&(identical(other.courseId, courseId) || other.courseId == courseId)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.completionCriteria, completionCriteria) || other.completionCriteria == completionCriteria)&&(identical(other.estimatedMinutes, estimatedMinutes) || other.estimatedMinutes == estimatedMinutes)&&(identical(other.earliestDate, earliestDate) || other.earliestDate == earliestDate)&&(identical(other.deadline, deadline) || other.deadline == deadline)&&(identical(other.deadlineKind, deadlineKind) || other.deadlineKind == deadlineKind)&&(identical(other.priority, priority) || other.priority == priority));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,courseId,title,description,completionCriteria,estimatedMinutes,earliestDate,deadline,priority);
+int get hashCode => Object.hash(runtimeType,id,courseId,title,description,completionCriteria,estimatedMinutes,earliestDate,deadline,deadlineKind,priority);
 
 @override
 String toString() {
-  return 'ItemDraft(id: $id, courseId: $courseId, title: $title, description: $description, completionCriteria: $completionCriteria, estimatedMinutes: $estimatedMinutes, earliestDate: $earliestDate, deadline: $deadline, priority: $priority)';
+  return 'ItemDraft(id: $id, courseId: $courseId, title: $title, description: $description, completionCriteria: $completionCriteria, estimatedMinutes: $estimatedMinutes, earliestDate: $earliestDate, deadline: $deadline, deadlineKind: $deadlineKind, priority: $priority)';
 }
 
 
@@ -822,7 +839,7 @@ abstract mixin class _$ItemDraftCopyWith<$Res> implements $ItemDraftCopyWith<$Re
   factory _$ItemDraftCopyWith(_ItemDraft value, $Res Function(_ItemDraft) _then) = __$ItemDraftCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String courseId, String title, String description, String completionCriteria, int estimatedMinutes, String? earliestDate, String deadline, int priority
+ String id, String courseId, String title, String description, String completionCriteria, int estimatedMinutes, String? earliestDate, String deadline, ItemDateKind deadlineKind, int priority
 });
 
 
@@ -839,7 +856,7 @@ class __$ItemDraftCopyWithImpl<$Res>
 
 /// Create a copy of ItemDraft
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? courseId = null,Object? title = null,Object? description = null,Object? completionCriteria = null,Object? estimatedMinutes = null,Object? earliestDate = freezed,Object? deadline = null,Object? priority = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? courseId = null,Object? title = null,Object? description = null,Object? completionCriteria = null,Object? estimatedMinutes = null,Object? earliestDate = freezed,Object? deadline = null,Object? deadlineKind = null,Object? priority = null,}) {
   return _then(_ItemDraft(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,courseId: null == courseId ? _self.courseId : courseId // ignore: cast_nullable_to_non_nullable
@@ -849,7 +866,8 @@ as String,completionCriteria: null == completionCriteria ? _self.completionCrite
 as String,estimatedMinutes: null == estimatedMinutes ? _self.estimatedMinutes : estimatedMinutes // ignore: cast_nullable_to_non_nullable
 as int,earliestDate: freezed == earliestDate ? _self.earliestDate : earliestDate // ignore: cast_nullable_to_non_nullable
 as String?,deadline: null == deadline ? _self.deadline : deadline // ignore: cast_nullable_to_non_nullable
-as String,priority: null == priority ? _self.priority : priority // ignore: cast_nullable_to_non_nullable
+as String,deadlineKind: null == deadlineKind ? _self.deadlineKind : deadlineKind // ignore: cast_nullable_to_non_nullable
+as ItemDateKind,priority: null == priority ? _self.priority : priority // ignore: cast_nullable_to_non_nullable
 as int,
   ));
 }

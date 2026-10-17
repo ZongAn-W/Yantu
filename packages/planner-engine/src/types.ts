@@ -1,6 +1,6 @@
 export type SubjectId = string;
 export type TaskStatus =
-  "not_started" | "in_progress" | "completed" | "delayed" | "conflict";
+  "not_started" | "in_progress" | "completed" | "delayed" | "conflict" | "archived";
 export type Priority = 1 | 2 | 3;
 export interface Subject {
   id: SubjectId;
@@ -20,6 +20,8 @@ export interface Task {
   completed_minutes: number;
   priority: Priority;
   deadline: string;
+  /** deadline 为真实截止日期，plan_end 为本期安排边界。 */
+  deadline_kind?: "deadline" | "plan_end";
   earliest_date?: string;
   is_fixed: boolean;
   status: TaskStatus;
@@ -74,8 +76,19 @@ export interface Profile {
   planning_mode?: "daily" | "timed";
   target_school: string;
   target_program: string;
-  exam_date: string;
-  exam_end_date: string;
+  /** 通用学习目标；旧数据可能没有这些字段。 */
+  goal_text?: string;
+  goal_type?: "exam" | "course" | "skill" | "self_study" | "other";
+  goal_subtype?: string;
+  target_date?: string;
+  target_date_confirmed?: boolean;
+  plan_start_date?: string;
+  plan_end_date?: string;
+  weekly_minutes?: Record<string, number>;
+  constraints?: string;
+  /** 旧字段：目标日期的历史镜像。 */
+  exam_date?: string;
+  exam_end_date?: string;
   daily_limit_minutes: number;
   granularity_minutes: number;
   buffer_minutes: number;

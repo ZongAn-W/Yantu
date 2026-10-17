@@ -32,9 +32,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
   Future<void> _move(List<ScheduleBlock> blocks, String targetDate) async {
     if (blocks.first.date == targetDate) return;
     try {
-      await ref
-          .read(plannerSessionProvider)
-          .moveTaskDay(blocks, targetDate);
+      await ref.read(plannerSessionProvider).moveTaskDay(blocks, targetDate);
       if (!mounted) return;
       setState(() {
         _notice = '事项已移动到 $targetDate';
@@ -288,8 +286,7 @@ class _CalendarDayColumn extends ConsumerWidget {
                             final confirmed = await confirmAction(
                               context,
                               title: '删除固定事件',
-                              message:
-                                  '删除“${event.title}”？该时段会重新计入每日可用容量。',
+                              message: '删除“${event.title}”？该时段会重新计入每日可用容量。',
                               confirmLabel: '删除',
                               destructive: true,
                             );
@@ -356,6 +353,7 @@ class _CalendarTaskRow extends ConsumerWidget {
     );
     final movable =
         editable &&
+        item.status != TaskStatus.archived &&
         actual == 0 &&
         !item.isFixed &&
         blocks.every(
@@ -419,7 +417,9 @@ class _CalendarTaskRow extends ConsumerWidget {
                 label: Text(actual > 0 ? '修改用时' : '记录用时'),
               ),
               TextButton.icon(
-                onPressed: () => MoveTaskDayDialog.show(context, blocks),
+                onPressed: movable
+                    ? () => MoveTaskDayDialog.show(context, blocks)
+                    : null,
                 icon: const Icon(Icons.event_outlined, size: 15),
                 label: const Text('调整日期'),
               ),

@@ -7,8 +7,9 @@ import { query } from "./db.js";
 import { requireUser } from "./auth.js";
 import { authRoutes } from "./auth-routes.js";
 import { syncRoutes } from "./sync.js";
+import { onboardingRoutes, onboardingProfileVisible } from "./onboarding-routes.js";
 import { migrateDatabase } from "./migrate.js";
-import { PlanDraftSchema, ProfileSchema, SettleSchema } from "./contracts.js";
+import { PlanDraftSchema, ProfileSchema, ProfileUpdateSchema, SettleSchema } from "./contracts.js";
 import { createPlanDraft } from "./ai.js";
 import { confirmDraft, dateAdd, dateToday, generatePlan, getProfile, itemToJson, listCourses, listDailyPlans, listItems, saveProfile, settleDay, snapshot, undoRun, type ItemRow } from "./planner.js";
 import { z } from "zod";
@@ -32,6 +33,7 @@ app.addHook("onRequest", async (request, reply) => {
 await app.register(rateLimit, { global: false, errorResponseBuilder: (_request, context) => ({ statusCode: 429, error: "操作过于频繁，请稍后重试", retryAfter: Math.ceil(context.ttl / 1000) }) });
 await app.register(authRoutes);
 await app.register(syncRoutes);
+await app.register(onboardingRoutes);
 
 const bodyObject = (body: unknown) => body && typeof body === "object" ? body : {};
 function errorMessage(error: unknown) { return error instanceof Error ? error.message : String(error); }
@@ -39,12 +41,14 @@ function errorMessage(error: unknown) { return error instanceof Error ? error.me
 app.get("/api/health", async () => ({ ok: true, service: "planner-api", now: new Date().toISOString() }));
 app.get("/api/me", async (request, reply) => { const user = await requireUser(request, reply); return user ? { user } : undefined; });
 
-app.get("/api/onboarding/profile", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; return { profile: await getProfile(user.id) }; });
-app.post("/api/onboarding/profile", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const parsed = ProfileSchema.safeParse(bodyObject(request.body)); if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "资料格式不正确" }); await saveProfile(user.id, parsed.data); return { profile: parsed.data }; });
+app.get("/api/onboarding/profile", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; return { profile: await onboardingProfileVisible(user.id) ? await getProfile(user.id) : null }; });
+app.post("/api/onboarding/profile", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const parsed = ProfileSchema.safeParse(bodyObject(request.body)); if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "学习目标格式不正确" }); await saveProfile(user.id, parsed.data); return { profile: await getProfile(user.id) }; });
+// 部分更新：字段缺失表示不修改，target_date 显式传 null 表示清空。
+app.patch("/api/onboarding/profile", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const parsed = ProfileUpdateSchema.safeParse(bodyObject(request.body)); if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "学习目标格式不正确" }); const current = await getProfile(user.id); if (!current) return reply.code(404).send({ error: "请先完成学习目标设置" }); await saveProfile(user.id, { ...current, ...parsed.data }); return { profile: await getProfile(user.id) }; });
 
 app.post("/api/ai/plan-drafts", async (request, reply) => {
   const user = await requireUser(request, reply); if (!user) return;
-  const profile = ProfileSchema.safeParse(bodyObject(request.body)); if (!profile.success) return reply.code(400).send({ error: "请先完整填写备考资料" });
+  const profile = ProfileSchema.safeParse(bodyObject(request.body)); if (!profile.success) return reply.code(400).send({ error: "请先完整填写学习目标" });
   try { const requestId = request.headers["idempotency-key"] ?? null; if (requestId) { const existing = await query<{ id: string; output_payload: unknown }>("select id,output_payload from ai_jobs where user_id=$1 and kind='plan_draft' and request_id=$2 order by created_at desc limit 1", [user.id, requestId]); if (existing.rows[0]) return { id: existing.rows[0].id, draft: existing.rows[0].output_payload }; } const draft = await createPlanDraft(profile.data); const saved = await query<{ id: string }>("insert into ai_jobs(user_id,kind,status,request_id,input_payload,output_payload) values($1,'plan_draft','completed',$2,$3,$4) returning id", [user.id, requestId, JSON.stringify(profile.data), JSON.stringify(draft)]); return { id: saved.rows[0].id, draft }; }
   catch (error) { return reply.code(502).send({ error: errorMessage(error) }); }
 });
@@ -54,7 +58,7 @@ app.post("/api/ai/plan-drafts/:id/confirm", async (request, reply) => { const us
 app.get("/api/courses", async (request, reply) => { const user = await requireUser(request, reply); return user ? { courses: await listCourses(user.id) } : undefined; });
 app.get("/api/items", async (request, reply) => { const user = await requireUser(request, reply); return user ? { items: await listItems(user.id) } : undefined; });
 app.post("/api/items", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const parsed = z.object({ course_id: z.string().uuid(), title: z.string().min(1).max(200), description: z.string().max(4000).default(""), completion_criteria: z.string().max(1000).default(""), estimated_minutes: z.number().int().min(30).max(100000), earliest_date: z.string().optional(), deadline: z.string(), priority: z.number().int().min(1).max(3).default(2) }).safeParse(bodyObject(request.body)); if (!parsed.success) return reply.code(400).send({ error: "事项格式不正确" }); const result = await query<ItemRow>("insert into items(user_id,course_id,title,description,completion_criteria,estimated_minutes,earliest_date,deadline,priority,confirmed) select $1,id,$3,$4,$5,$6,$7,$8,$9,false from courses where id=$2 and user_id=$1 returning id,course_id,title,description,completion_criteria,estimated_minutes,earliest_date::text,deadline::text,priority,status", [user.id, parsed.data.course_id, parsed.data.title, parsed.data.description, parsed.data.completion_criteria, parsed.data.estimated_minutes, parsed.data.earliest_date ?? null, parsed.data.deadline, parsed.data.priority]); if (!result.rows[0]) return reply.code(404).send({ error: "找不到课程" }); return reply.code(201).send({ item: itemToJson(result.rows[0]) }); });
-app.get("/api/planner/snapshot", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const data = await snapshot(user.id); return data ? { data } : reply.code(404).send({ error: "请先完成备考资料和计划确认" }); });
+app.get("/api/planner/snapshot", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const data = await snapshot(user.id); return data ? { data } : reply.code(404).send({ error: "请先完成学习目标设置和计划确认" }); });
 app.patch("/api/items/:id", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const parsed = z.object({ title: z.string().min(1).max(200).optional(), description: z.string().max(4000).optional(), completion_criteria: z.string().max(1000).optional(), priority: z.number().int().min(1).max(3).optional() }).safeParse(bodyObject(request.body)); if (!parsed.success) return reply.code(400).send({ error: "事项格式不正确" }); const params = request.params as { id: string }; const result = await query<ItemRow>("update items set title=coalesce($1,title),description=coalesce($2,description),completion_criteria=coalesce($3,completion_criteria),priority=coalesce($4,priority),updated_at=now() where id=$5 and user_id=$6 and confirmed=false returning id,course_id,title,description,completion_criteria,estimated_minutes,earliest_date::text,deadline::text,priority,status", [parsed.data.title, parsed.data.description, parsed.data.completion_criteria, parsed.data.priority, params.id, user.id]); if (!result.rows[0]) return reply.code(409).send({ error: "已确认事项不能直接修改，请先生成新的事项草案并确认" }); return { item: itemToJson(result.rows[0]) }; });
 app.delete("/api/items/:id", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const params = request.params as { id: string }; const result = await query("delete from items where id=$1 and user_id=$2", [params.id, user.id]); return result.rowCount ? { deleted: true } : reply.code(404).send({ error: "找不到事项" }); });
 

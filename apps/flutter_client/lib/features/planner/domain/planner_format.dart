@@ -5,9 +5,8 @@ import '../../../shared/models/planner_models.dart';
 const Duration _shanghaiOffset = Duration(hours: 8);
 
 /// `YYYY-MM-DD` for the current Asia/Shanghai day.
-String shanghaiToday([DateTime? now]) => dateOnly(
-  (now ?? DateTime.now()).toUtc().add(_shanghaiOffset),
-);
+String shanghaiToday([DateTime? now]) =>
+    dateOnly((now ?? DateTime.now()).toUtc().add(_shanghaiOffset));
 
 /// Formats a `DateTime` that already carries the Asia/Shanghai wall clock.
 String dateOnly(DateTime value) =>
@@ -45,12 +44,90 @@ String duration(num minutes) {
   return '$total分钟';
 }
 
+/// 目标的首行摘要：优先具体考试或领域名称，其次通用目标类型。
+String goalHeadline(Profile profile) {
+  if (profile.goalSubtype.isNotEmpty) return profile.goalSubtype;
+  return goalTypeLabels[profile.goalType] ?? '学习目标';
+}
+
+/// 目标的第二行状态：有目标日期显示日期，否则显示本次规划周期。
+String goalStatusLine(Profile profile, String today) {
+  final target = profile.resolvedTargetDate;
+  if (target.isNotEmpty) {
+    final days = daysBetween(today, target);
+    final label = profile.targetDateConfirmed ? '目标日期' : '预计目标日期';
+    if (days > 0) return '$label $target · 还有 $days 天';
+    if (days == 0) return '$label $target · 今天';
+    final past = -days;
+    return '$label $target · 已过去 $past 天';
+  }
+  final start = profile.resolvedPlanStart(today);
+  final end = profile.resolvedPlanEnd(today);
+  if (end.compareTo(today) < 0) return '本期 $start 至 $end · 已结束';
+  return '本次规划 $start 至 $end';
+}
+
+/// 今日页副标题：有目标日期显示倒计时，否则显示本次规划区间。
+String dashboardGoalLine(Profile profile, String date) {
+  final head = fullDateLabel(date);
+  final target = profile.resolvedTargetDate;
+  if (target.isNotEmpty) {
+    final days = daysBetween(date, target);
+    final label = profile.targetDateConfirmed ? '目标日期' : '预计目标日期';
+    if (days > 0) return '$head · 距离$label $days 天';
+    if (days == 0) return '$head · 今天就是$label';
+    final past = -days;
+    return '$head · $label $target 已过去 $past 天';
+  }
+  final start = profile.resolvedPlanStart(date);
+  final end = profile.resolvedPlanEnd(date);
+  if (end.compareTo(date) < 0) {
+    return '$head · 本次规划 $start 至 $end 已结束';
+  }
+  final left = daysBetween(date, end) + 1;
+  return '$head · 本次规划还剩 $left 天（$start 至 $end）';
+}
+
+/// 本次规划周期的状态，用于今日页的提示与入口。
+enum PlanCycleState { running, endingSoon, ended }
+
+PlanCycleState planCycleState(Profile profile, String date) {
+  final end = profile.resolvedPlanEnd(date);
+  final days = daysBetween(date, end);
+  if (days < 0) return PlanCycleState.ended;
+  if (days <= 2) return PlanCycleState.endingSoon;
+  return PlanCycleState.running;
+}
+
+const goalTypeLabels = {
+  GoalType.exam: '考试备考',
+  GoalType.course: '课程学习',
+  GoalType.skill: '技能提升',
+  GoalType.selfStudy: '自主学习',
+  GoalType.other: '其他',
+};
+
+/// 服务端用字符串表达目标类型，界面统一映射为中文标签。
+String goalTypeLabelOf(String type) => const {
+  'exam': '考试备考',
+  'course': '课程学习',
+  'skill': '技能提升',
+  'self_study': '自主学习',
+  'other': '其他',
+}[type] ?? '其他';
+
+const itemDateKindLabels = {
+  ItemDateKind.deadline: '截止日期',
+  ItemDateKind.planEnd: '本期安排边界',
+};
+
 const statusLabels = {
   TaskStatus.notStarted: '未开始',
   TaskStatus.inProgress: '进行中',
   TaskStatus.completed: '完成',
   TaskStatus.delayed: '延期',
   TaskStatus.conflict: '冲突',
+  TaskStatus.archived: '已归档',
 };
 
 const priorityLabels = {1: '普通', 2: '中高', 3: '高'};
@@ -98,8 +175,9 @@ String weekdayLabel(String date) {
   return _weekdayNames[parsed.toUtc().weekday - 1];
 }
 
-String monthDayLabel(String date) =>
-    date.length >= 10 ? '${date.substring(5, 7)}月${date.substring(8, 10)}日' : date;
+String monthDayLabel(String date) => date.length >= 10
+    ? '${date.substring(5, 7)}月${date.substring(8, 10)}日'
+    : date;
 
 /// `M月D日 周X`, matching the Web dashboard heading.
 String fullDateLabel(String date) {

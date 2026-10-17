@@ -217,7 +217,9 @@ PlannerData refreshTaskProgress(
           final actual = taskTotalMinutes(data, task.id);
           final completed = math.min(task.estimatedMinutes, actual);
           final TaskStatus status;
-          if (task.status == TaskStatus.completed &&
+          if (task.status == TaskStatus.archived) {
+            status = TaskStatus.archived;
+          } else if (task.status == TaskStatus.completed &&
               !correctedTaskIds.contains(task.id)) {
             status = TaskStatus.completed;
           } else if (completed > 0) {
@@ -247,6 +249,7 @@ int unscheduledTaskMinutes(
   Task task, {
   required String from,
 }) {
+  if (task.status == TaskStatus.archived) return 0;
   final planned = data.blocks
       .where(
         (block) =>
@@ -296,6 +299,9 @@ MoveResult moveTaskDay(
   final task = data.tasks
       .where((item) => item.id == blocks.first.taskId)
       .firstOrNull;
+  if (task?.status == TaskStatus.archived) {
+    return const MoveResult.failure('已归档事项不可安排');
+  }
   if (task != null && taskDayMinutes(data, task.id, blocks.first.date) > 0) {
     return const MoveResult.failure('已记录用时的事项保留在学习当天；请为剩余事项另行安排日期');
   }
@@ -393,6 +399,11 @@ PlannerData completeTask(
   String? updatedAt,
 }) {
   final stamp = updatedAt ?? nowIso();
+  if (data.tasks.any(
+    (task) => task.id == taskId && task.status == TaskStatus.archived,
+  )) {
+    throw StateError('已归档事项不能标记完成');
+  }
   var next = data;
   if (actualMinutes > 0) {
     next = scheduler.recordTaskDayMinutes(next, taskId, date, actualMinutes);

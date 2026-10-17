@@ -1,0 +1,169 @@
+import 'dart:convert';
+import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:sjtu_study_planner_client/core/auth/token_store.dart';
+import 'package:sjtu_study_planner_client/core/config/app_config.dart';
+import 'package:sjtu_study_planner_client/core/http/api_client.dart';
+import 'package:sjtu_study_planner_client/core/providers.dart';
+import 'package:sjtu_study_planner_client/core/theme.dart';
+import 'package:sjtu_study_planner_client/features/onboarding/presentation/onboarding_page.dart';
+import '../support/http_adapter.dart';
+import '../support/onboarding_fixture.dart';
+
+void main() {
+  testWidgets(
+    'five answers offer both paths, further answers return to the choice and failures retain input',
+    (tester) async {
+      var session = onboardingFixture();
+      var failure = false;
+      final actions = <String>[];
+      final api = ApiClient(
+        config: const AppConfig(apiBaseUrl: 'http://api.test'),
+        tokenStore: MemoryTokenStore(),
+        dio: Dio()
+          ..httpClientAdapter = TestAdapter((request) async {
+            if (request.method == 'POST') {
+              final action = (request.data as Map)['action'] as Map;
+              actions.add(action['type'] as String);
+              if (failure) return jsonResponse({'error': 'AI暂时不可用，请重试'}, 502);
+              if (action['type'] == 'answer') {
+                final count = (session['answers'] as List).length + 1;
+                session = onboardingFixture(
+                  answers: count,
+                  stage: count >= 5 ? 'checkpoint' : 'interview',
+                );
+              } else if (action['type'] == 'continue') {
+                session['stage'] = 'interview';
+              }
+            }
+            return jsonResponse({'session': session});
+          }),
+      );
+      addTearDown(api.close);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [apiClientProvider.overrideWithValue(api)],
+          child: MaterialApp(
+            theme: plannerTheme(),
+            home: const OnboardingPage(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('你的长期目标是什么？'), findsOneWidget);
+      for (var i = 0; i < 5; i++) {
+        await tester.enterText(find.byType(TextFormField), '回答$i');
+        await tester.tap(find.text(i < 4 ? '提交回答，继续' : '提交回答'));
+        await tester.pumpAndSettle();
+      }
+      expect(find.text('继续完善信息'), findsOneWidget);
+      expect(find.text('根据当前回答生成课程'), findsOneWidget);
+      expect(actions.where((a) => a == 'answer'), hasLength(5));
+      await tester.tap(find.text('继续完善信息'));
+      await tester.pumpAndSettle();
+      failure = true;
+      await tester.enterText(find.byType(TextFormField), '保留我的回答');
+      await tester.tap(find.text('提交回答'));
+      await tester.pumpAndSettle();
+      expect(find.text('保留我的回答'), findsOneWidget);
+      expect(find.text('AI暂时不可用，请重试'), findsOneWidget);
+      failure = false;
+      await tester.tap(find.text('提交回答'));
+      await tester.pumpAndSettle();
+      expect(find.text('已回答 6 个问题'), findsOneWidget);
+      expect(find.text('根据当前回答生成课程'), findsOneWidget);
+    },
+  );
+
+  testWidgets('manual course changes are included when asking AI to revise', (
+    tester,
+  ) async {
+    var session = onboardingFixture(stage: 'courses', answers: 5);
+    session['courses'] = [
+      {'id': 'math', 'name': '高数', 'description': '', 'priority': 2},
+    ];
+    Map? sent;
+    final api = ApiClient(
+      config: const AppConfig(apiBaseUrl: 'http://api.test'),
+      tokenStore: MemoryTokenStore(),
+      dio: Dio()
+        ..httpClientAdapter = TestAdapter((request) async {
+          if (request.method == 'POST') {
+            sent =
+                jsonDecode(jsonEncode((request.data as Map)['action'])) as Map;
+            session['revision'] = (session['revision'] as int) + 1;
+            session['courses'] = sent!['courses'];
+          }
+          return jsonResponse({'session': session});
+        }),
+    );
+    addTearDown(api.close);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [apiClientProvider.overrideWithValue(api)],
+        child: MaterialApp(theme: plannerTheme(), home: const OnboardingPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('确认课程，生成事项'), findsOneWidget);
+    expect(find.text('确认学习事项'), findsNothing);
+    await tester.tap(find.byTooltip('编辑 高数'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextFormField).at(1), '线性代数');
+    await tester.tap(find.text('保存'));
+    await tester.pumpAndSettle();
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pumpAndSettle();
+    expect(find.text('线性代数'), findsOneWidget);
+    await tester.enterText(find.byType(TextFormField), '增加英语');
+    await tester.tap(find.text('按要求修改'));
+    await tester.pumpAndSettle();
+    expect(sent!['type'], 'revise_courses');
+    expect(sent!['instruction'], '增加英语');
+    expect((sent!['courses'] as List).single['name'], '线性代数');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('mobile renders long courses and item details without overflow', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 780);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    final session = onboardingFixture(stage: 'items', answers: 5);
+    session['courses'] = [
+      {'id': 'math', 'name': '计算机组成原理与计算机网络基础专项训练'},
+    ];
+    session['items'] = [
+      {
+        'id': 'task',
+        'course_id': 'math',
+        'title': '一轮基础知识梳理与典型例题训练',
+        'description': '学习内容与完成标准需要完整显示，不能被操作按钮遮住。',
+        'estimated_minutes': 600,
+        'deadline': '2027-12-25',
+      },
+    ];
+    final api = ApiClient(
+      config: const AppConfig(apiBaseUrl: 'http://api.test'),
+      tokenStore: MemoryTokenStore(),
+      dio: Dio()
+        ..httpClientAdapter = TestAdapter(
+          (_) async => jsonResponse({'session': session}),
+        ),
+    );
+    addTearDown(api.close);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [apiClientProvider.overrideWithValue(api)],
+        child: MaterialApp(theme: plannerTheme(), home: const OnboardingPage()),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('确认学习事项'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+}

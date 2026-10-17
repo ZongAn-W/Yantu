@@ -35,7 +35,7 @@ void main() {
       var missing = true;
       final http = client(
         (_) async => missing
-            ? jsonResponse({'error': '请先完成备考资料和计划确认'}, 404)
+            ? jsonResponse({'error': '请先完成学习目标设置和计划确认'}, 404)
             : jsonResponse({
                 'data': {'version': 1},
               }),
@@ -77,8 +77,10 @@ void main() {
       addTearDown(http.close);
       final draft = await PlannerApi(http).createDraft(
         const OnboardingProfile(
-          examType: '考研',
-          examDate: '2027-12-25',
+          goalText: '准备计算机专业研究生考试',
+          goalType: 'exam',
+          goalSubtype: '考研',
+          planEndDate: '2027-12-25',
           weeklyMinutes: {'0': 30},
         ),
         requestId: 'request-1',

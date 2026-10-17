@@ -4,7 +4,7 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { transaction } from "./db.js";
 import { requireUser } from "./auth.js";
-import { snapshot } from "./planner.js";
+import { isReliableWeek, normalizeWeek, snapshot } from "./planner.js";
 import {
   PlannerDocumentSchema,
   type PlannerDocument,
@@ -17,12 +17,22 @@ type StateRow = {
   projection: PlannerDocument | null;
 };
 const clone = <T>(value: T): T => structuredClone(value);
+/**
+ * 缺失字段、null 和空字符串都表示“没有值”。
+ *
+ * 客户端与历史文档对这些空值的写法不同（客户端的模型会写出空字符串，
+ * 服务端快照可能直接省略），比较时统一忽略，避免每次同步都误报冲突。
+ */
+const emptyValue = (value: unknown) =>
+  value === null || value === undefined || value === "";
+
 const stable = (value: unknown): string =>
   JSON.stringify(value, (_key, child) => {
     if (child && typeof child === "object" && !Array.isArray(child))
       return Object.fromEntries(
         Object.entries(child)
           .filter(([key]) => !["updated_at", "created_at"].includes(key))
+          .filter(([, value]) => !emptyValue(value))
           .sort(([a], [b]) => a.localeCompare(b)),
       );
     return child;
@@ -30,6 +40,7 @@ const stable = (value: unknown): string =>
 const same = (a: unknown, b: unknown) => stable(a) === stable(b);
 
 class ProjectionConflict extends Error {}
+export class PlannerRevisionConflict extends Error {}
 
 function mergeProjectedDay(
   blocks: PlannerDocument["blocks"],
@@ -194,6 +205,43 @@ function rebase(
   return result;
 }
 
+/**
+ * 文档缺失的 Profile 字段用投影里的权威值补回。
+ *
+ * 字段缺失表示“未知/旧格式”，`null` 或空字符串才是用户主动清空；
+ * 因此这里只补缺失的键，绝不覆盖客户端明确写下的值。
+ */
+function withProjectedProfile(
+  document: PlannerDocument,
+  projection: PlannerDocument | null,
+): PlannerDocument {
+  if (!projection) return document;
+  const result = clone(document);
+  for (const key of Object.keys(projection.profile)) {
+    if (!Object.prototype.hasOwnProperty.call(result.profile, key)) {
+      (result.profile as Record<string, unknown>)[key] = (
+        projection.profile as Record<string, unknown>
+      )[key];
+    }
+  }
+  return normalizeEmptyDates(result);
+}
+
+/**
+ * 空目标日期统一用空字符串表达。
+ *
+ * 客户端模型和本机导出都用空值，服务端文档保持同一个字面量；
+ * 读写比较前都要归一化，否则每次同步都会因为 null 与 '' 不一致而误报冲突。
+ */
+function normalizeEmptyDates(document: PlannerDocument): PlannerDocument {
+  const result = clone(document);
+  const target = (result.profile as Record<string, unknown>).target_date;
+  if (target === null || target === undefined) {
+    (result.profile as Record<string, unknown>).target_date = "";
+  }
+  return result;
+}
+
 async function lockedState(client: pg.PoolClient, owner: string) {
   // SERIALIZABLE captures state and all relationship rows from one database snapshot.
   await client.query(
@@ -214,16 +262,36 @@ async function currentState(
   row: StateRow,
 ) {
   const raw = (await snapshot(owner, client)) as PlannerDocument | null;
-  const data =
+  const rebased =
     row.document && raw && row.projection
       ? rebase(row.document, row.projection, raw)
       : (row.document ?? raw);
-  if (row.document && data)
+  // 关系表是权威来源：文档里没有的字段（例如旧客户端的 weekly_minutes）必须补回。
+  const data = rebased ? withProjectedProfile(rebased, raw) : rebased;
+  if (data)
     await client.query(
       "update planner_sync_state set document=$2,projection=$3 where user_id=$1",
       [owner, JSON.stringify(data), JSON.stringify(raw)],
     );
   return { data, revision: Number(row.revision) };
+}
+
+export async function readPlannerState(client: pg.PoolClient, owner: string) {
+  return currentState(client, owner, await lockedState(client, owner));
+}
+
+export async function commitPlannerState(client: pg.PoolClient, owner: string, data: PlannerDocument, expectedRevision: number) {
+  const row = await lockedState(client, owner);
+  if (Number(row.revision) !== expectedRevision) throw new PlannerRevisionConflict("当前计划已更新，请重新读取当前计划后再确认");
+  const validated = PlannerDocumentSchema.parse(data);
+  await writeProjection(client, owner, validated);
+  const projection = await snapshot(owner, client);
+  const document = withProjectedProfile(validated, projection as PlannerDocument | null);
+  const result = await client.query<{ revision: string }>(
+    "update planner_sync_state set document=$2,projection=$3,revision=revision+1,updated_at=now() where user_id=$1 returning revision",
+    [owner, JSON.stringify(document), JSON.stringify(projection)],
+  );
+  return Number(result.rows[0].revision);
 }
 
 async function assertOwnership(
@@ -300,23 +368,45 @@ async function writeProjection(
     days.map((row) => row.id),
   );
   const profile = data.profile;
+  // 一周配置：文档里的可靠配置 > 数据库里已有的可靠配置 > 旧数据每日上限。
+  const storedWeekly = (await client.query<{ weekly_minutes: unknown }>(
+    "select weekly_minutes from profiles where user_id=$1",
+    [owner],
+  )).rows[0]?.weekly_minutes;
+  const weekly = isReliableWeek(profile.weekly_minutes)
+    ? normalizeWeek(profile.weekly_minutes)
+    : isReliableWeek(storedWeekly)
+      ? normalizeWeek(storedWeekly)
+      : normalizeWeek(Object.fromEntries(
+        [0, 1, 2, 3, 4, 5, 6].map((day) => [day, profile.daily_limit_minutes]),
+      ));
+  // 新字段存在即为准（null/"" 表示用户已清空）；只有完全缺失时才回退旧考试日期。
+  const targetDate = Object.prototype.hasOwnProperty.call(profile, "target_date")
+    ? profile.target_date ?? null
+    : profile.exam_date ?? null;
   await client.query(
-    `insert into profiles(user_id,exam_date,target_school,target_program,current_progress,weekly_minutes) values($1,$2,$3,$4,$5,$6)
-    on conflict(user_id) do update set exam_date=excluded.exam_date,target_school=excluded.target_school,target_program=excluded.target_program,current_progress=excluded.current_progress,updated_at=now()`,
+    `insert into profiles(user_id,goal_text,goal_type,goal_subtype,target_date,target_date_confirmed,plan_start_date,plan_end_date,target_school,target_program,current_progress,weekly_minutes,exam_type,exam_date)
+    values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+    on conflict(user_id) do update set goal_text=excluded.goal_text,goal_type=excluded.goal_type,goal_subtype=excluded.goal_subtype,
+      target_date=excluded.target_date,target_date_confirmed=excluded.target_date_confirmed,plan_start_date=excluded.plan_start_date,
+      plan_end_date=excluded.plan_end_date,target_school=excluded.target_school,target_program=excluded.target_program,
+      current_progress=excluded.current_progress,weekly_minutes=excluded.weekly_minutes,exam_type=excluded.exam_type,
+      exam_date=excluded.exam_date,updated_at=now()`,
     [
       owner,
-      profile.exam_date,
+      profile.goal_text ?? "",
+      profile.goal_type ?? "other",
+      profile.goal_subtype ?? "",
+      targetDate,
+      profile.target_date_confirmed ?? false,
+      profile.plan_start_date ?? null,
+      profile.plan_end_date ?? null,
       profile.target_school,
       profile.target_program,
       profile.foundation,
-      JSON.stringify(
-        Object.fromEntries(
-          [0, 1, 2, 3, 4, 5, 6].map((day) => [
-            day,
-            profile.daily_limit_minutes,
-          ]),
-        ),
-      ),
+      JSON.stringify(weekly),
+      profile.goal_subtype || "其他",
+      targetDate,
     ],
   );
   for (const subject of data.subjects)
@@ -352,8 +442,8 @@ async function writeProjection(
     }
     await upsert(
       client,
-      `insert into items(id,user_id,course_id,title,description,completion_criteria,estimated_minutes,earliest_date,deadline,priority,status,confirmed,created_at,updated_at)
-      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,$12,$13) on conflict(id) do update set course_id=excluded.course_id,title=excluded.title,description=excluded.description,completion_criteria=excluded.completion_criteria,estimated_minutes=excluded.estimated_minutes,earliest_date=excluded.earliest_date,deadline=excluded.deadline,priority=excluded.priority,status=excluded.status,updated_at=excluded.updated_at where items.user_id=excluded.user_id`,
+      `insert into items(id,user_id,course_id,title,description,completion_criteria,estimated_minutes,earliest_date,deadline,deadline_kind,priority,status,confirmed,created_at,updated_at)
+      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,true,$13,$14) on conflict(id) do update set course_id=excluded.course_id,title=excluded.title,description=excluded.description,completion_criteria=excluded.completion_criteria,estimated_minutes=excluded.estimated_minutes,earliest_date=excluded.earliest_date,deadline=excluded.deadline,deadline_kind=excluded.deadline_kind,priority=excluded.priority,status=excluded.status,updated_at=excluded.updated_at where items.user_id=excluded.user_id`,
       [
         id("items", task.id),
         owner,
@@ -364,6 +454,7 @@ async function writeProjection(
         task.estimated_minutes,
         task.earliest_date ?? null,
         task.deadline,
+        task.deadline_kind ?? "deadline",
         task.priority,
         task.status,
         task.created_at,
@@ -482,15 +573,17 @@ export async function syncRoutes(app: FastifyInstance) {
       const result = await withSnapshot(async (client) => {
         const state = await lockedState(client, user.id);
         const current = await currentState(client, user.id, state);
-        if (current.revision !== expectedRevision || !same(base, current.data))
+        const comparableBase = base ? normalizeEmptyDates(base) : null;
+        if (current.revision !== expectedRevision || !same(comparableBase, current.data))
           return { conflict: true as const, ...current };
         await writeProjection(client, user.id, data);
         const projection = await snapshot(user.id, client);
+        const document = withProjectedProfile(data, projection as PlannerDocument | null);
         const updated = await client.query<{ revision: string }>(
           "update planner_sync_state set document=$2,projection=$3,revision=revision+1,updated_at=now() where user_id=$1 returning revision",
-          [user.id, JSON.stringify(data), JSON.stringify(projection)],
+          [user.id, JSON.stringify(document), JSON.stringify(projection)],
         );
-        return { data, revision: Number(updated.rows[0].revision) };
+        return { data: document, revision: Number(updated.rows[0].revision) };
       });
       if ("conflict" in result) reply.code(409);
       return result;

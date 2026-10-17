@@ -6,56 +6,75 @@ part of 'api_models.dart';
 // JsonSerializableGenerator
 // **************************************************************************
 
-_OnboardingProfile _$OnboardingProfileFromJson(Map<String, dynamic> json) =>
-    $checkedCreate(
-      '_OnboardingProfile',
-      json,
-      ($checkedConvert) {
-        final val = _OnboardingProfile(
-          examType: $checkedConvert('exam_type', (v) => v as String),
-          examDate: $checkedConvert('exam_date', (v) => v as String),
-          targetSchool: $checkedConvert(
-            'target_school',
-            (v) => v as String? ?? '',
-          ),
-          targetProgram: $checkedConvert(
-            'target_program',
-            (v) => v as String? ?? '',
-          ),
-          currentProgress: $checkedConvert(
-            'current_progress',
-            (v) => v as String? ?? '',
-          ),
-          weeklyMinutes: $checkedConvert(
-            'weekly_minutes',
-            (v) =>
-                (v as Map<String, dynamic>?)?.map(
-                  (k, e) => MapEntry(k, (e as num).toInt()),
-                ) ??
-                const {'0': 0, '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, '6': 0},
-          ),
-          constraintsText: $checkedConvert(
-            'constraints_text',
-            (v) => v as String? ?? '',
-          ),
-        );
-        return val;
-      },
-      fieldKeyMap: const {
-        'examType': 'exam_type',
-        'examDate': 'exam_date',
-        'targetSchool': 'target_school',
-        'targetProgram': 'target_program',
-        'currentProgress': 'current_progress',
-        'weeklyMinutes': 'weekly_minutes',
-        'constraintsText': 'constraints_text',
-      },
+_OnboardingProfile _$OnboardingProfileFromJson(
+  Map<String, dynamic> json,
+) => $checkedCreate(
+  '_OnboardingProfile',
+  json,
+  ($checkedConvert) {
+    final val = _OnboardingProfile(
+      goalText: $checkedConvert('goal_text', (v) => v as String? ?? ''),
+      goalType: $checkedConvert('goal_type', (v) => v as String? ?? 'other'),
+      goalSubtype: $checkedConvert('goal_subtype', (v) => v as String? ?? ''),
+      targetDate: $checkedConvert('target_date', (v) => v as String? ?? ''),
+      targetDateConfirmed: $checkedConvert(
+        'target_date_confirmed',
+        (v) => v as bool? ?? false,
+      ),
+      planStartDate: $checkedConvert(
+        'plan_start_date',
+        (v) => v as String? ?? '',
+      ),
+      planEndDate: $checkedConvert('plan_end_date', (v) => v as String? ?? ''),
+      targetSchool: $checkedConvert('target_school', (v) => v as String? ?? ''),
+      targetProgram: $checkedConvert(
+        'target_program',
+        (v) => v as String? ?? '',
+      ),
+      currentProgress: $checkedConvert(
+        'current_progress',
+        (v) => v as String? ?? '',
+      ),
+      weeklyMinutes: $checkedConvert(
+        'weekly_minutes',
+        (v) =>
+            (v as Map<String, dynamic>?)?.map(
+              (k, e) => MapEntry(k, (e as num).toInt()),
+            ) ??
+            const {'0': 0, '1': 0, '2': 0, '3': 0, '4': 0, '5': 0, '6': 0},
+      ),
+      constraintsText: $checkedConvert(
+        'constraints_text',
+        (v) => v as String? ?? '',
+      ),
     );
+    return val;
+  },
+  fieldKeyMap: const {
+    'goalText': 'goal_text',
+    'goalType': 'goal_type',
+    'goalSubtype': 'goal_subtype',
+    'targetDate': 'target_date',
+    'targetDateConfirmed': 'target_date_confirmed',
+    'planStartDate': 'plan_start_date',
+    'planEndDate': 'plan_end_date',
+    'targetSchool': 'target_school',
+    'targetProgram': 'target_program',
+    'currentProgress': 'current_progress',
+    'weeklyMinutes': 'weekly_minutes',
+    'constraintsText': 'constraints_text',
+  },
+);
 
 Map<String, dynamic> _$OnboardingProfileToJson(_OnboardingProfile instance) =>
     <String, dynamic>{
-      'exam_type': instance.examType,
-      'exam_date': instance.examDate,
+      'goal_text': instance.goalText,
+      'goal_type': instance.goalType,
+      'goal_subtype': instance.goalSubtype,
+      'target_date': instance.targetDate,
+      'target_date_confirmed': instance.targetDateConfirmed,
+      'plan_start_date': instance.planStartDate,
+      'plan_end_date': instance.planEndDate,
       'target_school': instance.targetSchool,
       'target_program': instance.targetProgram,
       'current_progress': instance.currentProgress,
@@ -101,6 +120,12 @@ _ItemDraft _$ItemDraftFromJson(Map<String, dynamic> json) => $checkedCreate(
       ),
       earliestDate: $checkedConvert('earliest_date', (v) => v as String?),
       deadline: $checkedConvert('deadline', (v) => v as String),
+      deadlineKind: $checkedConvert(
+        'deadline_kind',
+        (v) =>
+            $enumDecodeNullable(_$ItemDateKindEnumMap, v) ??
+            ItemDateKind.deadline,
+      ),
       priority: $checkedConvert('priority', (v) => (v as num?)?.toInt() ?? 2),
     );
     return val;
@@ -110,6 +135,7 @@ _ItemDraft _$ItemDraftFromJson(Map<String, dynamic> json) => $checkedCreate(
     'completionCriteria': 'completion_criteria',
     'estimatedMinutes': 'estimated_minutes',
     'earliestDate': 'earliest_date',
+    'deadlineKind': 'deadline_kind',
   },
 );
 
@@ -123,8 +149,14 @@ Map<String, dynamic> _$ItemDraftToJson(_ItemDraft instance) =>
       'estimated_minutes': instance.estimatedMinutes,
       'earliest_date': ?instance.earliestDate,
       'deadline': instance.deadline,
+      'deadline_kind': _$ItemDateKindEnumMap[instance.deadlineKind]!,
       'priority': instance.priority,
     };
+
+const _$ItemDateKindEnumMap = {
+  ItemDateKind.deadline: 'deadline',
+  ItemDateKind.planEnd: 'plan_end',
+};
 
 _PlanDraft _$PlanDraftFromJson(Map<String, dynamic> json) => $checkedCreate(
   '_PlanDraft',

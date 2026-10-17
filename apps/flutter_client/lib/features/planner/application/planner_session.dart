@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/sync/planner_coordinator.dart';
 import '../../../core/sync/sync_state.dart';
 import '../../../shared/models/planner_models.dart';
+import '../domain/plan_cycle.dart';
 import '../domain/planner_format.dart';
 import '../domain/scheduler/planner_scheduler.dart' as scheduler;
 import '../domain/study_day.dart' as day_ops;
@@ -174,6 +175,31 @@ class PlannerSession {
       feedback: feedback,
     ),
   );
+
+  // ------------------------------------------------------------ plan cycle
+
+  /// 延展本次规划周期，并只把本期安排边界类事项的日期跟随新周期。
+  Future<void> updatePlanCycle({
+    required String start,
+    required String end,
+  }) => edit(
+    (data) => extendPlanCycle(
+      data,
+      start: start,
+      end: end,
+      today: shanghaiToday(),
+    ),
+  );
+
+  /// 生成 [from] 到 [to] 的每日安排；重复执行不会重复生成已有安排。
+  Future<PlanGenerationResult> generateSchedule({
+    required String from,
+    required String to,
+  }) async {
+    final result = generatePlanBlocks(data, from: from, to: to);
+    await edit((_) => result.data);
+    return result;
+  }
 
   // ----------------------------------------------------------------- replan
 

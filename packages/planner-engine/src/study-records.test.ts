@@ -28,6 +28,17 @@ const total = (data: PlannerData, taskId: string) =>
   data.logs.filter((log) => log.task_id === taskId).reduce((sum, log) => sum + log.minutes, 0);
 
 describe("course item study records", () => {
+  it("corrects archived history without reactivating the task", () => {
+    const original = fixture();
+    original.tasks[0].status = "archived";
+    const recorded = recordTaskDayMinutes(original, "item-0", "2026-10-14", 150);
+    const corrected = recordTaskDayMinutes(recorded, "item-0", "2026-10-14", 0);
+    expect(recorded.tasks[0].status).toBe("archived");
+    expect(recorded.tasks[0].completed_minutes).toBe(120);
+    expect(corrected.tasks[0].status).toBe("archived");
+    expect(corrected.tasks[0].completed_minutes).toBe(0);
+  });
+
   it("keeps two items in one course independent", () => {
     let data = recordTaskDayMinutes(fixture(), "item-0", "2026-10-14", 90);
     data = recordTaskDayMinutes(data, "item-1", "2026-10-14", 45);

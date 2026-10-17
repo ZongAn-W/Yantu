@@ -52,27 +52,36 @@ function addDays(date: string, amount: number) {
   return value.toISOString().slice(0, 10);
 }
 
+const GOAL_FALLBACK_COURSES: Record<string, string[]> = {
+  exam: ["考试科目"],
+  course: ["课程内容"],
+  skill: ["基础入门", "动手练习", "综合实践"],
+  self_study: ["阅读材料", "专题整理"],
+  other: ["学习内容"],
+};
+
 function fallback(profile: ProfileInput): PlanDraft {
-  const courses = profile.exam_type === "考公"
-    ? ["行测", "申论"]
-    : ["数学", "英语", "专业课", "政治"];
+  // 通用兜底模板：不再为所有目标生成数学、英语、政治等考研科目。
+  const courses = GOAL_FALLBACK_COURSES[profile.goal_type] ?? GOAL_FALLBACK_COURSES.other;
   const ids = courses.map((name, index) => `course-${index + 1}-${name}`);
+  const start = addDays(new Date().toISOString().slice(0, 10), 0);
+  const boundary = profile.plan_end_date ?? profile.target_date ?? addDays(start, 27);
   const items = courses.flatMap((name, index) => [
     {
-      id: `item-${index + 1}-foundation`, course_id: ids[index], title: "基础一轮",
+      id: `item-${index + 1}-foundation`, course_id: ids[index], title: "基础学习",
       description: `${name}基础知识、例题和错题整理。当前进度：${profile.current_progress || "尚未填写"}`,
       completion_criteria: "完成一轮材料并整理薄弱点", estimated_minutes: 120 * 60,
-      earliest_date: addDays(new Date().toISOString().slice(0, 10), 0), deadline: profile.exam_date, priority: index < 2 ? 3 : 2,
+      earliest_date: start, deadline: boundary, deadline_kind: "plan_end" as const, priority: index < 2 ? 3 : 2,
     },
     {
-      id: `item-${index + 1}-practice`, course_id: ids[index], title: "真题与强化",
-      description: `${name}真题训练、计时练习和复盘。`, completion_criteria: "完成题目并记录错因",
-      estimated_minutes: 80 * 60, earliest_date: addDays(new Date().toISOString().slice(0, 10), 14), deadline: profile.exam_date, priority: 2,
+      id: `item-${index + 1}-practice`, course_id: ids[index], title: "练习与复盘",
+      description: `${name}专项练习、计时训练和复盘。`, completion_criteria: "完成练习并记录错因",
+      estimated_minutes: 80 * 60, earliest_date: start, deadline: boundary, deadline_kind: "plan_end" as const, priority: 2,
     },
   ]);
-  return PlanDraftSchema.parse({ courses: courses.map((name, index) => ({ id: ids[index], name, description: "AI 根据备考目标生成的课程", priority: index < 2 ? 3 : 2 })), items,
-    analysis_summary: `根据${profile.exam_type}目标、考试日期和当前进度生成初始学习框架。确认后还可以逐项修改。`,
-    assumptions: ["每日计划会按照每周可用时间分配", "实际学习反馈会用于每日结算"], warnings: [] });
+  return PlanDraftSchema.parse({ courses: courses.map((name, index) => ({ id: ids[index], name, description: "根据学习目标生成的基础课程", priority: index < 2 ? 3 : 2 })), items,
+    analysis_summary: `根据学习目标「${profile.goal_text || profile.goal_subtype || "未填写"}」和当前进度生成初始学习框架。确认后还可以逐项修改。`,
+    assumptions: ["每日计划会按照每周可用时间分配", "事项按本期安排边界推进，可在确认后修改"], warnings: [] });
 }
 
 async function callModel(profile: ProfileInput): Promise<PlanDraft> {
@@ -82,7 +91,7 @@ async function callModel(profile: ProfileInput): Promise<PlanDraft> {
     items: [{
       id: "item-1", course_id: "course-1", title: "示例事项", description: "具体学习内容",
       completion_criteria: "可以验证的完成标准", estimated_minutes: 60,
-      earliest_date: currentDate, deadline: profile.exam_date, priority: 2,
+      earliest_date: currentDate, deadline: profile.plan_end_date ?? profile.target_date ?? addDays(currentDate, 27), deadline_kind: "plan_end" as const, priority: 2,
     }],
     analysis_summary: "根据备考资料说明规划依据",
     assumptions: [],
@@ -102,7 +111,7 @@ async function callModel(profile: ProfileInput): Promise<PlanDraft> {
           "课程和事项的 priority 必须是 JSON 整数 1、2 或 3，分别表示低、中、高。禁止数字字符串、英文或中文等级名称。",
           "estimated_minutes 必须是 30 到 100000 之间的整数分钟，不能是字符串或小时数。assumptions 和 warnings 必须是字符串数组，没有内容时返回 []。",
           "课程和事项必须可执行、可计时，分别使用唯一的字符串 id；事项的 course_id 必须引用本次课程数组中的 id。",
-          "使用 YYYY-MM-DD 日期字符串，earliest_date 可以省略但不能为 null。满足 current_date <= earliest_date <= deadline <= profile.exam_date。",
+          "使用 YYYY-MM-DD 日期字符串，earliest_date 可以省略但不能为 null。满足 current_date <= earliest_date <= deadline。deadline_kind 为 deadline 表示真实截止日期，为 plan_end 表示本期安排边界（使用 profile.plan_end_date）。目标日期 profile.target_date 可以为空，不能把规划结束日期当作目标日期。",
           "依据 profile 和 constraints_text 生成课程数量、事项数量、内容和时长；example 仅展示结构与类型，不代表实际学习计划。",
         ].join("\n") },
         { role: "user", content: JSON.stringify({ profile, current_date: currentDate, output_schema: draftOutputSchema, example }) },

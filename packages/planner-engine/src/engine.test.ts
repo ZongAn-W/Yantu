@@ -121,6 +121,36 @@ const planned = (blocks: ScheduleBlock[]) =>
 const sum = (blocks: ScheduleBlock[]) =>
   blocks.reduce((total, item) => total + item.duration_minutes, 0);
 
+describe("archived task history", () => {
+  it.each(["unfinished", "overcompleted"] as const)(
+    "%s skips archived work while preserving fixed, completed and actual-used history",
+    (mode) => {
+      const history = [
+        block("past", "math", { date: addDays(TODAY, -1) }),
+        block("actual", "math", { actual_minutes: 20 }),
+        block("fixed", "math", { is_fixed: true, date: addDays(TODAY, 1) }),
+        block("done", "math", { status: "completed", date: addDays(TODAY, 1) }),
+      ];
+      const source = input({
+        mode,
+        excess_minutes: 60,
+        tasks: [task("math", { status: "archived", completed_minutes: 120 })],
+        blocks: [...history, block("unstarted"), block("future", "math", { date: addDays(TODAY, 1) })],
+        logs: [log(20, { block_id: "actual" })],
+      });
+      const original = data(source);
+      expect(validateBlockPlacement(original, block("new"))).toBe("已归档事项不可安排");
+      const preview = generateReplanPreview(source);
+      expect(preview.after).toEqual(history);
+      expect(preview.conflicts).toEqual([]);
+      const confirmed = confirmReplan(original, preview);
+      expect(confirmed.tasks[0].status).toBe("archived");
+      expect(confirmed.logs).toEqual(original.logs);
+      expect(undoLastReplan(confirmed).tasks[0].status).toBe("archived");
+    },
+  );
+});
+
 describe("保守重排", () => {
   it("120分钟完成60分钟后保留执行记录，将剩余60分钟拆成两个30分钟块", () => {
     const source = input({

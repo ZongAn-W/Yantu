@@ -1,8 +1,8 @@
 # Flutter 统一客户端
 
-这是考研执行台唯一维护的客户端，使用 Node/Fastify API，覆盖 Web、Windows、Android 和 iOS。
+这是“不白学 · 学习执行台”唯一维护的客户端，使用 Node/Fastify API，覆盖 Web、Windows、Android 和 iOS。学习目标可以是考试备考、课程学习、技能提升、自主学习或自定义目标。
 
-**状态**：登录、备考向导、AI 草案、今日、事项、日历、进度、设置与数据管理全部可用。React/Tauri 源码和配置已移除，详情见根目录 [清理记录](../../REACT_REMOVAL.md)。
+**状态**：登录、学习目标访谈、课程与事项确认、日期与容量确认、AI 草案、今日、事项、日历、进度、设置与数据管理全部可用。React/Tauri 源码和配置已移除，详情见根目录 [清理记录](../../REACT_REMOVAL.md)。
 
 ## 1. 环境与版本
 
@@ -183,7 +183,7 @@ WEB_ORIGIN=http://127.0.0.1:5180
 
 ### 离线修改与同步冲突
 
-- 离线重启时，只要本机有当前账号的有效计划，备考资料请求失败不会把用户送回首次填写向导。没有缓存时显示读取失败和重试；只有服务端明确返回资料不存在才进入向导。
+- 离线重启时，只要本机有当前账号的有效计划，学习目标资料请求失败不会把用户送回首次填写向导。没有缓存时显示读取失败和重试；只有服务端明确返回资料不存在才进入向导。
 - 修改先落本机，再同步。每 15 秒及应用回到前台自动重试，也可在设置页手动重试。
 - 使用共同 `base` 合并独立字段；同一事项同一天的累计日志按**总量修正**而非相加。
 - 同一字段或同一天总量的并发修改会暂停上传，设置页提供「冲突项保留本机 / 使用云端」的显式选择；未选择时保留本机修改与原基线，重启后重新识别冲突，不静默丢弃任何一侧。
@@ -196,7 +196,7 @@ WEB_ORIGIN=http://127.0.0.1:5180
 | 层次 | 命令 | 说明 |
 | --- | --- | --- |
 | 静态检查 | `flutter analyze --no-pub` | 必须无问题 |
-| 单元 + widget | `flutter test --no-pub` | 291 项（含 92 个共享 golden 用例） |
+| 单元 + widget | `flutter test --no-pub` | 334 项（含 97 个共享 golden 用例） |
 | 排程 golden（共享 fixture） | 见下 | TypeScript 为 oracle，Dart 逐字段比对 |
 | API / 存储 / 同步单元 | `flutter test --no-pub test/unit` | 含真实文件系统与真实 Dio |
 | Flutter integration | 见下 | 真实 socket + 真实文件数据库 |
@@ -321,7 +321,7 @@ API 的同步与 refresh token 表属于当前客户端的运行依赖，客户�
 
 ## 7. 认证和 API（现状）
 
-第三阶段接入真实登录、注册验证码、自动恢复会话、退出、认证路由守卫，以及类型化 `PlannerData`、备考资料和 AI 草案客户端。第四阶段接入本机计划、今日累计用时编辑、JSON 导入导出、备份恢复和 revision/base 同步。第五阶段实现 Dart 排程 domain 与离线操作接口。第六阶段完成全部页面迁移（今日、事项、日历、进度、设置、备考资料与 AI 草案），手机使用底部导航、Web/Windows 使用侧栏。第七阶段补齐 81 项测试与 6 项 Windows 集成测试并修复三个缺陷。第八阶段完成发布准备。
+第三阶段接入真实登录、注册验证码、自动恢复会话、退出、认证路由守卫，以及类型化 `PlannerData`、学习目标资料和 AI 草案客户端。第四阶段接入本机计划、今日累计用时编辑、JSON 导入导出、备份恢复和 revision/base 同步。第五阶段实现 Dart 排程 domain 与离线操作接口。第六阶段完成全部页面迁移（今日、事项、日历、进度、设置、学习目标资料与 AI 草案），手机使用底部导航、Web/Windows 使用侧栏。第七阶段补齐 81 项测试与 6 项 Windows 集成测试并修复三个缺陷。第八阶段完成发布准备。
 
 默认开发入口 `http://127.0.0.1:5180`，API `http://127.0.0.1:8787`，保持同一主机以便开发 Cookie 生效。先按仓库原有说明配置 PostgreSQL 和 `apps/api/.env`，然后：
 
@@ -344,6 +344,11 @@ npm test -- apps/api/src/auth.integration.test.ts
 
 纯 Dart 引擎位于 `lib/features/planner/domain/scheduler/planner_scheduler.dart`，与 TypeScript 共用 `packages/planner-engine/fixtures/planner-goldens.json` 的 92 个输入和完整预期（含生成后的 ID、UTC 毫秒时间、建议字段、任务状态快照和数组顺序）。旧 JSON 缺省 `planning_mode` 时读取为 daily、导出仍省略。
 
+本地还有两类排程操作，语义不同，调用方必须区分：
+
+- `generatePlanBlocks(from, to)`：只新增与区间相交的安排，保留现有安排；用于续排下一周期。
+- `reschedulePlan(today, start, end)`：按新的容量/周期重新安排受影响的未来安排（设置变化用），保护历史、已完成、固定、有实际用时或有日志引用的记录，排不完的部分作为未安排量保留。
+
 应用入口由 `PlannerCoordinator` 提供，Widget 只展示返回的 preview 并调用这些命令：
 
 ```dart
@@ -362,7 +367,7 @@ await coordinator.recordDayMinutes(taskId, '2026-10-17', 90);
 
 预览/取消不落盘。确认和撤销先经协调器串行校验、持久化再同步；期间任务、日志、设置、固定事件或建议变化使确认过期。新本机 run 的可选 `local_undo_guard` 随 JSON/存储/API 保存，重启后修改数据仍阻止撤销覆盖。旧 TypeScript run 沿用其块快照保护和可选 `task_status_before/after`；没有完整旧输入时无法追溯增强保护。`study_edits.dart` 仅为兼容转发，今日学习记录已使用 domain。
 
-本机确认是客户端快照编辑，经 `/api/planner/sync` 的 revision/base 协议提交；不会调用 `/api/plans/generate` 或每日 settle。服务端仍负责正式生成/结算及 AI 建议。服务端现有算法使用星期容量、每天每任务一次最多 30 分钟、从开始日至考试日，尚没有客户端的缓冲、固定事件和 14/7 天规则；不可将两者作为等价确认接口。差异表见根 `FLUTTER_MIGRATION_DESIGN.md` 第 9 节。正式 API 算法、数据库和旧客户端未被替换。
+本机确认是客户端快照编辑，经 `/api/planner/sync` 的 revision/base 协议提交；不会调用 `/api/plans/generate` 或每日 settle。服务端仍负责正式生成/结算及 AI 建议。服务端现有算法使用一周七天容量、每天每任务一次最多 30 分钟、从开始日至规划周期结束日，尚没有客户端的固定事件和 14/7 天规则；不可将两者作为等价确认接口。差异表见根 `FLUTTER_MIGRATION_DESIGN.md` 第 9 节。正式 API 算法、数据库和旧客户端未被替换。
 
 ## 9. 页面模块（第六阶段）
 
@@ -373,20 +378,20 @@ lib/features/
   tasks/presentation/                  事项：筛选、增删改、安排时间块、标记完成
   calendar/presentation/               日历：日/周视图、固定事件、容量、拖动/改日期
   progress/presentation/               进度：课程进度、周对比、热力图、燃尽
-  onboarding/presentation/             备考资料六步 + AI 草案编辑与确认
-  settings/presentation/               设置：备考信息、排程边界、优先级、数据、同步
+  onboarding/presentation/             学习目标访谈 + 课程/事项确认 + 日期与容量确认
+  settings/presentation/               设置：学习目标与规划、每日可用时间与排程边界、优先级、数据、同步；容量/周期变化经预览确认
   planner/domain/                      格式化、每日统计、事项编辑、进度指标、最小计划
-  planner/application/                 会话命令面、快照、备考向导控制器
-  planner/presentation/                共用对话框与页面状态外壳
+  planner/application/                 会话命令面、快照、学习目标设置控制器、续排
+  planner/presentation/                共用对话框、日程调整预览、续排对话框与页面状态外壳
 ```
 
 路由沿用 `/`、`/calendar`、`/tasks`、`/progress`、`/settings`，新增 `/onboarding`；认证与备考资料守卫在 `app/router/app_router.dart`。
 
-有意的行为差异：本机不自动导入 Web 的整套预设课程与事项，新账号的课程/事项由备考向导生成，本机只预置正式初试与休息固定事件。
+有意的行为差异：本机不自动导入 Web 的整套预设课程与事项，新账号的课程/事项由学习目标访谈生成；本机初始化只预置可修改的休息固定事件，不写入任何考试、院校或专业信息。
 
 ## 10. 测试与验收记录
 
-审查修复后 `flutter analyze` 无问题，**291** 项 Flutter 单元/widget 测试通过；TypeScript 与 Dart 共享 golden 92 用例两端一致；Vitest 188 项全部通过（含隔离 PostgreSQL 的 11 个认证与 9 个同步测试）。本轮根 typecheck、API 构建、Flutter Web 与 Windows 发布编译通过；Windows 集成复测状态见 `TEST_REPORT.md` 第 11 节。前阶段的 React/Rust、6 项 Windows 集成与 22 项 Chrome 界面断言保留为历史验证记录，不代表本轮全部重新执行。
+审查修复后 `flutter analyze` 无问题，**334** 项 Flutter 单元/widget 测试通过；TypeScript 与 Dart 共享 golden 92 用例两端一致；Vitest 188 项全部通过（含隔离 PostgreSQL 的 11 个认证与 9 个同步测试）。本轮根 typecheck、API 构建、Flutter Web 与 Windows 发布编译通过；Windows 集成复测状态见 `TEST_REPORT.md` 第 11 节。前阶段的 React/Rust、6 项 Windows 集成与 22 项 Chrome 界面断言保留为历史验证记录，不代表本轮全部重新执行。
 
 完整清单、未验证项与复现命令见根 [`TEST_REPORT.md`](../../TEST_REPORT.md)、[`FLUTTER_MIGRATION_DESIGN.md`](../../FLUTTER_MIGRATION_DESIGN.md) 第 11 节。
 

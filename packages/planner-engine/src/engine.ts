@@ -78,6 +78,27 @@ function blockPending(block: ScheduleBlock, logs: TimeLog[]): number {
     : Math.max(0, block.duration_minutes - blockActual(block, logs));
 }
 
+/** 周几索引：0 为周日，6 为周六，与 Flutter 与服务端一致。 */
+export function weekdayIndex(date: string): number {
+  const timestamp = Date.parse(`${date}T00:00:00Z`);
+  return Number.isFinite(timestamp) ? new Date(timestamp).getUTCDay() : 0;
+}
+
+/**
+ * 某一自然日的可用学习预算：优先使用一周七天的实际值。
+ * 旧数据没有 weekly_minutes 时退回每日上限，两者默认结果一致。
+ */
+export function dailyStudyBudget(profile: Profile, date: string): number {
+  const week = profile.weekly_minutes;
+  const raw = week && Object.keys(week).length === 7
+    ? finiteMinutes(Number(week[String(weekdayIndex(date))] ?? 0))
+    : finiteMinutes(profile.daily_limit_minutes);
+  return Math.max(
+    0,
+    Math.min(480, raw) - Math.max(30, finiteMinutes(profile.buffer_minutes)),
+  );
+}
+
 function limits(profile: Profile) {
   return {
     daily: Math.max(
@@ -145,7 +166,7 @@ export function availableDailyMinutes(
 ): number {
   return Math.max(
     0,
-    limits(profile).daily -
+    dailyStudyBudget(profile, date) -
       fixedEventMinutesForDate(events, date, profile.planning_mode !== "timed"),
   );
 }
@@ -158,6 +179,7 @@ function placementError(
 ): string | null {
   const task = input.tasks.find((item) => item.id === candidate.task_id);
   if (!task) return "找不到对应任务";
+  if (task.status === "archived") return "已归档事项不可安排";
   if (
     !/^\d{4}-\d{2}-\d{2}$/.test(candidate.date) ||
     !Number.isFinite(Date.parse(`${candidate.date}T00:00:00Z`))
@@ -235,9 +257,9 @@ function placementError(
       eventLoad +
       orphanLogs.reduce((sum, log) => sum + finiteMinutes(log.minutes), 0) +
       candidate.duration_minutes >
-    capacity.daily
+    dailyStudyBudget(input.profile, candidate.date)
   )
-    return "超出每日上限，须保留至少30分钟机动时间";
+    return "超出当天可用的学习时间（每日上限），须保留至少30分钟机动时间";
   const subjectLoad = dayBlocks
     .filter(
       (block) =>
@@ -473,6 +495,8 @@ export function generateReplanPreview(input: ReplanInput, runtime: PlannerRuntim
   const immutable = (block: ScheduleBlock) =>
     block.is_fixed ||
     block.status === "completed" ||
+    (tasks.get(block.task_id)?.status === "archived" &&
+      blockActual(block, input.logs) > 0) ||
     tasks.get(block.task_id)?.is_fixed ||
     block.date < input.today ||
     block.date > horizon;
@@ -482,10 +506,11 @@ export function generateReplanPreview(input: ReplanInput, runtime: PlannerRuntim
         const task = tasks.get(block.task_id);
         return (
           immutable(block) ||
-          block.date === input.today ||
           !task ||
-          (task.status !== "completed" &&
-            remainingTaskMinutes(task, input.logs) > 0)
+          (task.status !== "archived" &&
+            (block.date === input.today ||
+              (task.status !== "completed" &&
+                remainingTaskMinutes(task, input.logs) > 0)))
         );
       }),
     );
@@ -513,6 +538,7 @@ export function generateReplanPreview(input: ReplanInput, runtime: PlannerRuntim
       const task = tasks.get(source.task_id);
       if (
         !task ||
+        task.status === "archived" ||
         task.status === "completed" ||
         remainingTaskMinutes(task, input.logs) === 0
       )
@@ -604,6 +630,7 @@ export function generateReplanPreview(input: ReplanInput, runtime: PlannerRuntim
       });
     }
     if (
+      task.status !== "archived" &&
       task.status !== "completed" &&
       remainingTaskMinutes(task, input.logs) > 0 &&
       blockPending(block, input.logs) > 0
@@ -727,7 +754,9 @@ export function confirmReplan(
   result.tasks = result.tasks.map((task) => ({
     ...task,
     status:
-      task.status === "completed" ||
+      task.status === "archived"
+        ? "archived"
+        : task.status === "completed" ||
       remainingTaskMinutes(task, result.logs) === 0
         ? "completed"
         : preview.conflicts.some((conflict) => conflict.task_id === task.id)

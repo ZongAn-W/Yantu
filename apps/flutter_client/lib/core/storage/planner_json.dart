@@ -89,8 +89,16 @@ void validatePlanner(PlannerData data) {
   for (final row in data.replanRuns) {
     if (row.userId != owner) throw const FormatException('重排历史账号不一致');
   }
-  date(data.profile.examDate);
-  date(data.profile.examEndDate);
+  // 可选日期：空字符串表示“没有这个日期”，不再用占位日期冒充。
+  for (final value in [
+    data.profile.targetDate,
+    data.profile.examDate,
+    data.profile.planStartDate,
+    data.profile.planEndDate,
+    data.profile.examEndDate,
+  ]) {
+    if (value.isNotEmpty) date(value);
+  }
   for (final value in data.dailyFeedback?.keys ?? <String>[]) {
     date(value);
   }

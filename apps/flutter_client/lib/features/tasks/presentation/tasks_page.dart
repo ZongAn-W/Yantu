@@ -41,6 +41,10 @@ class _TasksPageState extends ConsumerState<TasksPage> {
         final query = _search.text.trim().toLowerCase();
         final visible = <Task>[];
         for (final task in data.tasks) {
+          if (task.status == TaskStatus.archived &&
+              _status != TaskStatus.archived.name) {
+            continue;
+          }
           if (_subject != 'all' && task.subjectId != _subject) continue;
           if (_status != 'all' && task.status.name != _status) continue;
           if (_priority != 'all' && '${task.priority}' != _priority) continue;
@@ -64,7 +68,9 @@ class _TasksPageState extends ConsumerState<TasksPage> {
         });
         final future = [
           for (final task in visible)
-            if ((task.earliestDate ?? '').compareTo(today) > 0) task,
+            if (task.status != TaskStatus.archived &&
+                (task.earliestDate ?? '').compareTo(today) > 0)
+              task,
         ];
         final current = [
           for (final task in visible)
@@ -316,6 +322,13 @@ class _TaskCard extends ConsumerWidget {
                   children: [
                     Text(task.deadline, style: tabularFigures),
                     Text(
+                      itemDateKindLabels[task.deadlineKind] ?? '截止日期',
+                      style: const TextStyle(
+                        color: PlannerColors.muted,
+                        fontSize: 12,
+                      ),
+                    ),
+                    Text(
                       '${priorityLabels[task.priority]}优先级',
                       style: const TextStyle(
                         color: PlannerColors.muted,
@@ -331,20 +344,30 @@ class _TaskCard extends ConsumerWidget {
                       tooltip: '编辑事项',
                       icon: const Icon(Icons.edit_outlined, size: 18),
                       onPressed: editable
-                          ? () => TaskEditorDialog.show(context, taskId: task.id)
+                          ? () =>
+                                TaskEditorDialog.show(context, taskId: task.id)
                           : null,
                     ),
                     IconButton(
                       tooltip: '安排事项日期和时长',
-                      icon: const Icon(Icons.event_available_outlined, size: 18),
-                      onPressed: editable && task.status != TaskStatus.completed
+                      icon: const Icon(
+                        Icons.event_available_outlined,
+                        size: 18,
+                      ),
+                      onPressed:
+                          editable &&
+                              task.status != TaskStatus.completed &&
+                              task.status != TaskStatus.archived
                           ? () => ScheduleTaskDialog.show(context, task.id)
                           : null,
                     ),
                     IconButton(
                       tooltip: '手动标记完成',
                       icon: const Icon(Icons.check, size: 18),
-                      onPressed: editable && task.status != TaskStatus.completed
+                      onPressed:
+                          editable &&
+                              task.status != TaskStatus.completed &&
+                              task.status != TaskStatus.archived
                           ? () => CompleteTaskDialog.show(context, task.id)
                           : null,
                     ),
@@ -442,6 +465,7 @@ class _StatusBadge extends StatelessWidget {
       TaskStatus.delayed => PlannerColors.orange,
       TaskStatus.inProgress => PlannerColors.blue,
       TaskStatus.notStarted => PlannerColors.muted,
+      TaskStatus.archived => PlannerColors.muted,
     };
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),

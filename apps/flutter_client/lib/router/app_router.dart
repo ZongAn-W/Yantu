@@ -24,6 +24,7 @@ abstract final class AppRoutes {
   static const calendar = '/calendar';
   static const tasks = '/tasks';
   static const progress = '/progress';
+  static const interview = '/interview';
   static const settings = '/settings';
 }
 
@@ -174,6 +175,13 @@ class _PlannerRouter {
         ),
       ),
       GoRoute(
+        path: AppRoutes.interview,
+        builder: (context, _) => const AppShell(
+          selectedPath: AppRoutes.interview,
+          child: OnboardingPage(embedded: true),
+        ),
+      ),
+      GoRoute(
         path: AppRoutes.settings,
         builder: (context, _) => const AppShell(
           selectedPath: AppRoutes.settings,
@@ -204,10 +212,10 @@ class _SessionLoadingPage extends ConsumerWidget {
               const SizedBox(height: 16),
               Text(
                 error == null
-                    ? '正在读取备考资料…'
+                    ? '正在读取学习目标…'
                     : error is AppFailure
                     ? error.message
-                    : '备考资料读取失败，请重试',
+                    : '学习目标读取失败，请重试',
               ),
               if (error != null) ...[
                 const SizedBox(height: 16),
@@ -215,7 +223,7 @@ class _SessionLoadingPage extends ConsumerWidget {
                   onPressed: () =>
                       ref.read(onboardingStatusProvider.notifier).refresh(),
                   icon: const Icon(Icons.refresh),
-                  label: const Text('重试读取备考资料'),
+                  label: const Text('重试读取学习目标'),
                 ),
               ],
             ],

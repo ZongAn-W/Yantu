@@ -227,8 +227,12 @@ class FakePlannerServer {
   };
 
   static const _profile = {
-    'exam_type': '考研',
-    'exam_date': '2027-12-25',
+    'goal_text': '准备计算机专业研究生考试',
+    'goal_type': 'exam',
+    'goal_subtype': '考研',
+    'target_date': '2027-12-25',
+    'plan_start_date': '2026-10-01',
+    'plan_end_date': '2027-12-25',
     'target_school': '上海交通大学',
     'target_program': '计算机技术',
     'current_progress': '高数基础一轮',

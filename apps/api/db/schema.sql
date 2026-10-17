@@ -9,10 +9,18 @@ create table if not exists users (
   created_at timestamptz not null default now()
 );
 
+-- 通用学习目标与规划设置。exam_type / exam_date 只作为历史镜像保留。
 create table if not exists profiles (
   user_id uuid primary key references users(id) on delete cascade,
-  exam_type text not null default '考研',
-  exam_date date not null,
+  goal_text text not null default '',
+  goal_type text not null default 'other' check (goal_type in ('exam','course','skill','self_study','other')),
+  goal_subtype text not null default '',
+  target_date date,
+  target_date_confirmed boolean not null default false,
+  plan_start_date date,
+  plan_end_date date,
+  exam_type text,
+  exam_date date,
   target_school text not null default '',
   target_program text not null default '',
   current_progress text not null default '',
@@ -40,6 +48,8 @@ create table if not exists items (
   estimated_minutes integer not null check (estimated_minutes > 0),
   earliest_date date,
   deadline date not null,
+  -- deadline 为真实截止日期，plan_end 为本期安排边界。
+  deadline_kind text not null default 'deadline' check (deadline_kind in ('deadline','plan_end')),
   priority smallint not null default 2 check (priority between 1 and 3),
   confirmed boolean not null default false,
   status text not null default 'not_started',

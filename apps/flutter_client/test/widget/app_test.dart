@@ -18,12 +18,17 @@ import 'package:sjtu_study_planner_client/features/planner/application/onboardin
 
 import '../support/http_adapter.dart';
 import '../support/planner_fixture.dart';
+import '../support/onboarding_fixture.dart';
 
 /// A finished profile: `/api/onboarding/profile` returning it keeps the router on
 /// the workbench instead of the wizard.
 const testProfile = {
-  'exam_type': '考研',
-  'exam_date': '2027-12-25',
+  'goal_text': '准备计算机专业研究生考试',
+  'goal_type': 'exam',
+  'goal_subtype': '考研',
+  'target_date': '2027-12-25',
+  'plan_start_date': '2026-10-01',
+  'plan_end_date': '2027-12-25',
   'target_school': '上海交通大学',
   'target_program': '计算机技术',
   'current_progress': '高数基础一轮',
@@ -51,6 +56,12 @@ Future<ResponseBody> Function(RequestOptions) plannerAdapter() =>
       }
       if (options.path.endsWith('/api/onboarding/profile')) {
         return jsonResponse({'profile': testProfile});
+      }
+      if (options.path.endsWith('/api/onboarding/session')) {
+        return jsonResponse({
+          'session': onboardingFixture(stage: 'complete', answers: 5)
+            ..['has_plan'] = true,
+        });
       }
       if (options.path.endsWith('/api/planner/sync')) {
         return jsonResponse({'data': null, 'revision': 0});
@@ -80,6 +91,9 @@ void main() {
             'refreshToken': 'refresh',
             'expiresIn': 900,
           });
+        }
+        if (request.path == '/api/onboarding/session') {
+          return jsonResponse({'session': onboardingFixture()});
         }
         if (request.path == '/api/onboarding/profile') return lookup.future;
         if (request.path == '/api/planner/sync') {
@@ -231,6 +245,9 @@ void main() {
         tokenStore: MemoryTokenStore(),
         dio: Dio()
           ..httpClientAdapter = TestAdapter((request) async {
+            if (request.path == '/api/onboarding/session') {
+              return jsonResponse({'session': onboardingFixture()});
+            }
             if (request.path == '/api/onboarding/profile') {
               return failed
                   ? jsonResponse({'error': 'unavailable'}, 503)
@@ -279,9 +296,9 @@ void main() {
             .path,
         '/loading',
       );
-      expect(find.text('重试读取备考资料'), findsOneWidget);
+      expect(find.text('重试读取学习目标'), findsOneWidget);
       failed = false;
-      await tester.tap(find.text('重试读取备考资料'));
+      await tester.tap(find.text('重试读取学习目标'));
       await tester.pumpAndSettle();
       expect(
         container
@@ -335,7 +352,7 @@ void main() {
 
       await client.clearSession();
       await tester.pumpAndSettle();
-      expect(find.text('登录考研执行台'), findsOneWidget);
+      expect(find.text('登录不白学 · 学习执行台'), findsOneWidget);
       expect(router.routeInformationProvider.value.uri.path, '/login');
     },
   );
@@ -368,7 +385,7 @@ void main() {
     await tester.pumpAndSettle();
 
     final router = container.read(appRouterProvider);
-    // Narrow layout: the bottom navigation bar carries all five destinations.
+    // Narrow layout: every workbench destination remains available.
     await tester.tap(find.widgetWithText(NavigationDestination, '事项'));
     await tester.pumpAndSettle();
     expect(router.routeInformationProvider.value.uri.path, '/tasks');
@@ -387,7 +404,13 @@ void main() {
     await tester.tap(find.widgetWithText(NavigationDestination, '设置'));
     await tester.pumpAndSettle();
     expect(router.routeInformationProvider.value.uri.path, '/settings');
-    expect(find.text('备考信息'), findsOneWidget);
+    expect(find.text('学习目标与规划'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(NavigationDestination, '访谈'));
+    await tester.pumpAndSettle();
+    expect(router.routeInformationProvider.value.uri.path, '/interview');
+    expect(find.text('继续访谈'), findsOneWidget);
+    expect(find.text('重新访谈'), findsOneWidget);
 
     // Wide layout: the sidebar replaces the bottom bar on Web and Windows.
     tester.view.physicalSize = const Size(1400, 1000);
@@ -395,7 +418,7 @@ void main() {
     addTearDown(tester.view.reset);
     await tester.pumpAndSettle();
     expect(find.byType(NavigationBar), findsNothing);
-    expect(find.text('考研执行台'), findsOneWidget);
+    expect(find.text('学习执行台'), findsOneWidget);
     await tester.tap(find.text('今日'));
     await tester.pumpAndSettle();
     expect(router.routeInformationProvider.value.uri.path, '/');

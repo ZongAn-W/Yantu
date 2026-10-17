@@ -9,8 +9,10 @@ import '../../../core/widgets.dart';
 import '../../../shared/models/planner_models.dart';
 import '../../planner/application/planner_session.dart';
 import '../../planner/domain/planner_format.dart';
+import '../../planner/domain/scheduler/planner_scheduler.dart' as scheduler;
 import '../../planner/domain/study_day.dart' as day_ops;
 import '../../planner/domain/study_day.dart' show DayStats;
+import '../../planner/presentation/cycle_dialog.dart';
 import '../../planner/presentation/planner_dialogs.dart';
 import '../../planner/presentation/planner_page_state.dart';
 
@@ -35,14 +37,23 @@ class DashboardPage extends ConsumerWidget {
             if (group.any(
               (block) =>
                   block.status != BlockStatus.completed &&
+                  taskById[block.taskId]?.status != TaskStatus.archived &&
                   taskById[block.taskId]?.status != TaskStatus.completed,
             ))
               group,
         ];
-        final examDays = math.max(0, daysBetween(date, data.profile.examDate));
+        final cycle = planCycleState(data.profile, date);
+        final restDay =
+            scheduler.availableDailyMinutes(
+              data.profile,
+              data.fixedEvents,
+              date,
+            ) <=
+            0;
+        final emptyPlan = data.subjects.isEmpty && data.tasks.isEmpty;
         return PlannerPage(
           title: '今天，专注眼前的一步',
-          subtitle: '${fullDateLabel(date)} · 距离初试 $examDays 天',
+          subtitle: dashboardGoalLine(data.profile, date),
           actions: [
             AsyncActionButton(
               label: '结束今天',
@@ -58,6 +69,49 @@ class DashboardPage extends ConsumerWidget {
             ),
           ],
           children: [
+            if (emptyPlan) ...[
+              const PlannerNotice(
+                '还没有学习计划：先完成学习目标访谈，确认课程和学习事项。',
+                tone: PlannerNoticeTone.info,
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: FilledButton.icon(
+                  onPressed: () => context.go('/interview'),
+                  icon: const Icon(Icons.forum_outlined),
+                  label: const Text('开始学习目标访谈'),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (cycle != PlanCycleState.running) ...[
+              PlannerNotice(
+                cycle == PlanCycleState.ended
+                    ? '本次规划周期已经结束。这不代表长期目标完成或失败，可以继续安排下一周期。'
+                    : '本次规划周期即将结束，可以提前安排下一周期。',
+                tone: PlannerNoticeTone.info,
+              ),
+              const SizedBox(height: 8),
+              Align(
+                alignment: Alignment.centerLeft,
+                child: OutlinedButton.icon(
+                  onPressed: snapshot.editable
+                      ? () => ContinueCycleDialog.show(context)
+                      : null,
+                  icon: const Icon(Icons.event_repeat, size: 18),
+                  label: const Text('继续安排下一周期'),
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (restDay) ...[
+              const PlannerNotice(
+                '今天是休息日：可用学习时间为 0，不生成学习安排，也不计入执行失败。',
+                tone: PlannerNoticeTone.info,
+              ),
+              const SizedBox(height: 12),
+            ],
             LayoutBuilder(
               builder: (context, constraints) {
                 final wide = constraints.maxWidth >= 1000;
@@ -209,8 +263,9 @@ class _TodayStudyPanel extends StatelessWidget {
           ),
           const Divider(height: 24),
           Text(
-            '每日上限 ${duration(data.profile.dailyLimitMinutes)}，'
-            '保留 ${duration(data.profile.bufferMinutes)} 机动时间。',
+            '今天可安排 '
+            '${duration(scheduler.availableDailyMinutes(data.profile, data.fixedEvents, date))}，'
+            '已扣除 ${duration(data.profile.bufferMinutes)} 机动时间和固定安排。',
             style: const TextStyle(color: PlannerColors.muted, fontSize: 12),
           ),
         ],
@@ -392,7 +447,9 @@ class _TaskDayRow extends ConsumerWidget {
                   ),
                 ),
                 OutlinedButton.icon(
-                  onPressed: editable ? onMove : null,
+                  onPressed: editable && task.status != TaskStatus.archived
+                      ? onMove
+                      : null,
                   icon: const Icon(Icons.event_outlined, size: 15),
                   label: const Text('改日期'),
                 ),
@@ -427,7 +484,7 @@ class _TaskDayRow extends ConsumerWidget {
               Padding(
                 padding: const EdgeInsets.only(top: 6),
                 child: Text(
-                  '事项截止 ${task.deadline}',
+                  '${task.deadlineKind == ItemDateKind.planEnd ? '本期安排边界' : '事项截止'} ${task.deadline}',
                   style: const TextStyle(
                     color: PlannerColors.muted,
                     fontSize: 12,

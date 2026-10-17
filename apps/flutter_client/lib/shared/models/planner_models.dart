@@ -18,6 +18,29 @@ int _priority(Object? value) {
   return value;
 }
 
+/// 自然日加若干天，不依赖本地时区。
+String addDateOnly(String date, int days) {
+  final parsed = DateTime.tryParse('${date}T00:00:00Z');
+  if (parsed == null) return date;
+  return dateOnlyOf(parsed.toUtc().add(Duration(days: days)));
+}
+
+/// 日期部分，用于自然日字符串。
+String dateOnlyOf(DateTime value) =>
+    '${value.year.toString().padLeft(4, '0')}-'
+    '${value.month.toString().padLeft(2, '0')}-'
+    '${value.day.toString().padLeft(2, '0')}';
+
+/// 一周配置必须包含 0 到 6 七个键，且每项是 0 至 1440 的整数分钟。
+bool isReliableWeek(Map<String, int>? value) {
+  if (value == null || value.length != 7) return false;
+  for (var day = 0; day < 7; day++) {
+    final minutes = value['$day'];
+    if (minutes == null || minutes < 0 || minutes > 1440) return false;
+  }
+  return true;
+}
+
 int _revision(Object? value) {
   if (value is! int || value < 0 || value > 9007199254740991) {
     throw const FormatException('同步版本号异常');
@@ -25,8 +48,23 @@ int _revision(Object? value) {
   return value;
 }
 
+/// 通用目标类型：考试备考、课程学习、技能提升、自主学习、其他。
 @JsonEnum(fieldRename: FieldRename.snake)
-enum TaskStatus { notStarted, inProgress, completed, delayed, conflict }
+enum GoalType { exam, course, skill, selfStudy, other }
+
+/// 事项日期的语义：真实截止日期，或本期安排边界。
+@JsonEnum(fieldRename: FieldRename.snake)
+enum ItemDateKind { deadline, planEnd }
+
+@JsonEnum(fieldRename: FieldRename.snake)
+enum TaskStatus {
+  notStarted,
+  inProgress,
+  completed,
+  delayed,
+  conflict,
+  archived,
+}
 
 enum PlanningMode { daily, timed }
 
@@ -74,13 +112,53 @@ abstract class Profile with _$Profile {
   /// Missing legacy values behave as daily while staying absent on JSON export.
   PlanningMode get planningMode => storedPlanningMode ?? PlanningMode.daily;
 
+  /// 用户目标日期；空字符串表示没有目标日期。
+  ///
+  /// 旧数据把目标日期保存在 [examDate]。历史兼容只在反序列化边界做一次
+  /// （见 [normalizeProfileJson]），因此这里不再回退旧字段：
+  /// 用户清空目标日期后，不会被旧考试日期重新填回。
+  String get resolvedTargetDate => targetDate;
+
+  /// 本次规划周期的开始日期；旧数据没有周期，退回今天。
+  String resolvedPlanStart(String today) =>
+      planStartDate.isNotEmpty ? planStartDate : today;
+
+  /// 本次规划周期的结束日期，必须是有限区间。
+  String resolvedPlanEnd(String today) {
+    if (planEndDate.isNotEmpty) return planEndDate;
+    if (examEndDate.isNotEmpty) return examEndDate;
+    if (examDate.isNotEmpty) return examDate;
+    return addDateOnly(today, 27);
+  }
+
+  /// 一周七天的可用分钟数（0 为周日，6 为周六）。
+  ///
+  /// 只有完整且合法的七天配置才算可靠来源；缺键或越界的旧数据按每日上限补齐，
+  /// 不会把 0 分量的休息日替换成默认时间。
+  Map<String, int> get weekMinutes {
+    final stored = weeklyMinutes;
+    if (isReliableWeek(stored)) return Map<String, int>.from(stored!);
+    return {
+      for (var day = 0; day < 7; day++) '$day': dailyLimitMinutes,
+    };
+  }
+
   const factory Profile({
     required String userId,
     @JsonKey(name: 'planning_mode') PlanningMode? storedPlanningMode,
-    required String targetSchool,
-    required String targetProgram,
-    required String examDate,
-    required String examEndDate,
+    @Default('') String goalText,
+    @Default(GoalType.other) GoalType goalType,
+    @Default('') String goalSubtype,
+    @Default('') String targetDate,
+    @Default(false) bool targetDateConfirmed,
+    @Default('') String planStartDate,
+    @Default('') String planEndDate,
+    Map<String, int>? weeklyMinutes,
+    @Default('') String constraints,
+    @Default('') String targetSchool,
+    @Default('') String targetProgram,
+    @Default('') String examDate,
+    @Default('') String examEndDate,
     required int dailyLimitMinutes,
     required int granularityMinutes,
     required int bufferMinutes,
@@ -89,7 +167,26 @@ abstract class Profile with _$Profile {
     required int studyEndMinute,
     required String foundation,
   }) = _Profile;
-  factory Profile.fromJson(JsonMap json) => _$ProfileFromJson(json);
+  factory Profile.fromJson(JsonMap json) => _$ProfileFromJson(normalizeProfileJson(json));
+}
+
+/// 反序列化边界的历史字段归一化。
+///
+/// - 新字段**缺失**：说明是通用改造之前的数据，可以用旧考试日期作为来源。
+/// - 新字段存在（null 或空字符串）：表示用户当前的有效值，其中空值代表主动清空，
+///   不能再从旧字段恢复日期。
+JsonMap normalizeProfileJson(JsonMap json) {
+  final map = JsonMap.from(json);
+  if (!map.containsKey('target_date')) {
+    final legacy = map['exam_date'];
+    map['target_date'] = legacy is String ? legacy : '';
+  }
+  if (!map.containsKey('plan_end_date')) {
+    final legacy = map['exam_end_date'] ?? map['exam_date'];
+    map['plan_end_date'] = legacy is String ? legacy : '';
+  }
+  if (!map.containsKey('target_date_confirmed')) map['target_date_confirmed'] = false;
+  return map;
 }
 
 @freezed
@@ -118,6 +215,7 @@ abstract class Task with _$Task {
     required int completedMinutes,
     @JsonKey(fromJson: _priority) required int priority,
     required String deadline,
+    @Default(ItemDateKind.deadline) ItemDateKind deadlineKind,
     String? earliestDate,
     required bool isFixed,
     required TaskStatus status,

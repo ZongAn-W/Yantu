@@ -7,6 +7,7 @@ import '../../core/theme.dart';
 import '../../core/widgets.dart';
 import '../auth/application/auth_controller.dart';
 import '../planner/application/planner_session.dart';
+import '../planner/domain/planner_format.dart';
 
 const syncLabels = <SyncStatus, String>{
   SyncStatus.demo: '本地计划',
@@ -40,7 +41,7 @@ class ShellDestination {
 }
 
 /// Mobile keeps a bottom bar; Web and Windows use the left sidebar, matching the
-/// Web client where the same five routes are reachable on every breakpoint.
+/// Web client where the same routes are reachable on every breakpoint.
 const shellDestinations = <ShellDestination>[
   ShellDestination(path: '/', label: '今日', icon: Icons.check_circle_outline),
   ShellDestination(
@@ -54,6 +55,7 @@ const shellDestinations = <ShellDestination>[
     label: '进度',
     icon: Icons.bar_chart_outlined,
   ),
+  ShellDestination(path: '/interview', label: '访谈', icon: Icons.forum_outlined),
   ShellDestination(
     path: '/settings',
     label: '设置',
@@ -127,8 +129,12 @@ class _Workspace extends StatelessWidget {
   final Widget child;
 
   @override
-  Widget build(BuildContext context) =>
-      Column(children: [const _StatusBanners(), Expanded(child: child)]);
+  Widget build(BuildContext context) => Column(
+    children: [
+      const _StatusBanners(),
+      Expanded(child: child),
+    ],
+  );
 }
 
 /// Surfaces storage and sync problems above the page, mirroring the Web notice area.
@@ -209,7 +215,7 @@ class _Sidebar extends ConsumerWidget {
                         children: [
                           Text('不白学', style: text.titleMedium),
                           const Text(
-                            '考研执行台',
+                            '学习执行台',
                             style: TextStyle(
                               color: PlannerColors.muted,
                               fontSize: 12,
@@ -251,24 +257,20 @@ class _Sidebar extends ConsumerWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          '目标院校',
-                          style: TextStyle(
-                            color: PlannerColors.muted,
-                            fontSize: 12,
-                          ),
-                        ),
                         Text(
-                          profile.targetSchool,
+                          goalHeadline(profile),
                           style: const TextStyle(fontWeight: FontWeight.w600),
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
+                        const SizedBox(height: 2),
                         Text(
-                          '初试 ${profile.examDate} / 408统考',
+                          goalStatusLine(profile, shanghaiToday()),
                           style: const TextStyle(
                             color: PlannerColors.muted,
                             fontSize: 12,
                           ),
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],

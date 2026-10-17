@@ -1,11 +1,11 @@
 {
-    "name": "不白学 · 考研执行台",
+    "name": "不白学 · 学习执行台",
     "short_name": "不白学",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#f5f7fa",
     "theme_color": "#275e91",
-    "description": "今日任务、事项、日历、进度与备考资料。",
+    "description": "学习目标规划、今日安排、课程与事项、日历、学习记录与进度。",
     "orientation": "any",
     "prefer_related_applications": false,
     "icons": [

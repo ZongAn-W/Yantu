@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,6 +11,9 @@ import '../../../shared/models/planner_models.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../planner/application/onboarding_controller.dart';
 import '../../planner/application/planner_session.dart';
+import '../../planner/domain/plan_cycle.dart';
+import '../../planner/domain/planner_format.dart';
+import '../../planner/presentation/constraint_dialog.dart';
 import '../../planner/presentation/planner_dialogs.dart';
 import '../../planner/presentation/planner_page_state.dart';
 import '../../shell/app_shell.dart';
@@ -22,34 +27,57 @@ class SettingsPage extends ConsumerStatefulWidget {
   ConsumerState<SettingsPage> createState() => _SettingsPageState();
 }
 
+const _weekDays = [
+  ('1', '周一'),
+  ('2', '周二'),
+  ('3', '周三'),
+  ('4', '周四'),
+  ('5', '周五'),
+  ('6', '周六'),
+  ('0', '周日'),
+];
+
 class _SettingsPageState extends ConsumerState<SettingsPage> {
+  final _goalText = TextEditingController();
+  final _goalSubtype = TextEditingController();
+  final _targetDate = TextEditingController();
+  final _planStart = TextEditingController();
+  final _planEnd = TextEditingController();
   final _school = TextEditingController();
   final _program = TextEditingController();
-  final _examDate = TextEditingController();
-  final _examEndDate = TextEditingController();
-  final _dailyLimit = TextEditingController();
+  final _progress = TextEditingController();
+  final _constraints = TextEditingController();
   final _buffer = TextEditingController();
   final _subjectLimit = TextEditingController();
   final _startMinute = TextEditingController();
   final _endMinute = TextEditingController();
+  final _weekly = <String, TextEditingController>{};
   String? _profileId;
   int _granularity = 30;
+  GoalType _goalType = GoalType.other;
+  bool _targetConfirmed = false;
   Map<String, int> _priorities = const {};
   String? _profileError;
   String? _notice;
+  int _weekVersion = 0;
 
   @override
   void dispose() {
     for (final controller in [
+      _goalText,
+      _goalSubtype,
+      _targetDate,
+      _planStart,
+      _planEnd,
       _school,
       _program,
-      _examDate,
-      _examEndDate,
-      _dailyLimit,
+      _progress,
+      _constraints,
       _buffer,
       _subjectLimit,
       _startMinute,
       _endMinute,
+      ..._weekly.values,
     ]) {
       controller.dispose();
     }
@@ -61,17 +89,36 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   void _seed(PlannerData? data) {
     if (data == null || _profileId == data.profile.userId) return;
     _profileId = data.profile.userId;
-    final draft = ProfileSettingsDraft.from(data.profile);
+    final draft = ProfileSettingsDraft.from(
+      data.profile,
+      today: shanghaiToday(),
+    );
+    _goalText.text = draft.goalText;
+    _goalSubtype.text = draft.goalSubtype;
+    _targetDate.text = draft.targetDate;
+    _targetConfirmed = draft.targetDateConfirmed;
+    _planStart.text = draft.planStartDate;
+    _planEnd.text = draft.planEndDate;
     _school.text = draft.targetSchool;
     _program.text = draft.targetProgram;
-    _examDate.text = draft.examDate;
-    _examEndDate.text = draft.examEndDate;
-    _dailyLimit.text = '${draft.dailyLimitMinutes}';
+    _progress.text = draft.currentProgress;
+    _constraints.text = data.profile.constraints;
     _buffer.text = '${draft.bufferMinutes}';
     _subjectLimit.text = '${draft.subjectLimitMinutes}';
     _startMinute.text = '${draft.studyStartMinute}';
     _endMinute.text = '${draft.studyEndMinute}';
     _granularity = draft.granularityMinutes;
+    _goalType = draft.goalType;
+    for (final entry in _weekly.values) {
+      entry.dispose();
+    }
+    _weekly.clear();
+    for (final (key, _) in _weekDays) {
+      _weekly[key] = TextEditingController(
+        text: '${draft.weeklyMinutes[key] ?? 0}',
+      );
+    }
+    _weekVersion++;
     _priorities = {
       for (final subject in data.subjects) subject.id: subject.priority,
     };
@@ -79,12 +126,23 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   ProfileSettingsDraft _draft(PlannerData data) => ProfileSettingsDraft.from(
     data.profile,
+    today: shanghaiToday(),
   ).copyWith(
+    goalText: _goalText.text.trim(),
+    goalType: _goalType,
+    goalSubtype: _goalSubtype.text.trim(),
+    targetDate: _targetDate.text.trim(),
+    targetDateConfirmed: _targetConfirmed,
+    planStartDate: _planStart.text.trim(),
+    planEndDate: _planEnd.text.trim(),
     targetSchool: _school.text.trim(),
     targetProgram: _program.text.trim(),
-    examDate: _examDate.text.trim(),
-    examEndDate: _examEndDate.text.trim(),
-    dailyLimitMinutes: _number(_dailyLimit, data.profile.dailyLimitMinutes),
+    currentProgress: _progress.text.trim(),
+    constraintsText: _constraints.text.trim(),
+    weeklyMinutes: {
+      for (final (key, _) in _weekDays)
+        key: int.tryParse(_weekly[key]?.text.trim() ?? '') ?? 0,
+    },
     bufferMinutes: _number(_buffer, data.profile.bufferMinutes),
     subjectLimitMinutes: _number(
       _subjectLimit,
@@ -112,10 +170,44 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       _notice = null;
     });
     try {
-      await ref
-          .read(plannerSessionProvider)
-          .edit((current) => applySettings(current, draft));
-      if (mounted) setState(() => _notice = '备考信息与排程边界已保存到本机。');
+      final today = shanghaiToday();
+      final planned = applySettings(data, draft);
+      final affects = settingsAffectSchedule(data, draft);
+      var next = planned;
+      if (affects) {
+        // 容量或周期变化会重新评估受影响的未来安排：先预览，再确认。
+        final adjustment = reschedulePlan(
+          planned,
+          today: today,
+          start: draft.planStartDate,
+          end: draft.planEndDate,
+        );
+        if (!mounted) return;
+        final confirmed = await ScheduleChangeDialog.show(
+          context,
+          before: data,
+          adjustment: adjustment,
+          start: draft.planStartDate,
+          end: draft.planEndDate,
+        );
+        if (!confirmed) return;
+        next = adjustment.data;
+      }
+      // 预览期间计划可能已变化：用当前数据重新校验，避免旧快照覆盖新进度。
+      final expected = jsonEncode(data.toJson());
+      await ref.read(plannerSessionProvider).edit((current) {
+        if (jsonEncode(current.toJson()) != expected) {
+          throw StateError('计划已更新，请重新预览后再应用');
+        }
+        return next;
+      });
+      if (mounted) {
+        setState(
+          () => _notice = affects
+              ? '学习目标与规划已保存，并按新的容量重新安排了未来日程。'
+              : '学习目标与规划已保存到本机。',
+        );
+      }
     } catch (error) {
       if (mounted) {
         setState(
@@ -183,7 +275,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 final left = Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    _studyInfoPanel(data, text),
+                    _goalPanel(data, text),
                     const SizedBox(height: 16),
                     _boundaryPanel(data, text),
                   ],
@@ -220,40 +312,140 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
   }
 
-  Widget _studyInfoPanel(PlannerData data, TextTheme text) => PlannerPanel(
-    title: '备考信息',
+  Widget _goalPanel(PlannerData data, TextTheme text) => PlannerPanel(
+    title: '学习目标与规划',
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         TextField(
-          controller: _school,
-          decoration: const InputDecoration(labelText: '目标院校'),
+          controller: _goalText,
+          minLines: 1,
+          maxLines: 3,
+          maxLength: 2000,
+          decoration: const InputDecoration(
+            labelText: '学习目标',
+            hintText: '例如：从零学习 Python，能独立处理 CSV 并完成数据分析',
+          ),
+        ),
+        const SizedBox(height: 4),
+        DropdownButtonFormField<GoalType>(
+          initialValue: _goalType,
+          decoration: const InputDecoration(labelText: '目标类型'),
+          items: [
+            for (final entry in goalTypeLabels.entries)
+              DropdownMenuItem(value: entry.key, child: Text(entry.value)),
+          ],
+          onChanged: (value) =>
+              setState(() => _goalType = value ?? GoalType.other),
         ),
         const SizedBox(height: 12),
         TextField(
-          controller: _program,
-          decoration: const InputDecoration(labelText: '目标方向'),
+          controller: _goalSubtype,
+          decoration: const InputDecoration(
+            labelText: '具体考试或学习领域（可选）',
+            helperText: '例如：考研、雅思、线性代数、Python',
+          ),
         ),
-        const SizedBox(height: 12),
-        DateField(
-          label: '初试第一天',
-          value: _examDate.text,
-          onChanged: (value) => setState(() => _examDate.text = value),
+        const SizedBox(height: 16),
+        Row(
+          children: [
+            Expanded(
+              child: DateField(
+                label: '目标日期（可选）',
+                value: _targetDate.text,
+                onChanged: (value) => setState(() {
+                  _targetDate.text = value;
+                  if (value.isEmpty) _targetConfirmed = false;
+                }),
+              ),
+            ),
+            const SizedBox(width: 8),
+            TextButton.icon(
+              onPressed: _targetDate.text.isEmpty
+                  ? null
+                  : () => setState(() {
+                      _targetDate.clear();
+                      _targetConfirmed = false;
+                    }),
+              icon: const Icon(Icons.clear, size: 16),
+              label: const Text('清空日期'),
+            ),
+          ],
         ),
-        const SizedBox(height: 12),
-        DateField(
-          label: '初试第二天',
-          value: _examEndDate.text,
-          onChanged: (value) => setState(() => _examEndDate.text = value),
+        if (_targetDate.text.isNotEmpty)
+          CheckboxListTile(
+            contentPadding: EdgeInsets.zero,
+            controlAffinity: ListTileControlAffinity.leading,
+            value: _targetConfirmed,
+            title: const Text('这个日期已经确认'),
+            subtitle: const Text('未确认时按“预计目标日期”展示，以正式通知为准。'),
+            onChanged: (value) =>
+                setState(() => _targetConfirmed = value ?? false),
+          ),
+        const SizedBox(height: 8),
+        Row(
+          children: [
+            Expanded(
+              child: DateField(
+                label: '规划开始日期',
+                value: _planStart.text,
+                onChanged: (value) => setState(() => _planStart.text = value),
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: DateField(
+                label: '规划结束日期',
+                value: _planEnd.text,
+                onChanged: (value) => setState(() => _planEnd.text = value),
+              ),
+            ),
+          ],
         ),
         const SizedBox(height: 8),
         const Text(
-          '2027-12-25：政治、英语一　·　2027-12-26：数学一、408',
+          '目标日期是希望达成结果的日期，可以不设置；规划结束日期是本次排程的边界。',
           style: TextStyle(color: PlannerColors.muted, fontSize: 12),
         ),
         const SizedBox(height: 12),
+        TextField(
+          controller: _progress,
+          minLines: 1,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            labelText: '当前基础与进度',
+            hintText: '例如：学过矩阵，特征值和二次型还没开始',
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _constraints,
+          minLines: 1,
+          maxLines: 3,
+          decoration: const InputDecoration(
+            labelText: '其他约束与偏好（可选）',
+            hintText: '例如：周三和周日休息，不看视频课',
+          ),
+        ),
+        if (_goalType == GoalType.exam) ...[
+          const SizedBox(height: 12),
+          TextField(
+            controller: _school,
+            decoration: const InputDecoration(
+              labelText: '院校或机构（可选）',
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _program,
+            decoration: const InputDecoration(
+              labelText: '专业或方向（可选）',
+            ),
+          ),
+        ],
+        const SizedBox(height: 12),
         AsyncActionButton(
-          label: '保存备考信息与边界',
+          label: '保存学习目标与规划',
           icon: Icons.save_outlined,
           onPressed: _saveProfile,
           onError: (error) => setState(
@@ -265,14 +457,31 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   );
 
   Widget _boundaryPanel(PlannerData data, TextTheme text) => PlannerPanel(
-    title: '排程边界',
+    title: '每日可用时间与排程边界',
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _NumberField(
-          controller: _dailyLimit,
-          label: '每日学习上限（分钟）',
-          helper: '60 至 1440，实际排程最多按 480 分钟计算',
+        const Text('一周七天的可用学习时间；某天为 0 时该天不生成学习安排。'),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            for (final (key, label) in _weekDays)
+              SizedBox(
+                width: 150,
+                child: TextFormField(
+                  key: ValueKey('settings-weekly-$_weekVersion-$key'),
+                  controller: _weekly[key],
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: InputDecoration(
+                    labelText: label,
+                    suffixText: '分钟',
+                  ),
+                ),
+              ),
+          ],
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<int>(
@@ -363,7 +572,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ),
           ),
         const Text(
-          '政治计划从 2027 年 7 月开始逐步加入。',
+          '优先级影响排程顺序：同一天内优先安排高优先级课程。',
           style: TextStyle(color: PlannerColors.muted, fontSize: 12),
         ),
       ],
@@ -492,11 +701,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 ),
               ),
               AsyncActionButton(
-                label: '重新读取备考资料',
+                label: '重新读取学习目标',
                 icon: Icons.refresh,
                 filled: false,
                 onPressed: () => _action(
-                  '已重新读取备考资料。',
+                  '已重新读取学习目标。',
                   () => ref.read(onboardingStatusProvider.notifier).refresh(),
                 ),
               ),

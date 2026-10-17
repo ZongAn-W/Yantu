@@ -139,6 +139,67 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       expect(pulled.data.replan_runs).toEqual(data.replan_runs);
       expect(pulled.data.phases).toEqual(data.phases);
     });
+    it("keeps a reliable weekly configuration when a document omits it", async () => {
+      const user = await account();
+      const data = await fixture(user.id);
+      const week = { "0": 0, "1": 90, "2": 90, "3": 0, "4": 90, "5": 90, "6": 180 };
+      data.profile.weekly_minutes = week;
+      const put = (value: any, base: any, revision: number) =>
+        app.inject({ method: "PUT", url: "/api/planner/sync", headers: user.headers, payload: { data: value, base, expectedRevision: revision } });
+      const first = await put(data, null, 0);
+      expect(first.statusCode, first.body).toBe(200);
+      const stored = await db.query<{ weekly_minutes: any }>("select weekly_minutes from profiles where user_id=$1", [user.id]);
+      expect(stored.rows[0].weekly_minutes).toEqual(week);
+
+      // 旧文档缺少 weekly_minutes 时，不能把整周改成每日上限。
+      const withoutWeek = structuredClone(first.json().data);
+      delete withoutWeek.profile.weekly_minutes;
+      const second = await put(withoutWeek, first.json().data, first.json().revision);
+      expect(second.statusCode, second.body).toBe(200);
+      const after = await db.query<{ weekly_minutes: any }>("select weekly_minutes from profiles where user_id=$1", [user.id]);
+      expect(after.rows[0].weekly_minutes).toEqual(week);
+      const pulled = (await app.inject({ url: "/api/planner/sync", headers: user.headers })).json();
+      expect(pulled.data.profile.weekly_minutes).toEqual(week);
+      expect(pulled.data.profile.weekly_minutes["3"]).toBe(0);
+      // 再次往返保留休息日 0。
+      const third = await put(pulled.data, pulled.data, pulled.revision);
+      expect(third.statusCode, third.body).toBe(200);
+      const final = (await app.inject({ url: "/api/planner/sync", headers: user.headers })).json();
+      expect(final.data.profile.weekly_minutes).toEqual(week);
+      expect((await db.query<{ weekly_minutes: any }>("select weekly_minutes from profiles where user_id=$1", [user.id])).rows[0].weekly_minutes).toEqual(week);
+    });
+
+    it("clears the target date instead of reviving the legacy exam date", async () => {
+      const user = await account();
+      const data = await fixture(user.id);
+      const put = (value: any, base: any, revision: number) =>
+        app.inject({ method: "PUT", url: "/api/planner/sync", headers: user.headers, payload: { data: value, base, expectedRevision: revision } });
+      // 只有旧字段的历史文档：新目标日期缺失，考试日期作为兼容来源。
+      delete data.profile.target_date;
+      data.profile.exam_date = "2027-06-01";
+      const first = await put(data, null, 0);
+      expect(first.statusCode, first.body).toBe(200);
+      const legacy = (await app.inject({ url: "/api/onboarding/profile", headers: user.headers })).json().profile;
+      expect(legacy.target_date).toBe("2027-06-01");
+
+      // 新字段明确为 null：用户主动清空，不能再回退到旧考试日期。
+      const cleared = structuredClone(first.json().data);
+      cleared.profile.target_date = null;
+      const second = await put(cleared, first.json().data, first.json().revision);
+      expect(second.statusCode, second.body).toBe(200);
+      const row = await db.query<{ td: string | null; ed: string | null }>(
+        "select target_date::text as td, exam_date::text as ed from profiles where user_id=$1",
+        [user.id],
+      );
+      expect(row.rows[0]).toEqual({ td: null, ed: null });
+      expect((await app.inject({ url: "/api/onboarding/profile", headers: user.headers })).json().profile.target_date).toBeNull();
+      const pulled = (await app.inject({ url: "/api/planner/sync", headers: user.headers })).json();
+      // 新字段存在即为准：即使旧镜像仍随文档保存，也不能再作为有效目标日期。
+      // 文档统一用空字符串表示“没有目标日期”，与客户端模型一致。
+      expect(pulled.data.profile.target_date).toBe("");
+      expect(pulled.data.profile.target_date).toBeFalsy();
+    });
+
     it("does not let a stale revision or a wrong base overwrite a cloud edit", async () => {
       const user = await account(),
         data = await fixture(user.id);
@@ -173,6 +234,8 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
           ? Object.fromEntries(Object.entries(value).map(([key, child]) => [key, key === "user_id" ? user.id : retag(child)]))
           : value;
       const data = retag(sample.expected.confirmed);
+      // 文档用空字符串表示“没有目标日期”；数据库的日期列保存 NULL。
+      data.profile.target_date = "";
       const { replan_runs: _history, ...guard } = structuredClone(data);
       data.replan_runs[0].local_undo_guard = guard;
       const saved = await app.inject({

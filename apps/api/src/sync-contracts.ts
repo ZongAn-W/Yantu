@@ -21,6 +21,7 @@ const status = z.enum([
   "completed",
   "delayed",
   "conflict",
+  "archived",
 ]);
 const block = z
   .object({
@@ -41,6 +42,20 @@ const block = z
     feedback: z.string().max(4000).optional(),
   })
   .passthrough();
+/**
+ * 旧格式的空字符串、null 和字段缺失都表示“没有这个日期”。
+ * 不使用占位日期充当真实日期。
+ */
+const optionalDate = z.preprocess(
+  (value) => (value === "" || value === null || value === undefined ? undefined : value),
+  date.optional(),
+);
+
+const nullableDate = z.preprocess(
+  (value) => (value === "" || value === undefined ? null : value),
+  date.nullable(),
+);
+
 export const PlannerDocumentSchema = z
   .object({
     version: z.literal(1),
@@ -48,10 +63,22 @@ export const PlannerDocumentSchema = z
       .object({
         user_id: id,
         planning_mode: z.enum(["daily", "timed"]).optional(),
+        goal_text: z.string().max(2000).optional(),
+        goal_type: z.enum(["exam", "course", "skill", "self_study", "other"]).optional(),
+        goal_subtype: z.string().max(200).optional(),
+        /** 用户目标日期，可空；与本次规划周期分别表达。 */
+        target_date: nullableDate.optional(),
+        target_date_confirmed: z.boolean().optional(),
+        /** 本次规划周期的有限区间；排程只在这个区间内生成安排。 */
+        plan_start_date: optionalDate,
+        plan_end_date: optionalDate,
+        /** 一周七天的可用学习分钟数；缺少时退回每日上限。 */
+        weekly_minutes: z.record(z.string(), z.number().int().min(0).max(1440)).optional(),
         target_school: z.string().max(200),
         target_program: z.string().max(200),
-        exam_date: date,
-        exam_end_date: date,
+        /** 旧字段：目标日期存在时作为镜像写入，新数据不再依赖它们排程。 */
+        exam_date: optionalDate,
+        exam_end_date: optionalDate,
         daily_limit_minutes: minutes.max(1440),
         granularity_minutes: minutes.positive(),
         buffer_minutes: minutes,
@@ -86,6 +113,8 @@ export const PlannerDocumentSchema = z
             completed_minutes: minutes,
             priority,
             deadline: date,
+            /** deadline 为真实截止日期，plan_end 为本期安排边界。 */
+            deadline_kind: z.enum(["deadline", "plan_end"]).optional(),
             earliest_date: date.optional(),
             is_fixed: z.boolean(),
             status,

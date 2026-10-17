@@ -350,7 +350,7 @@ void main() {
 
     // Desktop: sidebar navigation, no bottom bar.
     expect(find.byType(NavigationBar), findsNothing);
-    expect(find.text('考研执行台'), findsOneWidget);
+    expect(find.text('学习执行台'), findsOneWidget);
     expect(find.text('今日'), findsOneWidget);
 
     // Phone: bottom navigation, and no horizontal overflow.
@@ -360,7 +360,7 @@ void main() {
     final overflow = tester.takeException();
     expect(overflow, isNull);
     await goto(tester, '设置');
-    expect(find.text('备考信息'), findsOneWidget);
+    expect(find.text('学习目标与规划'), findsOneWidget);
   });
 
   testWidgets('importing a JSON export replaces the plan and re-syncs', (

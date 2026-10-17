@@ -34,8 +34,12 @@ PlannerData todayFixture() {
 }
 
 const _profile = {
-  'exam_type': '考研',
-  'exam_date': '2027-12-25',
+  'goal_text': '准备计算机专业研究生考试',
+  'goal_type': 'exam',
+  'goal_subtype': '考研',
+  'target_date': '2027-12-25',
+  'plan_start_date': '2026-10-01',
+  'plan_end_date': '2027-12-25',
   'target_school': '上海交通大学',
   'target_program': '计算机技术',
   'current_progress': '高数基础一轮',
@@ -214,6 +218,41 @@ class FakeSyncServer {
 }
 
 void main() {
+  testWidgets('archived items appear only through their status filter', (
+    tester,
+  ) async {
+    final base = todayFixture();
+    final server = FakeSyncServer(
+      plan: base.copyWith(
+        tasks: [
+          base.tasks.single.copyWith(
+            title: '旧规划归档事项',
+            status: TaskStatus.archived,
+            earliestDate: addDate(shanghaiToday(), 1),
+          ),
+        ],
+      ),
+    );
+    final container = await signIn(tester, respond: server.respond);
+    container.read(appRouterProvider).go('/tasks');
+    await tester.pumpAndSettle();
+    expect(find.text('旧规划归档事项'), findsNothing);
+    await tester.ensureVisible(find.text('全部状态'));
+    await tester.tap(find.text('全部状态'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('已归档').last);
+    await tester.pumpAndSettle();
+    expect(find.text('旧规划归档事项'), findsOneWidget);
+    IconButton action(String tooltip) => tester.widget<IconButton>(
+      find.byWidgetPredicate(
+        (widget) => widget is IconButton && widget.tooltip == tooltip,
+      ),
+    );
+    expect(action('编辑事项').onPressed, isNotNull);
+    expect(action('安排事项日期和时长').onPressed, isNull);
+    expect(action('手动标记完成').onPressed, isNull);
+  });
+
   for (final completion in [
     CompletionStatus.partial,
     CompletionStatus.skipped,
@@ -554,8 +593,8 @@ void main() {
 
     // Desktop shows the sidebar and the exam card.
     expect(find.byType(NavigationBar), findsNothing);
-    expect(find.text('考研执行台'), findsOneWidget);
-    expect(find.textContaining('初试 2027-12-25'), findsOneWidget);
+    expect(find.text('学习执行台'), findsOneWidget);
+    expect(find.textContaining('2027-12-25'), findsWidgets);
     expect(container.read(plannerSyncProvider).metadata.revision, 9);
 
     // Narrow: bottom navigation, no overflow, all five destinations reachable.

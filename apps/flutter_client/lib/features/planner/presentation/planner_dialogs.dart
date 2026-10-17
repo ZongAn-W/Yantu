@@ -52,7 +52,11 @@ class _RecordTimeDialogState extends ConsumerState<RecordTimeDialog> {
     _taskId =
         task?.id ??
         data.tasks
-            .where((item) => item.subjectId == _subjectId)
+            .where(
+              (item) =>
+                  item.subjectId == _subjectId &&
+                  item.status != TaskStatus.archived,
+            )
             .firstOrNull
             ?.id ??
         '';
@@ -116,7 +120,11 @@ class _RecordTimeDialogState extends ConsumerState<RecordTimeDialog> {
     final minutes = int.tryParse(_minutes.text.trim()) ?? 0;
     final subjects = data.subjects
         .where(
-          (subject) => data.tasks.any((item) => item.subjectId == subject.id),
+          (subject) => data.tasks.any(
+            (item) =>
+                item.subjectId == subject.id &&
+                item.status != TaskStatus.archived,
+          ),
         )
         .toList();
     return AlertDialog(
@@ -177,7 +185,11 @@ class _RecordTimeDialogState extends ConsumerState<RecordTimeDialog> {
                       : (value) {
                           if (value == null) return;
                           final next = data.tasks
-                              .where((item) => item.subjectId == value)
+                              .where(
+                                (item) =>
+                                    item.subjectId == value &&
+                                    item.status != TaskStatus.archived,
+                              )
                               .firstOrNull;
                           setState(() {
                             _subjectId = value;
@@ -193,7 +205,9 @@ class _RecordTimeDialogState extends ConsumerState<RecordTimeDialog> {
                   decoration: const InputDecoration(labelText: '事项'),
                   items: [
                     for (final item in data.tasks.where(
-                      (item) => item.subjectId == _subjectId,
+                      (item) =>
+                          item.subjectId == _subjectId &&
+                          item.status != TaskStatus.archived,
                     ))
                       DropdownMenuItem(value: item.id, child: Text(item.title)),
                   ],
@@ -372,7 +386,7 @@ class _MoveTaskDayDialogState extends ConsumerState<MoveTaskDayDialog> {
     final task = data.tasks
         .where((item) => item.id == first.taskId)
         .firstOrNull;
-    if (task == null) return false;
+    if (task == null || task.status == TaskStatus.archived) return false;
     if (day_ops.taskDayMinutes(data, task.id, first.date) > 0) return false;
     return widget.blocks.every(
       (block) =>
@@ -609,7 +623,11 @@ class _TaskEditorDialogState extends ConsumerState<TaskEditorDialog> {
     final editing = widget.taskId != null;
     final statuses = editing
         ? TaskStatus.values
-        : TaskStatus.values.where((s) => s != TaskStatus.completed).toList();
+        : TaskStatus.values
+              .where(
+                (s) => s != TaskStatus.completed && s != TaskStatus.archived,
+              )
+              .toList();
     return AlertDialog(
       title: Text(editing ? '编辑事项' : '新建事项'),
       content: SizedBox(
@@ -715,12 +733,36 @@ class _TaskEditorDialogState extends ConsumerState<TaskEditorDialog> {
               ),
               const SizedBox(height: 12),
               DateField(
-                label: '截止日期',
+                label: _draft.deadlineKind == ItemDateKind.planEnd
+                    ? '本期安排边界'
+                    : '真实截止日期',
                 value: _draft.deadline,
                 enabled: !_saving,
                 firstDate: _draft.earliestDate,
                 onChanged: (value) =>
                     setState(() => _draft = _draft.copyWith(deadline: value)),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<ItemDateKind>(
+                initialValue: _draft.deadlineKind,
+                decoration: const InputDecoration(
+                  labelText: '日期含义',
+                  helperText: '本期安排边界会随新的规划周期延展，真实截止日期保持不变',
+                ),
+                items: [
+                  for (final kind in ItemDateKind.values)
+                    DropdownMenuItem(
+                      value: kind,
+                      child: Text(itemDateKindLabels[kind]!),
+                    ),
+                ],
+                onChanged: _saving
+                    ? null
+                    : (value) => setState(
+                        () => _draft = _draft.copyWith(
+                          deadlineKind: value ?? ItemDateKind.deadline,
+                        ),
+                      ),
               ),
               const SizedBox(height: 12),
               DropdownButtonFormField<TaskStatus>(

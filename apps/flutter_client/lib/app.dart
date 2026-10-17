@@ -10,7 +10,7 @@ class PlannerApp extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     return MaterialApp.router(
-      title: '不白学 · 考研执行台',
+      title: '不白学 · 学习执行台',
       debugShowCheckedModeBanner: false,
       theme: plannerTheme(),
       routerConfig: ref.watch(appRouterProvider),

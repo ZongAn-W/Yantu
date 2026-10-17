@@ -2,10 +2,28 @@ import { randomUUID } from "node:crypto";
 import type pg from "pg";
 import { adviceFor } from "./ai.js";
 import { query, transaction } from "./db.js";
+import type { OnboardingSession } from "./onboarding-contracts.js";
+import type { PlannerDocument } from "./sync-contracts.js";
 
-type ProfileRow = { exam_type: string; exam_date: string; target_school: string; target_program: string; current_progress: string; weekly_minutes: Record<string, number>; constraints_text: string };
-export type ItemRow = { id: string; course_id: string; course_name?: string; title: string; description: string; completion_criteria: string; estimated_minutes: number; earliest_date: string | null; deadline: string; priority: number; status: string };
+export type ProfileRow = {
+  goal_text: string;
+  goal_type: string;
+  goal_subtype: string;
+  target_date: string | null;
+  target_date_confirmed: boolean;
+  plan_start_date: string | null;
+  plan_end_date: string | null;
+  target_school: string;
+  target_program: string;
+  current_progress: string;
+  weekly_minutes: Record<string, number>;
+  constraints_text: string;
+};
+export type ItemRow = { id: string; course_id: string; course_name?: string; title: string; description: string; completion_criteria: string; estimated_minutes: number; earliest_date: string | null; deadline: string; deadline_kind: string; priority: number; status: string };
 type DailyRow = { id: string; item_id: string; date: string; planned_minutes: number; actual_minutes: number; advice_text: string; advice_topics: string[]; completion_status: string; item_title?: string; course_name?: string };
+
+export const PROFILE_COLUMNS = "goal_text,goal_type,goal_subtype,target_date::text,target_date_confirmed,plan_start_date::text,plan_end_date::text,target_school,target_program,current_progress,weekly_minutes,constraints_text";
+const ITEM_COLUMNS = "id,course_id,title,description,completion_criteria,estimated_minutes,earliest_date::text,deadline::text,deadline_kind,priority,status";
 
 export function dateAdd(date: string, days: number) {
   const value = new Date(`${date}T00:00:00Z`);
@@ -13,22 +31,42 @@ export function dateAdd(date: string, days: number) {
   return value.toISOString().slice(0, 10);
 }
 
-export function dateToday() { return new Date().toISOString().slice(0, 10); }
+export function dateToday() {
+  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date());
+}
+
+/** 本次排程的有限区间结束日期；与用户的目标日期不同。 */
+export function planBoundary(profile: ProfileRow | { plan_end_date?: string | null; target_date?: string | null }, from = dateToday()) {
+  return profile.plan_end_date || profile.target_date || dateAdd(from, 27);
+}
 
 export async function getProfile(userId: string): Promise<ProfileRow | null> {
-  const result = await query<ProfileRow>("select exam_type, exam_date::text, target_school, target_program, current_progress, weekly_minutes, constraints_text from profiles where user_id = $1", [userId]);
+  const result = await query<ProfileRow>(`select ${PROFILE_COLUMNS} from profiles where user_id = $1`, [userId]);
   return result.rows[0] ?? null;
 }
 
-export async function saveProfile(userId: string, profile: ProfileRow) {
-  await query(`insert into profiles(user_id, exam_type, exam_date, target_school, target_program, current_progress, weekly_minutes, constraints_text)
-    values($1,$2,$3,$4,$5,$6,$7,$8)
-    on conflict(user_id) do update set exam_type=excluded.exam_type, exam_date=excluded.exam_date, target_school=excluded.target_school, target_program=excluded.target_program, current_progress=excluded.current_progress, weekly_minutes=excluded.weekly_minutes, constraints_text=excluded.constraints_text, updated_at=now()`,
-    [userId, profile.exam_type, profile.exam_date, profile.target_school, profile.target_program, profile.current_progress, JSON.stringify(profile.weekly_minutes), profile.constraints_text]);
+/** 旧列 exam_type / exam_date 只作为历史镜像保留，界面不再读取。 */
+const legacyExamType = (profile: ProfileRow) =>
+  profile.goal_subtype || (profile.goal_type === "exam" ? "其他" : profile.goal_type);
+
+export async function saveProfile(userId: string, profile: ProfileRow, client?: pg.PoolClient) {
+  const write = client ? client.query.bind(client) : query;
+  await write(
+    `insert into profiles(user_id,goal_text,goal_type,goal_subtype,target_date,target_date_confirmed,plan_start_date,plan_end_date,target_school,target_program,current_progress,weekly_minutes,constraints_text,exam_type,exam_date)
+     values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)
+     on conflict(user_id) do update set goal_text=excluded.goal_text, goal_type=excluded.goal_type, goal_subtype=excluded.goal_subtype,
+       target_date=excluded.target_date, target_date_confirmed=excluded.target_date_confirmed, plan_start_date=excluded.plan_start_date,
+       plan_end_date=excluded.plan_end_date, target_school=excluded.target_school, target_program=excluded.target_program,
+       current_progress=excluded.current_progress, weekly_minutes=excluded.weekly_minutes, constraints_text=excluded.constraints_text,
+       exam_type=excluded.exam_type, exam_date=excluded.exam_date, updated_at=now()`,
+    [userId, profile.goal_text, profile.goal_type, profile.goal_subtype, profile.target_date, profile.target_date_confirmed,
+      profile.plan_start_date, profile.plan_end_date, profile.target_school, profile.target_program,
+      profile.current_progress, JSON.stringify(profile.weekly_minutes), profile.constraints_text,
+      legacyExamType(profile), profile.target_date]);
 }
 
 export function itemToJson(row: ItemRow) {
-  return { id: row.id, course_id: row.course_id, title: row.title, description: row.description, completion_criteria: row.completion_criteria, estimated_minutes: row.estimated_minutes, earliest_date: row.earliest_date ?? undefined, deadline: row.deadline, priority: row.priority, status: row.status };
+  return { id: row.id, course_id: row.course_id, title: row.title, description: row.description, completion_criteria: row.completion_criteria, estimated_minutes: row.estimated_minutes, earliest_date: row.earliest_date ?? undefined, deadline: row.deadline, deadline_kind: row.deadline_kind ?? "deadline", priority: row.priority, status: row.status };
 }
 
 export async function listCourses(userId: string) {
@@ -50,29 +88,211 @@ export async function listDailyPlans(userId: string, from: string, to: string) {
 
 export async function snapshot(userId: string, client?: pg.PoolClient) {
   const read = <T extends pg.QueryResultRow>(sql: string, values: unknown[] = []) => client ? client.query<T>(sql, values) : query<T>(sql, values);
-  const profile = (await read<ProfileRow>("select exam_type, exam_date::text, target_school, target_program, current_progress, weekly_minutes, constraints_text from profiles where user_id=$1", [userId])).rows[0];
+  const profile = (await read<ProfileRow>(`select ${PROFILE_COLUMNS} from profiles where user_id=$1`, [userId])).rows[0];
   if (!profile) return null;
   const courses = await read<{ id: string; name: string; priority: number }>("select id,name,priority from courses where user_id=$1 order by created_at", [userId]);
-  const items = await read<ItemRow>("select id,course_id,title,description,completion_criteria,estimated_minutes,earliest_date::text,deadline::text,priority,status from items where user_id=$1 order by deadline,created_at", [userId]);
+  const items = await read<ItemRow>(`select ${ITEM_COLUMNS} from items where user_id=$1 order by deadline,created_at`, [userId]);
   const days = await read<DailyRow>("select d.id,d.item_id,d.date::text,d.planned_minutes,d.actual_minutes,d.advice_text,d.advice_topics,d.completion_status,i.title as item_title,c.name as course_name from daily_plan_items d join items i on i.id=d.item_id join courses c on c.id=i.course_id where d.user_id=$1 order by d.date,d.id", [userId]);
   const logs = await read<{ id: string; item_id: string; daily_plan_item_id: string | null; date: string; minutes: number; created_at: string }>("select id,item_id,daily_plan_item_id,date::text,minutes,created_at from study_logs where user_id=$1 order by created_at", [userId]);
   const logged = new Map<string, number>();
   for (const log of logs.rows) logged.set(log.item_id, (logged.get(log.item_id) ?? 0) + log.minutes);
   const now = new Date().toISOString();
+  const today = dateToday();
+  const boundary = profile.plan_end_date ?? profile.target_date ?? dateAdd(today, 27);
   return {
     version: 1 as const,
-    profile: { user_id: userId, planning_mode: "daily" as const, target_school: profile.target_school, target_program: profile.target_program, exam_date: profile.exam_date, exam_end_date: profile.exam_date, daily_limit_minutes: Math.max(30, Math.min(480, Math.max(...Object.values(profile.weekly_minutes), 30))), granularity_minutes: 30, buffer_minutes: 30, subject_limit_minutes: 240, study_start_minute: 480, study_end_minute: 1320, foundation: profile.current_progress },
+    profile: {
+      user_id: userId, planning_mode: "daily" as const,
+      goal_text: profile.goal_text, goal_type: profile.goal_type, goal_subtype: profile.goal_subtype,
+      target_date: profile.target_date, target_date_confirmed: profile.target_date_confirmed,
+      plan_start_date: profile.plan_start_date ?? today, plan_end_date: profile.plan_end_date ?? boundary,
+      target_school: profile.target_school, target_program: profile.target_program,
+      constraints: profile.constraints_text,
+      // 一周七天的实际可用时间：排程的唯一来源，不能用全周最大值代替。
+      weekly_minutes: normalizeWeek(profile.weekly_minutes),
+      // 旧客户端读取的镜像字段：目标日期存在时才写入，避免伪造日期。
+      ...(profile.target_date ? { exam_date: profile.target_date, exam_end_date: profile.target_date } : {}),
+      // 仅用于展示与旧数据兜底；排程按每周配置逐日计算。
+      daily_limit_minutes: Math.max(30, Math.min(480, Math.max(...Object.values(profile.weekly_minutes), 30))),
+      granularity_minutes: 30, buffer_minutes: 30, subject_limit_minutes: 240, study_start_minute: 480, study_end_minute: 1320,
+      foundation: profile.current_progress,
+    },
     subjects: courses.rows.map((course) => ({ id: course.id, user_id: userId, name: course.name, color: "#275e91", priority: course.priority as 1 | 2 | 3 })),
-    tasks: items.rows.map((item) => ({ id: item.id, user_id: userId, subject_id: item.course_id, title: item.title, description: [item.description, item.completion_criteria ? `完成标准：${item.completion_criteria}` : ""].filter(Boolean).join("\n"), estimated_minutes: item.estimated_minutes, completed_minutes: Math.min(item.estimated_minutes, logged.get(item.id) ?? 0), priority: item.priority as 1 | 2 | 3, deadline: item.deadline, earliest_date: item.earliest_date ?? undefined, is_fixed: false, status: (item.status === "completed" ? "completed" : (logged.get(item.id) ?? 0) > 0 ? "in_progress" : "not_started") as "not_started" | "in_progress" | "completed", created_at: now, updated_at: now })),
+    tasks: items.rows.map((item) => ({ id: item.id, user_id: userId, subject_id: item.course_id, title: item.title, description: [item.description, item.completion_criteria ? `完成标准：${item.completion_criteria}` : ""].filter(Boolean).join("\n"), estimated_minutes: item.estimated_minutes, completed_minutes: Math.min(item.estimated_minutes, logged.get(item.id) ?? 0), priority: item.priority as 1 | 2 | 3, deadline: item.deadline, deadline_kind: item.deadline_kind ?? "deadline", earliest_date: item.earliest_date ?? undefined, is_fixed: false, status: (item.status === "archived" ? "archived" : item.status === "completed" ? "completed" : (logged.get(item.id) ?? 0) > 0 ? "in_progress" : "not_started") as "not_started" | "in_progress" | "completed" | "archived", created_at: now, updated_at: now })),
     blocks: days.rows.map((day) => ({ id: day.id, user_id: userId, task_id: day.item_id, date: day.date, start_minute: 0, duration_minutes: day.planned_minutes, actual_minutes: day.actual_minutes, is_fixed: false, status: (day.completion_status === "completed" ? "completed" : "planned") as "planned" | "completed", created_at: now, updated_at: now, advice_text: day.advice_text, advice_topics: day.advice_topics, completion_status: day.completion_status })),
     logs: logs.rows.map((log) => ({ id: log.id, user_id: userId, task_id: log.item_id, block_id: log.daily_plan_item_id, date: log.date, minutes: log.minutes, started_at: log.created_at, ended_at: log.created_at, source: "manual" as const })),
     fixed_events: [], replan_runs: [], phases: [],
   };
 }
 
+/**
+ * 只把完整合法的一周配置当作可靠来源：缺键、非数字或越界都说明数据不可用。
+ * 0 是明确的休息日，必须保留。
+ */
+export function isReliableWeek(value: unknown): value is Record<string, number> {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Record<string, unknown>;
+  const keys = Object.keys(row);
+  if (keys.length !== 7) return false;
+  for (let day = 0; day < 7; day++) {
+    const minutes = row[String(day)];
+    if (typeof minutes !== "number" || !Number.isFinite(minutes) || minutes < 0 || minutes > 1440) return false;
+  }
+  return true;
+}
+
+/** 归一化为一周七天，键固定为 0(周日) 到 6(周六)。 */
+export function normalizeWeek(value: Record<string, number> | null | undefined): Record<string, number> {
+  const source = isReliableWeek(value) ? value : null;
+  return Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(day => [String(day), Math.max(0, Math.min(480, Number(source?.[String(day)] ?? 0)))]));
+}
+
 function dayMinutes(profile: ProfileRow, date: string) {
   const day = new Date(`${date}T00:00:00Z`).getUTCDay().toString();
   return Math.max(0, Number(profile.weekly_minutes?.[day] ?? 0));
+}
+
+const normalizedTitle = (value: string) => value.trim().replace(/\s+/g, "").toLocaleLowerCase();
+
+function occupiedMinutes(intervals: number[][], from = 0, to = 1440) {
+  let total = 0, last = from;
+  for (const [start, end] of [...intervals].sort((a, b) => a[0] - b[0])) {
+    const next = Math.min(to, end);
+    total += Math.max(0, next - Math.max(last, from, start));
+    last = Math.max(last, next);
+  }
+  return total;
+}
+
+export function replanDocument(current: PlannerDocument, session: OnboardingSession) {
+  const document = structuredClone(current);
+  const owner = document.profile.user_id, now = new Date().toISOString();
+  const boundary = session.profile.plan_end_date || session.profile.target_date || dateAdd(session.start_date, 27);
+  const fixedTaskIds = new Set([...current.tasks.filter(task => task.is_fixed).map(task => task.id),
+    ...current.blocks.filter(block => block.is_fixed).map(block => block.task_id)]);
+  const courses = new Map<string, string>();
+  const usedSubjects = new Set<string>();
+  for (const course of session.courses) {
+    const existing = document.subjects.find(subject => subject.id === course.id)
+      ?? document.subjects.find(subject => !usedSubjects.has(subject.id) && normalizedTitle(subject.name) === normalizedTitle(course.name));
+    const id = existing?.id ?? randomUUID();
+    usedSubjects.add(id);
+    courses.set(course.id, id);
+    if (existing) {
+      if (current.tasks.some(task => task.subject_id === id && fixedTaskIds.has(task.id)) && existing.name !== course.name)
+        throw new Error(`课程「${existing.name}」包含固定事项，不能在重新规划时改名`);
+      Object.assign(existing, { name: course.name, priority: course.priority });
+    } else document.subjects.push({ id, user_id: owner, name: course.name, color: "#275e91", priority: course.priority as 1 | 2 | 3 });
+  }
+  const usedTasks = new Set<string>();
+  for (const item of session.items) {
+    const subject = courses.get(item.course_id);
+    if (!subject) throw new Error(`事项「${item.title}」引用的课程不存在`);
+    const existing = document.tasks.find(task => task.id === item.id)
+      ?? document.tasks.find(task => !usedTasks.has(task.id) && task.status !== "archived" && task.subject_id === subject && normalizedTitle(task.title) === normalizedTitle(item.title));
+    const id = existing?.id ?? randomUUID();
+    if (usedTasks.has(id)) throw new Error("多个草案事项指向同一已有事项，请修改后重试");
+    usedTasks.add(id);
+    const description = [item.description, item.completion_criteria ? `完成标准：${item.completion_criteria}` : ""].filter(Boolean).join("\n");
+    const completed = Math.max(existing?.completed_minutes ?? 0, current.logs.filter(log => log.task_id === id).reduce((sum, log) => sum + log.minutes, 0));
+    if (item.estimated_minutes < completed) throw new Error(`事项「${item.title}」的总预算不能少于已完成的${completed}分钟`);
+    // 本期安排边界随新周期延展；真实截止日期原样保留。
+    const deadline = item.deadline_kind === "plan_end" ? boundary : item.deadline;
+    if (existing && fixedTaskIds.has(existing.id)) {
+      if (existing.subject_id !== subject || existing.title !== item.title || (existing.description ?? "") !== description
+        || existing.estimated_minutes !== item.estimated_minutes || existing.priority !== item.priority
+        || existing.earliest_date !== item.earliest_date)
+        throw new Error(`固定事项「${existing.title}」不能在重新规划时修改，请在计划中先解除固定`);
+      continue;
+    }
+    const task: PlannerDocument["tasks"][number] = { ...existing, id, user_id: owner, subject_id: subject,
+      title: item.title, description, estimated_minutes: item.estimated_minutes, completed_minutes: completed,
+      priority: item.priority as 1 | 2 | 3, earliest_date: item.earliest_date, deadline, deadline_kind: item.deadline_kind ?? "deadline", is_fixed: false,
+      status: existing?.status === "completed" ? "completed" : completed > 0 ? "in_progress" : "not_started",
+      created_at: existing?.created_at ?? now, updated_at: now };
+    if (existing) Object.assign(existing, task);
+    else document.tasks.push(task);
+  }
+  for (const task of document.tasks) {
+    if (usedTasks.has(task.id)) continue;
+    if (fixedTaskIds.has(task.id)) throw new Error(`请保留固定事项「${task.title}」，或先在计划中解除固定`);
+    if (task.status !== "completed") task.status = "archived";
+  }
+  const loggedBlocks = new Set(document.logs.map(log => log.block_id).filter(Boolean));
+  const protectedTaskIds = new Set(document.tasks.filter(task => task.is_fixed).map(task => task.id));
+  document.blocks = document.blocks.filter(block => block.date < session.start_date || block.is_fixed
+    || protectedTaskIds.has(block.task_id) || block.status === "completed" || block.actual_minutes > 0 || loggedBlocks.has(block.id));
+  const remaining = new Map(document.tasks.filter(task => usedTasks.has(task.id) && !task.is_fixed && task.status !== "completed")
+    .map(task => [task.id, Math.max(0, task.estimated_minutes - task.completed_minutes - document.blocks
+      .filter(block => block.task_id === task.id && block.date >= session.start_date && block.status !== "completed")
+      .reduce((sum, block) => sum + Math.max(0, block.duration_minutes - block.actual_minutes), 0))]));
+  Object.assign(document.profile, {
+    goal_text: session.profile.goal_text, goal_type: session.profile.goal_type, goal_subtype: session.profile.goal_subtype,
+    target_date: session.profile.target_date, target_date_confirmed: session.profile.target_date_confirmed,
+    plan_start_date: session.start_date, plan_end_date: boundary,
+    target_school: session.profile.target_school, target_program: session.profile.target_program, foundation: session.profile.current_progress,
+    // 重新访谈确认的一周配置必须写回文档，否则后续同步会退回每日上限。
+    weekly_minutes: normalizeWeek(session.profile.weekly_minutes),
+    daily_limit_minutes: Math.max(...Object.values(session.profile.weekly_minutes), 30),
+    ...(session.profile.target_date ? { exam_date: session.profile.target_date, exam_end_date: session.profile.target_date } : { exam_date: undefined, exam_end_date: undefined }),
+  });
+  let generatedCount = 0;
+  for (let date = session.start_date; date <= boundary; date = dateAdd(date, 1)) {
+    const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
+    const protectedBlocks = document.blocks.filter(block => block.date === date);
+    const events = document.fixed_events.filter(event => event.date <= date && (event.date === date
+      || event.repeat === "daily" || event.repeat === "weekly" && new Date(`${event.date}T00:00:00Z`).getUTCDay() === weekday));
+    const eventIntervals = events.map(event => [event.start_minute, event.start_minute + event.duration_minutes]);
+    const intervals = [...eventIntervals, ...protectedBlocks.map(block => [block.start_minute,
+      block.start_minute + Math.max(block.duration_minutes, block.actual_minutes)])].sort((a, b) => a[0] - b[0]);
+    const reserved = document.profile.planning_mode === "timed"
+      ? occupiedMinutes(intervals, document.profile.study_start_minute, document.profile.study_end_minute)
+      : occupiedMinutes(eventIntervals) + protectedBlocks.reduce((sum, block) => sum + Math.max(block.duration_minutes, block.actual_minutes), 0);
+    let capacity = Math.max(0, Math.min(480, session.profile.weekly_minutes[String(weekday)] ?? 0)
+      - Math.max(30, document.profile.buffer_minutes) - reserved);
+    const usedCourse = new Map<string, number>();
+    for (const block of protectedBlocks) {
+      const subject = document.tasks.find(task => task.id === block.task_id)?.subject_id;
+      if (subject) usedCourse.set(subject, (usedCourse.get(subject) ?? 0) + block.duration_minutes);
+    }
+    const available = document.tasks.filter(task => remaining.has(task.id) && (task.earliest_date ?? date) <= date && task.deadline >= date)
+      .sort((a, b) => a.deadline.localeCompare(b.deadline) || b.priority - a.priority);
+    for (const task of available) {
+      const amount = Math.min(capacity, remaining.get(task.id) ?? 0, Math.min(240, document.profile.subject_limit_minutes) - (usedCourse.get(task.subject_id) ?? 0));
+      if (amount <= 0) continue;
+      let pending = amount;
+      while (pending > 0) {
+        let start = 0, minutes = pending;
+        if (document.profile.planning_mode === "timed") {
+          start = document.profile.study_start_minute;
+          for (const [a, b] of intervals) {
+            if (b <= start) continue;
+            if (a > start) break;
+            start = Math.max(start, b);
+          }
+          const end = Math.min(document.profile.study_end_minute, intervals.find(([a, b]) => a > start && b > start)?.[0] ?? 1440);
+          minutes = Math.min(pending, end - start);
+          if (minutes <= 0) break;
+          intervals.push([start, start + minutes]);
+          intervals.sort((a, b) => a[0] - b[0]);
+        }
+        document.blocks.push({ id: randomUUID(), user_id: owner, task_id: task.id, date, start_minute: start,
+          duration_minutes: minutes, actual_minutes: 0, is_fixed: false, status: "planned", completion_status: "not_started",
+          created_at: now, updated_at: now, advice_text: `${task.title}：按完成标准推进，并记录学习进度。`, advice_topics: [] });
+        pending -= minutes;
+        generatedCount++;
+      }
+      const allocated = amount - pending;
+      capacity -= allocated;
+      remaining.set(task.id, (remaining.get(task.id) ?? 0) - allocated);
+      usedCourse.set(task.subject_id, (usedCourse.get(task.subject_id) ?? 0) + allocated);
+    }
+  }
+  return { document, generatedCount, unscheduledMinutes: [...remaining.values()].reduce((sum, value) => sum + value, 0),
+    unfinishedMinutes: [...remaining.keys()].reduce((sum, id) => {
+      const task = document.tasks.find(task => task.id === id)!;
+      return sum + Math.max(0, task.estimated_minutes - task.completed_minutes);
+    }, 0) };
 }
 
 async function generateRows(client: pg.PoolClient, userId: string, from: string, profile: ProfileRow, items: ItemRow[], advice = true) {
@@ -81,23 +301,29 @@ async function generateRows(client: pg.PoolClient, userId: string, from: string,
   const totals = new Map(logTotals.rows.map((row) => [row.item_id, row.total]));
   const remaining = new Map(items.map((item) => [item.id, Math.max(0, item.estimated_minutes - (totals.get(item.id) ?? 0))]));
   const first = from;
-  for (let date = first; date <= profile.exam_date; date = dateAdd(date, 1)) {
-    let capacity = dayMinutes(profile, date);
+  const boundary = planBoundary(profile, from);
+  for (let date = first; date <= boundary; date = dateAdd(date, 1)) {
+    let capacity = Math.max(0, Math.min(480, dayMinutes(profile, date)) - 30);
     if (capacity <= 0) continue;
     const usedCourse = new Map<string, number>();
     const available = items.filter((item) => (item.earliest_date ?? first) <= date && item.deadline >= date && (remaining.get(item.id) ?? 0) > 0)
       .sort((a, b) => a.deadline.localeCompare(b.deadline) || b.priority - a.priority);
-    for (const item of available) {
-      if (capacity <= 0) break;
-      const courseUsed = usedCourse.get(item.course_id) ?? 0;
-      const amount = Math.min(30, capacity, remaining.get(item.id) ?? 0, 240 - courseUsed);
-      if (amount <= 0) continue;
-      const existing = rows.find((row) => row.itemId === item.id && row.date === date);
-      if (existing) existing.minutes += amount;
-      else rows.push({ itemId: item.id, date, minutes: amount, advice: "", topics: [] });
-      remaining.set(item.id, (remaining.get(item.id) ?? 0) - amount);
-      usedCourse.set(item.course_id, courseUsed + amount);
-      capacity -= amount;
+    while (capacity > 0) {
+      let allocated = false;
+      for (const item of available) {
+        if (capacity <= 0) break;
+        const courseUsed = usedCourse.get(item.course_id) ?? 0;
+        const amount = Math.min(30, capacity, remaining.get(item.id) ?? 0, 240 - courseUsed);
+        if (amount <= 0) continue;
+        const existing = rows.find((row) => row.itemId === item.id && row.date === date);
+        if (existing) existing.minutes += amount;
+        else rows.push({ itemId: item.id, date, minutes: amount, advice: "", topics: [] });
+        remaining.set(item.id, (remaining.get(item.id) ?? 0) - amount);
+        usedCourse.set(item.course_id, courseUsed + amount);
+        capacity -= amount;
+        allocated = true;
+      }
+      if (!allocated) break;
     }
   }
   for (const row of rows) {
@@ -116,22 +342,25 @@ async function generateRows(client: pg.PoolClient, userId: string, from: string,
 
 export async function generatePlan(userId: string, from = dateToday()) {
   return transaction(async (client) => {
-    const profileResult = await client.query<ProfileRow>("select exam_type, exam_date::text, target_school, target_program, current_progress, weekly_minutes, constraints_text from profiles where user_id=$1", [userId]);
-    const profile = profileResult.rows[0];
-    if (!profile) throw new Error("请先完成备考资料");
-    const itemResult = await client.query<ItemRow>("select id,course_id,title,description,completion_criteria,estimated_minutes,earliest_date::text,deadline::text,priority,status from items where user_id=$1 and confirmed=true and status <> 'completed' order by deadline, priority desc", [userId]);
+    const profile = (await client.query<ProfileRow>(`select ${PROFILE_COLUMNS} from profiles where user_id=$1`, [userId])).rows[0];
+    if (!profile) throw new Error("请先完成学习目标设置");
+    const itemResult = await client.query<ItemRow>(`select ${ITEM_COLUMNS} from items where user_id=$1 and confirmed=true and status not in ('completed','archived') order by deadline, priority desc`, [userId]);
     await client.query("delete from daily_plan_items where user_id=$1 and date >= $2", [userId, from]);
     const rows = await generateRows(client, userId, from, profile, itemResult.rows);
-    return { from, to: profile.exam_date, count: rows.length };
+    return { from, to: planBoundary(profile, from), count: rows.length };
   });
 }
 
-export async function confirmDraft(userId: string, draft: { courses: Array<{ id: string; name: string; description: string; priority: number }>; items: Array<{ id: string; course_id: string; title: string; description: string; completion_criteria: string; estimated_minutes: number; earliest_date?: string; deadline: string; priority: number }>; analysis_summary: string; assumptions: string[]; warnings: string[] }) {
-  return transaction(async (client) => {
-    const profile = (await client.query<{ exam_date: string }>("select exam_date::text from profiles where user_id=$1", [userId])).rows[0];
-    if (!profile) throw new Error("请先保存备考资料");
+export async function confirmDraft(userId: string, draft: { courses: Array<{ id: string; name: string; description: string; priority: number }>; items: Array<{ id: string; course_id: string; title: string; description: string; completion_criteria: string; estimated_minutes: number; earliest_date?: string; deadline: string; deadline_kind?: string; priority: number }>; analysis_summary: string; assumptions: string[]; warnings: string[] }, options: { client?: pg.PoolClient; from?: string; advice?: boolean } = {}) {
+  const persist = async (client: pg.PoolClient) => {
+    const profile = (await client.query<ProfileRow>(`select ${PROFILE_COLUMNS} from profiles where user_id=$1`, [userId])).rows[0];
+    if (!profile) throw new Error("请先保存学习目标设置");
+    const from = options.from ?? dateToday();
+    const boundary = planBoundary(profile, from);
     for (const item of draft.items) {
-      if (item.deadline > profile.exam_date || (item.earliest_date && item.earliest_date > item.deadline)) throw new Error(`事项 ${item.title} 的日期超出考试范围`);
+      // 真实截止日期是业务约束，可以晚于本期结束日：本次只安排与周期相交的部分。
+      // 本期安排边界类事项跟随确认的规划周期，且不能早于事项开始日期。
+      if (item.earliest_date && item.earliest_date > item.deadline) throw new Error(`事项 ${item.title} 的开始日期晚于截止日期`);
     }
     const courseIds = new Map<string, string>();
     for (const course of draft.courses) {
@@ -142,13 +371,23 @@ export async function confirmDraft(userId: string, draft: { courses: Array<{ id:
     for (const item of draft.items) {
       const courseId = courseIds.get(item.course_id);
       if (!courseId) throw new Error(`事项 ${item.title} 引用的课程不存在`);
-      const inserted = await client.query<{ id: string }>(`insert into items(user_id,course_id,title,description,completion_criteria,estimated_minutes,earliest_date,deadline,priority,confirmed)
-        values($1,$2,$3,$4,$5,$6,$7,$8,$9,true) returning id`, [userId, courseId, item.title, item.description, item.completion_criteria, item.estimated_minutes, item.earliest_date ?? null, item.deadline, item.priority]);
+      // 本期安排边界跟随周期结束日期；真实截止日期原样保存，可以晚于本期。
+      const kind = item.deadline_kind ?? "deadline";
+      const deadline = kind === "plan_end"
+        ? (item.earliest_date && item.earliest_date > boundary ? item.earliest_date : boundary)
+        : item.deadline;
+      const inserted = await client.query<{ id: string }>(`insert into items(user_id,course_id,title,description,completion_criteria,estimated_minutes,earliest_date,deadline,deadline_kind,priority,confirmed)
+        values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,true) returning id`, [userId, courseId, item.title, item.description, item.completion_criteria, item.estimated_minutes, item.earliest_date ?? null, deadline, kind, item.priority]);
       itemIds.set(item.id, inserted.rows[0].id);
     }
     const version = await client.query<{ id: string }>("insert into plan_versions(user_id,kind,payload) values($1,'confirmed',$2) returning id", [userId, JSON.stringify({ ...draft, courseIds: Object.fromEntries(courseIds), itemIds: Object.fromEntries(itemIds) })]);
-    return { versionId: version.rows[0].id, courseIds: Object.fromEntries(courseIds), itemIds: Object.fromEntries(itemIds) };
-  }).then(async (result) => ({ ...result, generated: await generatePlan(userId) }));
+    const items = await client.query<ItemRow>(`select ${ITEM_COLUMNS} from items where user_id=$1 and confirmed=true and status not in ('completed','archived') order by deadline,priority desc`, [userId]);
+    const rows = await generateRows(client, userId, from, profile, items.rows, options.advice ?? true);
+    const total = draft.items.reduce((sum, item) => sum + item.estimated_minutes, 0);
+    return { versionId: version.rows[0].id, courseIds: Object.fromEntries(courseIds), itemIds: Object.fromEntries(itemIds),
+      generated: { from, to: boundary, count: rows.length, unscheduled_minutes: Math.max(0, total - rows.reduce((sum, row) => sum + row.minutes, 0)) } };
+  };
+  return options.client ? persist(options.client) : transaction(persist);
 }
 
 export async function settleDay(userId: string, date: string, entries: Array<{ item_id: string; actual_minutes: number; completion_status: string; feedback: string }>, feedback: string) {
@@ -163,8 +402,8 @@ export async function settleDay(userId: string, date: string, entries: Array<{ i
       if (entry.completion_status === "completed") await client.query("update items set status='completed', updated_at=now() where id=$1 and user_id=$2", [entry.item_id, userId]);
     }
     await client.query("insert into daily_reviews(user_id,date,feedback,result) values($1,$2,$3,$4) on conflict(user_id,date) do update set feedback=excluded.feedback,result=excluded.result,settled_at=now()", [userId, date, feedback, JSON.stringify({ entries })]);
-    const profile = (await client.query<ProfileRow>("select exam_type, exam_date::text, target_school, target_program, current_progress, weekly_minutes, constraints_text from profiles where user_id=$1", [userId])).rows[0];
-    const items = (await client.query<ItemRow>("select id,course_id,title,description,completion_criteria,estimated_minutes,earliest_date::text,deadline::text,priority,status from items where user_id=$1 and confirmed=true and status <> 'completed' order by deadline,priority desc", [userId])).rows;
+    const profile = (await client.query<ProfileRow>(`select ${PROFILE_COLUMNS} from profiles where user_id=$1`, [userId])).rows[0];
+    const items = (await client.query<ItemRow>(`select ${ITEM_COLUMNS} from items where user_id=$1 and confirmed=true and status not in ('completed','archived') order by deadline,priority desc`, [userId])).rows;
     await client.query("delete from daily_plan_items where user_id=$1 and date >= $2 and actual_minutes=0 and completion_status <> 'completed'", [userId, dateAdd(date, 1)]);
     const afterRows = await generateRows(client, userId, dateAdd(date, 1), profile, items);
     const after = await client.query("select * from daily_plan_items where user_id=$1 and date >= $2 order by date, item_id", [userId, dateAdd(date, 1)]);

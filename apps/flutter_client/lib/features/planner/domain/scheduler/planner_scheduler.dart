@@ -125,6 +125,22 @@ class _Limits {
   final int end;
 }
 
+/// 周几索引，与服务端 `getUTCDay` 一致：0 为周日，6 为周六。
+int weekdayIndex(String date) {
+  final parsed = _parseDate(date);
+  if (parsed == null) return 0;
+  return parsed.weekday % 7;
+}
+
+/// 某一自然日的可用学习预算：使用一周七天的实际值，而不是全周最大值。
+///
+/// 旧数据没有一周七天时退回每日上限，所以两者的默认结果一致。
+int dailyStudyBudget(Profile profile, String date) {
+  final week = profile.weekMinutes;
+  final raw = _finite(week['${weekdayIndex(date)}'] ?? 0);
+  return math.max(0, math.min(480, raw) - math.max(30, _finite(profile.bufferMinutes)));
+}
+
 _Limits _limits(Profile profile) => _Limits(
   daily: math.max(
     0,
@@ -176,7 +192,7 @@ int availableDailyMinutes(
   String date,
 ) => math.max(
   0,
-  _limits(profile).daily -
+  dailyStudyBudget(profile, date) -
       fixedEventMinutesForDate(
         events,
         date,
@@ -194,6 +210,7 @@ String? _placementError(
       .where((item) => item.id == candidate.taskId)
       .firstOrNull;
   if (task == null) return '找不到对应任务';
+  if (task.status == TaskStatus.archived) return '已归档事项不可安排';
   if (_parseDate(candidate.date) == null) {
     return '日期格式无效';
   }
@@ -268,8 +285,8 @@ String? _placementError(
           eventLoad +
           orphanLogs.fold<int>(0, (sum, log) => sum + _finite(log.minutes)) +
           candidate.durationMinutes >
-      capacity.daily) {
-    return '超出每日上限，须保留至少30分钟机动时间';
+      dailyStudyBudget(input.profile, candidate.date)) {
+    return '超出当天可用的学习时间（每日上限），须保留至少30分钟机动时间';
   }
   final subjectLoad = dayBlocks
       .where((block) {
@@ -547,6 +564,8 @@ ReplanPreview generateReplanPreview(
   bool immutable(ScheduleBlock block) =>
       block.isFixed ||
       block.status == BlockStatus.completed ||
+      (tasks[block.taskId]?.status == TaskStatus.archived &&
+          _blockActual(block, input.logs) > 0) ||
       tasks[block.taskId]?.isFixed == true ||
       block.date.compareTo(input.today) < 0 ||
       block.date.compareTo(horizon) > 0;
@@ -555,10 +574,11 @@ ReplanPreview generateReplanPreview(
         .where((block) {
           final task = tasks[block.taskId];
           return immutable(block) ||
-              block.date == input.today ||
               task == null ||
-              (task.status != TaskStatus.completed &&
-                  remainingTaskMinutes(task, input.logs) > 0);
+              (task.status != TaskStatus.archived &&
+                  (block.date == input.today ||
+                      (task.status != TaskStatus.completed &&
+                          remainingTaskMinutes(task, input.logs) > 0)));
         })
         .map(_copyBlock)
         .toList();
@@ -586,6 +606,7 @@ ReplanPreview generateReplanPreview(
     for (final source in eligible) {
       final task = tasks[source.taskId];
       if (task == null ||
+          task.status == TaskStatus.archived ||
           task.status == TaskStatus.completed ||
           remainingTaskMinutes(task, input.logs) == 0) {
         continue;
@@ -678,7 +699,8 @@ ReplanPreview generateReplanPreview(
         ),
       );
     }
-    if (task.status != TaskStatus.completed &&
+    if (task.status != TaskStatus.archived &&
+        task.status != TaskStatus.completed &&
         remainingTaskMinutes(task, input.logs) > 0 &&
         _blockPending(block, input.logs) > 0) {
       (candidates[task.id] ??= []).add(block);
@@ -788,7 +810,9 @@ PlannerData confirmReplan(PlannerData data, ReplanPreview preview) {
     final complete =
         task.status == TaskStatus.completed ||
         remainingTaskMinutes(task, data.logs) == 0;
-    final status = complete
+    final status = task.status == TaskStatus.archived
+        ? TaskStatus.archived
+        : complete
         ? TaskStatus.completed
         : preview.conflicts.any((conflict) => conflict.taskId == task.id)
         ? TaskStatus.conflict
@@ -917,8 +941,10 @@ PlannerData recordTaskDayMinutes(
           (item) => item.id == taskId
               ? item.copyWith(
                   completedMinutes: math.min(item.estimatedMinutes, total),
-                  status: item.status == TaskStatus.completed
-                      ? TaskStatus.completed
+                  status:
+                      item.status == TaskStatus.archived ||
+                          item.status == TaskStatus.completed
+                      ? item.status
                       : total > 0
                       ? TaskStatus.inProgress
                       : TaskStatus.notStarted,

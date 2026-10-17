@@ -1,13 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-
+import 'package:go_router/go_router.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets.dart';
 import '../../../shared/models/api_models.dart';
-import '../../planner/application/onboarding_controller.dart';
+import '../../../shared/models/planner_models.dart';
 import '../../planner/domain/planner_format.dart';
 import '../../planner/presentation/planner_dialogs.dart' show DateField;
+import '../application/onboarding_flow.dart';
+import '../domain/onboarding_session.dart';
+import 'draft_editors.dart';
 
 const _days = [
   ('1', '周一'),
@@ -19,610 +22,1016 @@ const _days = [
   ('0', '周日'),
 ];
 
-/// Web steps 1..6 of the profile wizard plus the AI draft confirmation step.
 class OnboardingPage extends ConsumerStatefulWidget {
-  const OnboardingPage({super.key});
-
+  const OnboardingPage({this.embedded = false, super.key});
+  final bool embedded;
   @override
   ConsumerState<OnboardingPage> createState() => _OnboardingPageState();
 }
 
 class _OnboardingPageState extends ConsumerState<OnboardingPage> {
-  final _formKey = GlobalKey<FormState>();
-  final _school = TextEditingController();
-  final _program = TextEditingController();
-  final _progress = TextEditingController();
-  final _constraints = TextEditingController();
-  bool _seeded = false;
+  final _answer = TextEditingController();
+  final _revision = TextEditingController();
+  final _form = GlobalKey<FormState>();
+  String? _start;
+  String? _end;
+  String? _target;
+  Map<String, int>? _weekly;
+  String? _seededStage;
+  String? _seededQuestion;
+  final _selectedAnswers = <String>{};
+  bool _otherSelected = false;
+  String? _answerError;
+  int _weeklyVersion = 0;
 
   @override
   void dispose() {
-    _school.dispose();
-    _program.dispose();
-    _progress.dispose();
-    _constraints.dispose();
+    _answer.dispose();
+    _revision.dispose();
     super.dispose();
   }
 
-  void _seed(OnboardingProfile profile) {
-    if (_seeded) return;
-    _seeded = true;
-    _school.text = profile.targetSchool;
-    _program.text = profile.targetProgram;
-    _progress.text = profile.currentProgress;
-    _constraints.text = profile.constraintsText;
-  }
-
-  OnboardingProfile _collect(OnboardingProfile base) => base.copyWith(
-    targetSchool: _school.text.trim(),
-    targetProgram: _program.text.trim(),
-    currentProgress: _progress.text.trim(),
-    constraintsText: _constraints.text.trim(),
-  );
-
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(onboardingControllerProvider);
-    _seed(state.profile);
-    final controller = ref.read(onboardingControllerProvider.notifier);
-    final text = Theme.of(context).textTheme;
-    final progress = (state.step / 7 * 100).round();
-    return Scaffold(
-      body: SafeArea(
+    final state = ref.watch(onboardingFlowProvider);
+    final flow = ref.read(onboardingFlowProvider.notifier);
+    final session = state.session;
+    final stage = session?.stage ?? 'interview';
+    if (_seededStage != stage) {
+      _revision.clear();
+      if (stage == 'schedule' && session != null) {
+        final today = shanghaiToday();
+        _start = session.startDate.isNotEmpty
+            ? session.startDate
+            : session.profile.resolvedPlanStart(today);
+        _end = session.endDate.isNotEmpty
+            ? session.endDate
+            : session.recommendations.planEndDate.isNotEmpty
+            ? session.recommendations.planEndDate
+            : session.profile.resolvedPlanEnd(today);
+        final target = session.profile.resolvedTargetDate;
+        _target = target.isNotEmpty
+            ? target
+            : session.recommendations.targetDate;
+        _weekly = {
+          ...(session.recommendations.weeklyMinutes.isNotEmpty
+              ? session.recommendations.weeklyMinutes
+              : session.profile.weeklyMinutes),
+        };
+        _weeklyVersion++;
+      }
+      _seededStage = stage;
+    }
+    if (session != null) {
+      final questionKey = '${session.answers.length}:${session.question}';
+      if (_seededQuestion != questionKey) {
+        _seededQuestion = questionKey;
+        _selectedAnswers.clear();
+        _otherSelected = false;
+        _answerError = null;
+        _answer.clear();
+      }
+    }
+    final index = switch (stage) {
+      'courses' => 1,
+      'items' => 2,
+      'schedule' || 'complete' => 3,
+      _ => 0,
+    };
+    final body = SafeArea(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.all(20),
         child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 820),
-              child: Form(
-                key: _formKey,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 860),
+            child: Form(
+              key: _form,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (widget.embedded) ...[
                     Wrap(
                       alignment: WrapAlignment.spaceBetween,
+                      spacing: 16,
+                      runSpacing: 12,
                       crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 12,
                       children: [
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Row(
-                              children: [
-                                const Icon(
-                                  Icons.auto_awesome,
-                                  size: 15,
-                                  color: PlannerColors.blue,
-                                ),
-                                const SizedBox(width: 6),
-                                Text(
-                                  'AI 备考规划',
-                                  style: text.labelLarge?.copyWith(
-                                    color: PlannerColors.blue,
-                                  ),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 6),
-                            Text('先把你的目标说清楚', style: text.headlineSmall),
-                            const SizedBox(height: 4),
-                            const Text(
-                              'AI 会根据考试时间、当前进度和真实可用时间生成可调整的课程与事项。',
-                              style: TextStyle(color: PlannerColors.muted),
-                            ),
-                          ],
-                        ),
                         Text(
-                          state.step < 7 ? '第 ${state.step} / 6 步' : '确认计划',
-                          style: tabularFigures,
+                          '访谈与规划',
+                          style: Theme.of(context).textTheme.headlineSmall,
                         ),
+                        if (session != null && session.stage != 'complete')
+                          TextButton.icon(
+                            onPressed: state.loading
+                                ? null
+                                : () => _restart(flow),
+                            icon: const Icon(Icons.restart_alt),
+                            label: const Text('重新访谈'),
+                          ),
                       ],
                     ),
-                    const SizedBox(height: 16),
-                    LinearProgressIndicator(
-                      value: progress / 100,
-                      minHeight: 6,
-                      backgroundColor: PlannerColors.border,
-                      semanticsLabel: '备考资料填写进度 $progress%',
+                    if (session?.replanning == true) ...[
+                      const SizedBox(height: 12),
+                      const PlannerNotice(
+                        '新计划确认前，当前计划保持生效。',
+                        tone: PlannerNoticeTone.info,
+                      ),
+                    ],
+                    const SizedBox(height: 24),
+                  ],
+                  if (stage != 'complete')
+                    Wrap(
+                      spacing: 20,
+                      runSpacing: 8,
+                      children: [
+                        for (final (i, title) in [
+                          '目标访谈',
+                          '确认课程',
+                          '确认事项',
+                          '每日计划',
+                        ].indexed)
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(
+                                i < index
+                                    ? Icons.check_circle_outline
+                                    : i == index
+                                    ? Icons.radio_button_checked
+                                    : Icons.radio_button_unchecked,
+                                size: 18,
+                                color: i < index
+                                    ? PlannerColors.green
+                                    : i == index
+                                    ? PlannerColors.blue
+                                    : PlannerColors.muted,
+                              ),
+                              const SizedBox(width: 6),
+                              Text(
+                                title,
+                                style: TextStyle(
+                                  color: i == index
+                                      ? PlannerColors.blue
+                                      : PlannerColors.muted,
+                                ),
+                              ),
+                            ],
+                          ),
+                      ],
                     ),
-                    const SizedBox(height: 20),
-                    PlannerPanel(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          _stepBody(state, controller),
-                          if (state.error != null) ...[
-                            const SizedBox(height: 16),
-                            PlannerNotice(
-                              state.error!,
-                              tone: PlannerNoticeTone.error,
-                            ),
-                          ],
-                          const SizedBox(height: 20),
-                          _actions(state, controller),
-                        ],
+                  if (stage != 'complete') const SizedBox(height: 28),
+                  if (session != null) ...[
+                    if (stage == 'interview' || stage == 'checkpoint')
+                      _interview(session, flow, state.loading),
+                    if (stage == 'courses' || stage == 'items')
+                      _draft(session, flow, state.loading),
+                    if (stage == 'schedule')
+                      _schedule(session, flow, state.loading),
+                    if (stage == 'complete')
+                      _planningHome(session, flow, state.loading),
+                  ],
+                  if (state.loading) ...[
+                    const SizedBox(height: 24),
+                    const LinearProgressIndicator(semanticsLabel: '正在处理学习规划'),
+                    const SizedBox(height: 8),
+                    Text(
+                      session == null ? '正在读取规划进度…' : '正在处理，请稍候…',
+                      style: const TextStyle(color: PlannerColors.muted),
+                    ),
+                  ],
+                  if (state.error != null) ...[
+                    const SizedBox(height: 16),
+                    PlannerNotice(state.error!, tone: PlannerNoticeTone.error),
+                    if (state.planChanged)
+                      Align(
+                        alignment: Alignment.centerRight,
+                        child: FilledButton.icon(
+                          onPressed: state.loading
+                              ? null
+                              : () => flow.act({'type': 'refresh_plan'}),
+                          icon: const Icon(Icons.sync),
+                          label: const Text('更新当前计划进度，保留草稿'),
+                        ),
+                      ),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton.icon(
+                        onPressed: state.loading ? null : flow.reload,
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('重新读取已保存进度'),
                       ),
                     ),
                   ],
-                ),
+                  const SizedBox(height: 40),
+                ],
               ),
             ),
           ),
         ),
       ),
     );
+    return widget.embedded
+        ? body
+        : Scaffold(
+            appBar: AppBar(title: const Text('不白学 · 学习规划')),
+            body: body,
+          );
   }
 
-  Widget _stepBody(OnboardingState state, OnboardingController controller) {
-    final profile = state.profile;
-    switch (state.step) {
-      case 1:
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              '你准备参加什么考试？',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 12,
-              children: [
-                for (final kind in const ['考研', '考公', '其他'])
-                  ChoiceChip(
-                    label: Text(kind),
-                    selected: profile.examType == kind,
-                    onSelected: (_) => controller.updateProfile(
-                      profile.copyWith(examType: kind),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '后续课程和事项会围绕这个考试类型生成。',
-              style: TextStyle(color: PlannerColors.muted, fontSize: 12),
-            ),
-          ],
-        );
-      case 2:
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('考试日期', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 12),
-            DateField(
-              label: '正式考试日期',
-              value: profile.examDate,
-              firstDate: shanghaiToday(),
-              onChanged: (value) =>
-                  controller.updateProfile(profile.copyWith(examDate: value)),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '如果日期尚未公布，先填预计日期，之后可以重新生成计划。',
-              style: TextStyle(color: PlannerColors.muted, fontSize: 12),
-            ),
-          ],
-        );
-      case 3:
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text('你的目标', style: Theme.of(context).textTheme.titleMedium),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _school,
-              autofocus: true,
-              maxLength: 80,
-              decoration: const InputDecoration(
-                labelText: '目标院校／单位',
-                hintText: '例如：上海交通大学',
-                counterText: '',
-              ),
-              validator: (value) =>
-                  (value ?? '').trim().isEmpty ? '请填写目标院校或单位' : null,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _program,
-              maxLength: 80,
-              decoration: const InputDecoration(
-                labelText: '专业／岗位方向',
-                hintText: '例如：计算机技术、行政执法',
-                counterText: '',
-              ),
-            ),
-          ],
-        );
-      case 4:
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              '你现在学到哪里了？',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _progress,
-              maxLines: 4,
-              maxLength: 2000,
-              decoration: const InputDecoration(
-                labelText: '当前进度',
-                hintText: '例如：高数刚学完极限，英语词汇完成约 30%，还没有开始政治。',
-                counterText: '',
-              ),
-              validator: (value) =>
-                  (value ?? '').trim().isEmpty ? '请填写当前进度' : null,
-            ),
-          ],
-        );
-      case 5:
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              '每周每天能学多久？',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 12),
-            Wrap(
-              spacing: 12,
-              runSpacing: 12,
-              children: [
-                for (final (key, label) in _days)
-                  SizedBox(
-                    width: 150,
-                    child: TextFormField(
-                      initialValue: '${profile.weeklyMinutes[key] ?? 0}',
-                      keyboardType: TextInputType.number,
-                      inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                      decoration: InputDecoration(
-                        labelText: label,
-                        suffixText: '分钟',
-                      ),
-                      onChanged: (value) => controller.updateProfile(
-                        profile.copyWith(
-                          weeklyMinutes: {
-                            ...profile.weeklyMinutes,
-                            key: int.tryParse(value) ?? 0,
-                          },
-                        ),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '只填写真正能用于学习的时间，计划会自动保留机动时间。',
-              style: TextStyle(color: PlannerColors.muted, fontSize: 12),
-            ),
-          ],
-        );
-      case 6:
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              '还有哪些限制？',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            const SizedBox(height: 12),
-            TextFormField(
-              controller: _constraints,
-              maxLines: 4,
-              maxLength: 2000,
-              decoration: const InputDecoration(
-                labelText: '固定课程、休息时间和学习偏好',
-                hintText: '例如：周三晚上有课；早上效率高；希望每次学习不超过 90 分钟。',
-                counterText: '',
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '填写越具体，AI 给出的事项和每日建议越容易落地。',
-              style: TextStyle(color: PlannerColors.muted, fontSize: 12),
-            ),
-          ],
-        );
-      default:
-        return _DraftStep(state: state, controller: controller);
-    }
-  }
-
-  Widget _actions(OnboardingState state, OnboardingController controller) {
-    final busy = state.loading;
-    if (state.step == 7) {
-      return Wrap(
-        alignment: WrapAlignment.end,
+  Widget _planningHome(
+    OnboardingSession session,
+    OnboardingFlow flow,
+    bool busy,
+  ) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      Text('当前目标', style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+      Text(
+        session.answers.isNotEmpty
+            ? session.answers.first.answer
+            : [
+                session.profile.goalText,
+                session.profile.goalSubtype,
+                goalTypeLabelOf(session.profile.goalType),
+              ].where((value) => value.isNotEmpty).join(' · '),
+      ),
+      const SizedBox(height: 8),
+      Text(
+        [
+          session.profile.planStartDate.isNotEmpty
+              ? '本次规划 ${session.profile.planStartDate} 至 ${session.profile.planEndDate}'
+              : '',
+          session.profile.targetDate.isNotEmpty
+              ? '${session.profile.targetDateConfirmed ? '目标日期' : '预计目标日期'} ${session.profile.targetDate}'
+              : '暂未设置目标日期',
+          '已记录 ${session.answers.length} 个回答',
+        ].where((value) => value.isNotEmpty).join(' · '),
+        style: const TextStyle(color: PlannerColors.muted),
+      ),
+      const SizedBox(height: 24),
+      Wrap(
         spacing: 12,
-        runSpacing: 8,
+        runSpacing: 12,
         children: [
-          OutlinedButton(
-            onPressed: busy ? null : () => controller.goTo(6),
-            child: const Text('返回修改资料'),
-          ),
           FilledButton.icon(
-            onPressed: busy || (state.draft?.items.isEmpty ?? true)
+            onPressed: busy || session.answers.length >= 50
                 ? null
-                : () => controller.confirmDraft(),
-            icon: busy
-                ? const SizedBox.square(
-                    dimension: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.check, size: 18),
-            label: Text(busy ? '正在生成每日计划…' : '确认并生成每日计划'),
+                : () => flow.act({'type': 'resume_interview'}),
+            icon: const Icon(Icons.forum_outlined),
+            label: const Text('继续访谈'),
+          ),
+          OutlinedButton.icon(
+            onPressed: busy ? null : () => _restart(flow),
+            icon: const Icon(Icons.restart_alt),
+            label: const Text('重新访谈'),
           ),
         ],
-      );
-    }
-    return Wrap(
-      alignment: WrapAlignment.end,
-      spacing: 12,
-      runSpacing: 8,
-      children: [
-        if (state.step > 1)
-          OutlinedButton.icon(
-            onPressed: busy ? null : controller.back,
-            icon: const Icon(Icons.arrow_back, size: 16),
-            label: const Text('上一步'),
-          ),
-        if (state.step < 6)
-          FilledButton.icon(
-            onPressed: busy
-                ? null
-                : () {
-                    final valid = _formKey.currentState?.validate() ?? true;
-                    if (!valid) return;
-                    controller.updateProfile(_collect(state.profile));
-                    controller.next();
-                  },
-            icon: const Icon(Icons.arrow_forward, size: 16),
-            label: const Text('下一步'),
-          ),
-        if (state.step == 6)
-          FilledButton.icon(
-            onPressed: busy
-                ? null
-                : () {
-                    final valid = _formKey.currentState?.validate() ?? true;
-                    if (!valid) return;
-                    controller.updateProfile(_collect(state.profile));
-                    controller.submitProfile();
-                  },
-            icon: busy
-                ? const SizedBox.square(
-                    dimension: 16,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.auto_awesome, size: 18),
-            label: Text(busy ? 'AI 正在分析…' : '生成课程与事项'),
-          ),
-      ],
-    );
-  }
-}
-
-/// Step 7: review and edit the AI draft before it becomes the plan.
-class _DraftStep extends StatelessWidget {
-  const _DraftStep({required this.state, required this.controller});
-
-  final OnboardingState state;
-  final OnboardingController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    final draft = state.draft!;
-    final text = Theme.of(context).textTheme;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
+      ),
+      if (session.answers.isNotEmpty) ...[
+        const SizedBox(height: 24),
+        ExpansionTile(
+          title: const Text('已有访谈记录'),
+          tilePadding: EdgeInsets.zero,
           children: [
-            const Icon(Icons.check, size: 15, color: PlannerColors.green),
-            const SizedBox(width: 6),
-            Text('AI 分析完成', style: text.labelLarge),
+            for (final answer in session.answers)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(answer.question),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 6, bottom: 12),
+                  child: SelectableText(answer.answer),
+                ),
+              ),
           ],
         ),
-        const SizedBox(height: 6),
-        Text('确认你的课程与事项', style: text.titleMedium),
-        const SizedBox(height: 8),
-        Text(draft.analysisSummary),
-        if (draft.assumptions.isNotEmpty || draft.warnings.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Wrap(
-            spacing: 12,
-            runSpacing: 6,
-            children: [
-              for (final note in draft.assumptions)
-                Text(
-                  '假设：$note',
-                  style: const TextStyle(
-                    color: PlannerColors.muted,
-                    fontSize: 12,
-                  ),
-                ),
-              for (final note in draft.warnings)
-                Text(
-                  '提醒：$note',
-                  style: const TextStyle(
-                    color: PlannerColors.orange,
-                    fontSize: 12,
-                  ),
-                ),
-            ],
+      ],
+    ],
+  );
+
+  Future<void> _restart(OnboardingFlow flow) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('重新开始访谈？'),
+        content: const Text('本轮访谈和未确认的草稿将重置。当前计划与学习记录保留，直到你确认新的计划。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('重新开始'),
           ),
         ],
-        const SizedBox(height: 16),
-        for (final course in draft.courses)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 12),
-            child: PlannerPanel(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: Text(
-                          course.name,
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                      ),
-                      Text(
-                        '${draft.items.where((item) => item.courseId == course.id).length} 个事项',
-                        style: const TextStyle(
-                          color: PlannerColors.muted,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
+      ),
+    );
+    if (confirmed == true && mounted) {
+      await flow.act({'type': 'restart_interview'});
+    }
+  }
+
+  Widget _interview(
+    OnboardingSession session,
+    OnboardingFlow flow,
+    bool busy,
+  ) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      if (session.answers.isNotEmpty)
+        ExpansionTile(
+          tilePadding: EdgeInsets.zero,
+          title: Text('已回答 ${session.answers.length} 个问题'),
+          children: [
+            for (final (i, answer) in session.answers.indexed)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text('${i + 1}. ${answer.question}'),
+                subtitle: Padding(
+                  padding: const EdgeInsets.only(top: 6, bottom: 12),
+                  child: SelectableText(answer.answer),
+                ),
+              ),
+          ],
+        ),
+      const SizedBox(height: 16),
+      if (session.stage == 'checkpoint') ...[
+        Text('信息已记录', style: Theme.of(context).textTheme.headlineSmall),
+        const SizedBox(height: 20),
+        Wrap(
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            OutlinedButton.icon(
+              onPressed: busy || session.answers.length >= 50
+                  ? null
+                  : () => flow.act({'type': 'continue'}),
+              icon: const Icon(Icons.add_comment_outlined),
+              label: const Text('继续完善信息'),
+            ),
+            FilledButton.icon(
+              onPressed: busy
+                  ? null
+                  : () => flow.act({'type': 'generate_courses'}),
+              icon: const Icon(Icons.arrow_forward),
+              label: const Text('根据当前回答生成课程'),
+            ),
+          ],
+        ),
+      ] else ...[
+        Text(
+          '第 ${session.answers.length + 1} 问${session.questionMultiple ? ' · 可多选' : ''}',
+          style: const TextStyle(color: PlannerColors.muted),
+        ),
+        const SizedBox(height: 8),
+        Text(
+          session.question,
+          style: Theme.of(context).textTheme.headlineSmall,
+        ),
+        const SizedBox(height: 20),
+        if (session.questionOptions.isNotEmpty) ...[
+          if (session.questionMultiple)
+            Column(
+              children: [
+                for (final option in session.questionOptions)
+                  CheckboxListTile(
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    title: Text(option),
+                    value: _selectedAnswers.contains(option),
+                    onChanged: busy
+                        ? null
+                        : (checked) => setState(() {
+                            if (checked == true) {
+                              _selectedAnswers.add(option);
+                            } else {
+                              _selectedAnswers.remove(option);
+                            }
+                            _answerError = null;
+                          }),
                   ),
-                  if (course.description.isNotEmpty) ...[
-                    const SizedBox(height: 4),
-                    Text(
-                      course.description,
-                      style: const TextStyle(
-                        color: PlannerColors.muted,
-                        fontSize: 12,
-                      ),
+                CheckboxListTile(
+                  contentPadding: EdgeInsets.zero,
+                  controlAffinity: ListTileControlAffinity.leading,
+                  title: const Text('其他'),
+                  value: _otherSelected,
+                  onChanged: busy
+                      ? null
+                      : (checked) => setState(() {
+                          _otherSelected = checked == true;
+                          _answerError = null;
+                        }),
+                ),
+              ],
+            )
+          else
+            RadioGroup<String>(
+              groupValue: _otherSelected
+                  ? '__other__'
+                  : _selectedAnswers.firstOrNull,
+              onChanged: (value) {
+                if (busy || value == null) return;
+                setState(() {
+                  _otherSelected = value == '__other__';
+                  _selectedAnswers.clear();
+                  if (!_otherSelected) _selectedAnswers.add(value);
+                  _answerError = null;
+                });
+              },
+              child: Column(
+                children: [
+                  for (final option in session.questionOptions)
+                    RadioListTile<String>(
+                      contentPadding: EdgeInsets.zero,
+                      title: Text(option),
+                      value: option,
+                      enabled: !busy,
                     ),
-                  ],
-                  const SizedBox(height: 8),
-                  for (final item in draft.items.where(
-                    (entry) => entry.courseId == course.id,
-                  ))
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 10),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Expanded(
-                                child: TextFormField(
-                                  initialValue: item.title,
-                                  decoration: const InputDecoration(
-                                    labelText: '事项名称',
-                                  ),
-                                  onChanged: (value) => controller.updateDraft(
-                                    draft.copyWith(
-                                      items: [
-                                        for (final entry in draft.items)
-                                          entry.id == item.id
-                                              ? entry.copyWith(title: value)
-                                              : entry,
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
-                              SizedBox(
-                                width: 120,
-                                child: TextFormField(
-                                  initialValue: '${item.estimatedMinutes}',
-                                  keyboardType: TextInputType.number,
-                                  inputFormatters: [
-                                    FilteringTextInputFormatter.digitsOnly,
-                                  ],
-                                  decoration: const InputDecoration(
-                                    labelText: '预算',
-                                    suffixText: '分',
-                                  ),
-                                  onChanged: (value) => controller.updateDraft(
-                                    draft.copyWith(
-                                      items: [
-                                        for (final entry in draft.items)
-                                          entry.id == item.id
-                                              ? entry.copyWith(
-                                                  estimatedMinutes:
-                                                      int.tryParse(value) ??
-                                                      entry.estimatedMinutes,
-                                                )
-                                              : entry,
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              IconButton(
-                                tooltip: '删除 ${item.title}',
-                                icon: const Icon(
-                                  Icons.delete_outline,
-                                  size: 18,
-                                ),
-                                onPressed: () => controller.updateDraft(
-                                  draft.copyWith(
-                                    items: [
-                                      for (final entry in draft.items)
-                                        if (entry.id != item.id) entry,
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          TextFormField(
-                            initialValue: item.description,
-                            maxLines: 2,
-                            decoration: const InputDecoration(
-                              labelText: '学习范围与完成标准',
-                            ),
-                            onChanged: (value) => controller.updateDraft(
-                              draft.copyWith(
-                                items: [
-                                  for (final entry in draft.items)
-                                    entry.id == item.id
-                                        ? entry.copyWith(description: value)
-                                        : entry,
-                                ],
-                              ),
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Text(
-                            '${item.earliestDate ?? '未定'} 至 ${item.deadline}',
-                            style: tabularFigures.copyWith(
-                              fontSize: 11,
-                              color: PlannerColors.muted,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  TextButton.icon(
-                    onPressed: () => controller.updateDraft(
-                      draft.copyWith(
-                        items: [
-                          ...draft.items,
-                          ItemDraft(
-                            id: 'item-${DateTime.now().microsecondsSinceEpoch}',
-                            courseId: course.id,
-                            title: '新事项',
-                            description: '',
-                            completionCriteria: '',
-                            estimatedMinutes: 120,
-                            earliestDate: shanghaiToday(),
-                            deadline: state.profile.examDate,
-                            priority: 2,
-                          ),
-                        ],
-                      ),
-                    ),
-                    icon: const Icon(Icons.add, size: 16),
-                    label: const Text('添加事项'),
+                  RadioListTile<String>(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('其他'),
+                    value: '__other__',
+                    enabled: !busy,
                   ),
                 ],
               ),
             ),
+          if (_answerError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                _answerError!,
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+            ),
+          const SizedBox(height: 12),
+        ],
+        if (session.questionOptions.isEmpty || _otherSelected)
+          TextFormField(
+            key: ValueKey('answer-${session.answers.length}'),
+            controller: _answer,
+            enabled: !busy,
+            autofocus: session.questionOptions.isEmpty,
+            minLines: 3,
+            maxLines: 8,
+            maxLength: 4000,
+            decoration: InputDecoration(
+              labelText: session.questionOptions.isEmpty ? '你的回答' : '其他回答',
+              hintText: session.answers.isEmpty
+                  ? '例如：从零学习 Python，能独立做简单的数据分析'
+                  : null,
+            ),
+            validator: (value) =>
+                value == null || value.trim().isEmpty ? '请先填写回答' : null,
           ),
+        const SizedBox(height: 16),
+        Align(
+          alignment: Alignment.centerRight,
+          child: FilledButton.icon(
+            onPressed: busy
+                ? null
+                : () async {
+                    if (!_form.currentState!.validate()) return;
+                    final options = session.questionOptions
+                        .where(_selectedAnswers.contains)
+                        .toList();
+                    final text = _answer.text.trim();
+                    final answer = [
+                      ...options,
+                      if (session.questionOptions.isEmpty || _otherSelected)
+                        text,
+                    ].join('；');
+                    if (answer.isEmpty) {
+                      setState(() => _answerError = '请选择一个选项或填写其他回答');
+                      return;
+                    }
+                    if (await flow.act({'type': 'answer', 'answer': answer})) {
+                      _answer.clear();
+                    }
+                  },
+            icon: const Icon(Icons.arrow_forward),
+            label: Text(session.answers.length < 4 ? '提交回答，继续' : '提交回答'),
+          ),
+        ),
+      ],
+    ],
+  );
+
+  Widget _draft(OnboardingSession session, OnboardingFlow flow, bool busy) {
+    final courses = session.stage == 'courses';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          courses ? '确认你的课程' : '确认学习事项',
+          style: Theme.of(context).textTheme.headlineSmall,
+        ),
+        const SizedBox(height: 8),
+        Text(session.summary),
+        const SizedBox(height: 12),
+        for (final note in session.assumptions)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: Text(
+              '待核对：$note',
+              style: const TextStyle(color: PlannerColors.muted),
+            ),
+          ),
+        for (final warning in session.warnings)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 6),
+            child: PlannerNotice(warning, tone: PlannerNoticeTone.warning),
+          ),
+        const SizedBox(height: 12),
+        for (final course in session.courses) ...[
+          const Divider(height: 24),
+          if (courses)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text(course.name),
+              subtitle: course.description.isEmpty
+                  ? null
+                  : Text(course.description),
+              trailing: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    tooltip: '编辑 ${course.name}',
+                    onPressed: busy
+                        ? null
+                        : () async {
+                            final edited = await editCourseDraft(
+                              context,
+                              course,
+                            );
+                            if (edited != null && mounted) {
+                              flow.editCourses([
+                                for (final c in session.courses)
+                                  c.id == course.id ? edited : c,
+                              ]);
+                            }
+                          },
+                    icon: const Icon(Icons.edit_outlined),
+                  ),
+                  IconButton(
+                    tooltip: '删除 ${course.name}',
+                    onPressed: busy || session.courses.length <= 1
+                        ? null
+                        : () => flow.editCourses(
+                            session.courses
+                                .where((c) => c.id != course.id)
+                                .toList(),
+                          ),
+                    icon: const Icon(Icons.delete_outline),
+                  ),
+                ],
+              ),
+            )
+          else ...[
+            Text(course.name, style: Theme.of(context).textTheme.titleMedium),
+            for (final item in session.items.where(
+              (i) => i.courseId == course.id,
+            ))
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                title: Text(item.title),
+                subtitle: Text(
+                  '${(item.estimatedMinutes / 60).toStringAsFixed(1)} 小时 · ${item.earliestDate ?? '待定'} 至 ${item.deadline}\n${item.description}${item.completionCriteria.isEmpty ? '' : '\n完成标准：${item.completionCriteria}'}',
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    IconButton(
+                      tooltip: '编辑 ${item.title}',
+                      onPressed: busy
+                          ? null
+                          : () async {
+                              final edited = await editItemDraft(
+                                context,
+                                item,
+                                session.courses,
+                              );
+                              if (edited != null && mounted) {
+                                flow.editItems([
+                                  for (final i in session.items)
+                                    i.id == item.id ? edited : i,
+                                ]);
+                              }
+                            },
+                      icon: const Icon(Icons.edit_outlined),
+                    ),
+                    IconButton(
+                      tooltip: '删除 ${item.title}',
+                      onPressed: busy
+                          ? null
+                          : () => flow.editItems(
+                              session.items
+                                  .where((i) => i.id != item.id)
+                                  .toList(),
+                            ),
+                      icon: const Icon(Icons.delete_outline),
+                    ),
+                  ],
+                ),
+              ),
+            Align(
+              alignment: Alignment.centerLeft,
+              child: TextButton.icon(
+                onPressed: busy
+                    ? null
+                    : () async {
+                        final item = await editItemDraft(
+                          context,
+                          ItemDraft(
+                            id: 'item-${DateTime.now().microsecondsSinceEpoch}',
+                            courseId: course.id,
+                            title: '',
+                            estimatedMinutes: 120,
+                            earliestDate: shanghaiToday(),
+                            deadline: session.endDate.isNotEmpty
+                                ? session.endDate
+                                : session.recommendations.planEndDate.isNotEmpty
+                                ? session.recommendations.planEndDate
+                                : session.profile.resolvedPlanEnd(
+                                    shanghaiToday(),
+                                  ),
+                            deadlineKind: ItemDateKind.planEnd,
+                          ),
+                          session.courses,
+                        );
+                        if (item != null && mounted) {
+                          flow.editItems([...session.items, item]);
+                        }
+                      },
+                icon: const Icon(Icons.add),
+                label: const Text('添加事项'),
+              ),
+            ),
+          ],
+        ],
+        if (courses)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      final course = await editCourseDraft(
+                        context,
+                        CourseDraft(
+                          id: 'course-${DateTime.now().microsecondsSinceEpoch}',
+                          name: '',
+                        ),
+                      );
+                      if (course != null && mounted) {
+                        flow.editCourses([...session.courses, course]);
+                      }
+                    },
+              icon: const Icon(Icons.add),
+              label: const Text('添加课程'),
+            ),
+          ),
+        const SizedBox(height: 20),
+        TextFormField(
+          controller: _revision,
+          enabled: !busy,
+          minLines: 2,
+          maxLines: 4,
+          maxLength: 2000,
+          decoration: InputDecoration(
+            labelText: '修改要求',
+            hintText: courses
+                ? '例如：专业课改为计算机组成原理，增加线性代数'
+                : '例如：英语增加背单词，高数一轮复习增加到80小时',
+          ),
+        ),
+        Align(
+          alignment: Alignment.centerRight,
+          child: OutlinedButton.icon(
+            onPressed: busy
+                ? null
+                : () async {
+                    if (_revision.text.trim().isEmpty) return;
+                    if (await flow.act({
+                      'type': courses ? 'revise_courses' : 'revise_items',
+                      'instruction': _revision.text.trim(),
+                      ..._draftPayload(session),
+                    })) {
+                      _revision.clear();
+                    }
+                  },
+            icon: const Icon(Icons.send_outlined),
+            label: const Text('按要求修改'),
+          ),
+        ),
+        const SizedBox(height: 24),
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: 12,
+          runSpacing: 10,
+          children: [
+            TextButton.icon(
+              onPressed: busy
+                  ? null
+                  : () => flow.act({
+                      'type': 'back',
+                      'target': courses ? 'interview' : 'courses',
+                    }),
+              icon: const Icon(Icons.arrow_back),
+              label: Text(courses ? '返回访谈' : '返回课程'),
+            ),
+            OutlinedButton.icon(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      if (await flow.act({
+                            'type': courses ? 'save_courses' : 'save_items',
+                            ..._draftPayload(session),
+                          }) &&
+                          mounted) {
+                        ScaffoldMessenger.of(
+                          context,
+                        ).showSnackBar(const SnackBar(content: Text('修改已保存')));
+                      }
+                    },
+              icon: const Icon(Icons.save_outlined),
+              label: const Text('保存修改'),
+            ),
+            FilledButton.icon(
+              onPressed: busy
+                  ? null
+                  : () => flow.act({
+                      'type': courses ? 'confirm_courses' : 'confirm_items',
+                      ..._draftPayload(session),
+                    }),
+              icon: const Icon(Icons.check),
+              label: Text(courses ? '确认课程，生成事项' : '确认事项，设置日期'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Map<String, dynamic> _draftPayload(OnboardingSession session) =>
+      session.stage == 'courses'
+      ? {'courses': session.courses.map((c) => c.toJson()).toList()}
+      : {'items': session.items.map((i) => i.toJson()).toList()};
+
+  Widget _schedule(OnboardingSession session, OnboardingFlow flow, bool busy) {
+    final today = shanghaiToday();
+    _start ??= session.startDate.isNotEmpty
+        ? session.startDate
+        : session.profile.resolvedPlanStart(today);
+    _end ??= session.endDate.isNotEmpty
+        ? session.endDate
+        : session.recommendations.planEndDate.isNotEmpty
+        ? session.recommendations.planEndDate
+        : session.profile.resolvedPlanEnd(today);
+    _target ??= session.profile.resolvedTargetDate.isNotEmpty
+        ? session.profile.resolvedTargetDate
+        : session.recommendations.targetDate;
+    _weekly ??= {
+      ...(session.recommendations.weeklyMinutes.isNotEmpty
+          ? session.recommendations.weeklyMinutes
+          : session.profile.weeklyMinutes),
+    };
+    final budget = session.items.fold<int>(
+      0,
+      (sum, item) => sum + item.estimatedMinutes,
+    );
+    var capacity = 0;
+    if (_end!.isNotEmpty && _end!.compareTo(_start!) >= 0) {
+      for (
+        var date = DateTime.parse(_start!);
+        !date.isAfter(DateTime.parse(_end!));
+        date = date.add(const Duration(days: 1))
+      ) {
+        capacity += ((_weekly!['${date.weekday % 7}'] ?? 0) - 30).clamp(0, 450);
+      }
+    }
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text('确认计划日期', style: Theme.of(context).textTheme.headlineSmall),
+        const SizedBox(height: 8),
+        Text(
+          '${session.courses.length} 门课程 · ${session.items.length} 个事项 · 总预算 ${(budget / 60).toStringAsFixed(1)} 小时',
+        ),
+        const SizedBox(height: 20),
+        AbsorbPointer(
+          absorbing: busy,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(
+                spacing: 16,
+                runSpacing: 16,
+                children: [
+                  SizedBox(
+                    width: 240,
+                    child: DateField(
+                      label: '计划开始日期',
+                      value: _start!,
+                      firstDate: shanghaiToday(),
+                      onChanged: (value) => setState(() => _start = value),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 240,
+                    child: DateField(
+                      label: '规划结束日期',
+                      value: _end!,
+                      firstDate: _start ?? shanghaiToday(),
+                      onChanged: (value) => setState(() => _end = value),
+                    ),
+                  ),
+                  SizedBox(
+                    width: 240,
+                    child: DateField(
+                      label: '目标日期（可选）',
+                      value: _target ?? '',
+                      onChanged: (value) => setState(() => _target = value),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                '规划结束日期是本次排程的边界；目标日期是你希望达成结果的日期，可以不设置。',
+                style: TextStyle(color: PlannerColors.muted, fontSize: 12),
+              ),
+              const SizedBox(height: 12),
+              if (session.recommendations.planEndDate.isNotEmpty)
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      '建议规划结束：${session.recommendations.planEndDate}。${session.recommendations.planEndDateReason}',
+                      style: const TextStyle(color: PlannerColors.muted),
+                    ),
+                    TextButton.icon(
+                      onPressed: busy
+                          ? null
+                          : () => setState(
+                              () => _end = session.recommendations.planEndDate,
+                            ),
+                      icon: const Icon(Icons.restore, size: 18),
+                      label: const Text('采用建议周期'),
+                    ),
+                  ],
+                ),
+              if (session.recommendations.targetDate.isNotEmpty) ...[
+                Text(
+                  '${session.recommendations.targetDateEstimated ? '预计目标日期' : '目标日期'}：${session.recommendations.targetDate}。${session.recommendations.targetDateReason}',
+                  style: const TextStyle(color: PlannerColors.muted),
+                ),
+                if (session.recommendations.targetDateEstimated)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 4),
+                    child: Text(
+                      '以正式通知为准，你也可以清空目标日期。',
+                      style: TextStyle(color: PlannerColors.muted),
+                    ),
+                  ),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: Wrap(
+                    spacing: 8,
+                    children: [
+                      TextButton.icon(
+                        onPressed: busy
+                            ? null
+                            : () => setState(
+                                () => _target =
+                                    session.recommendations.targetDate,
+                              ),
+                        icon: const Icon(Icons.restore, size: 18),
+                        label: const Text('采用建议目标日期'),
+                      ),
+                      TextButton.icon(
+                        onPressed: busy
+                            ? null
+                            : () => setState(() => _target = ''),
+                        icon: const Icon(Icons.clear, size: 18),
+                        label: const Text('暂不设置目标日期'),
+                      ),
+                    ],
+                  ),
+                ),
+              ] else
+                const Text(
+                  '暂不设置目标日期也可以生成计划，本次只安排一个有限的规划周期。',
+                  style: TextStyle(color: PlannerColors.muted),
+                ),
+              const SizedBox(height: 24),
+              Text('每周可用时间', style: Theme.of(context).textTheme.titleMedium),
+              if (session.recommendations.weeklyMinutesReason.isNotEmpty) ...[
+                const SizedBox(height: 8),
+                Text(
+                  '建议依据：${session.recommendations.weeklyMinutesReason}',
+                  style: const TextStyle(color: PlannerColors.muted),
+                ),
+              ],
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 12,
+                runSpacing: 12,
+                children: [
+                  for (final (key, label) in _days)
+                    SizedBox(
+                      width: 150,
+                      child: TextFormField(
+                        key: ValueKey('weekly-$_weeklyVersion-$key'),
+                        initialValue: '${_weekly![key] ?? 0}',
+                        enabled: !busy,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: InputDecoration(
+                          labelText: label,
+                          suffixText: '分钟',
+                        ),
+                        validator: (value) {
+                          final m = int.tryParse(value ?? '');
+                          return m == null || m < 0 || m > 480
+                              ? '填写0至480分钟'
+                              : null;
+                        },
+                        onChanged: (value) => setState(
+                          () => _weekly![key] = int.tryParse(value) ?? 0,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+              if (session.recommendations.weeklyMinutes.isNotEmpty)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: busy
+                        ? null
+                        : () => setState(() {
+                            _weekly = {
+                              ...session.recommendations.weeklyMinutes,
+                            };
+                            _weeklyVersion++;
+                          }),
+                    icon: const Icon(Icons.restore, size: 18),
+                    label: const Text('恢复推荐时间'),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 16),
+        const Text(
+          '每日预留30分钟机动，单门课程每天最多4小时。',
+          style: TextStyle(color: PlannerColors.muted),
+        ),
+        if (_end!.isNotEmpty && budget > capacity) ...[
+          const SizedBox(height: 12),
+          PlannerNotice(
+            '事项预算超出可用时间约 ${((budget - capacity) / 60).toStringAsFixed(1)} 小时，部分内容可能无法排入。',
+            tone: PlannerNoticeTone.warning,
+          ),
+        ],
+        const SizedBox(height: 24),
+        Wrap(
+          alignment: WrapAlignment.end,
+          spacing: 12,
+          runSpacing: 12,
+          children: [
+            TextButton.icon(
+              onPressed: busy
+                  ? null
+                  : () => flow.act({'type': 'back', 'target': 'items'}),
+              icon: const Icon(Icons.arrow_back),
+              label: const Text('返回修改事项'),
+            ),
+            FilledButton.icon(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      if (!_form.currentState!.validate()) return;
+                      final ok = await flow.act({
+                        'type': 'finish',
+                        'start_date': _start,
+                        'end_date': _end,
+                        'target_date': (_target ?? '').isEmpty
+                            ? null
+                            : _target,
+                        'weekly_minutes': _weekly,
+                      });
+                      if (ok && mounted && widget.embedded) context.go('/');
+                    },
+              icon: const Icon(Icons.calendar_month_outlined),
+              label: Text(session.replanning ? '确认并更新每日计划' : '确认并生成每日计划'),
+            ),
+          ],
+        ),
       ],
     );
   }

@@ -52,6 +52,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
   Widget build(BuildContext context) {
     final auth = ref.watch(authControllerProvider);
     final busy = auth.loading || auth.codeSending || auth.restoring;
+    final editingEnabled = !auth.loading && !auth.restoring;
     if (auth.restoring) {
       return Scaffold(
         body: Center(
@@ -86,7 +87,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                     ),
                     const SizedBox(height: 24),
                     Text(
-                      _register ? '创建账号' : '登录考研执行台',
+                      _register ? '创建账号' : '登录不白学 · 学习执行台',
                       style: Theme.of(context).textTheme.titleLarge,
                     ),
                     const SizedBox(height: 16),
@@ -110,7 +111,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                     if (_register) ...[
                       TextFormField(
                         controller: _username,
-                        enabled: !busy,
+                        enabled: editingEnabled,
                         decoration: const InputDecoration(labelText: '用户名'),
                         autofillHints: const [AutofillHints.nickname],
                         textInputAction: TextInputAction.next,
@@ -132,7 +133,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                       const SizedBox(height: 16),
                       TextFormField(
                         controller: _code,
-                        enabled: !busy,
+                        enabled: editingEnabled,
                         decoration: InputDecoration(
                           labelText: '邮箱验证码',
                           suffixIcon: Padding(
@@ -174,7 +175,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                     const SizedBox(height: 16),
                     TextFormField(
                       controller: _password,
-                      enabled: !busy,
+                      enabled: editingEnabled,
                       decoration: InputDecoration(
                         labelText: '密码',
                         helperText: _register ? '至少 9 位，包含英文字母和数字' : null,
@@ -207,7 +208,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                       const SizedBox(height: 16),
                       TextFormField(
                         controller: _confirmation,
-                        enabled: !busy,
+                        enabled: editingEnabled,
                         obscureText: !_visible,
                         decoration: const InputDecoration(labelText: '确认密码'),
                         autofillHints: const [AutofillHints.newPassword],

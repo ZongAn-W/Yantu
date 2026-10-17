@@ -466,7 +466,13 @@ class _BurnPanel extends StatelessWidget {
       children: [
         PlannerStat(label: '剩余事项量', value: duration(metrics.remainingMinutes)),
         PlannerStat(label: '预计完成', value: metrics.forecast ?? '尚无实际记录'),
-        PlannerStat(label: '目标截止', value: metrics.examDate),
+        if (metrics.targetDate.isNotEmpty)
+          PlannerStat(
+            label: metrics.targetConfirmed ? '目标日期' : '预计目标日期',
+            value: metrics.targetDate,
+          )
+        else
+          PlannerStat(label: '本次规划结束', value: metrics.cycleEnd),
         const SizedBox(height: 12),
         Semantics(
           label: '按实际完成记录计算的剩余事项量燃尽图',
