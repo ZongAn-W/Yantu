@@ -7,6 +7,7 @@ import '../../core/theme.dart';
 import '../../core/widgets.dart';
 import '../auth/application/auth_controller.dart';
 import '../planner/application/planner_session.dart';
+import '../planner/application/study_timer.dart';
 import '../planner/domain/planner_format.dart';
 
 const syncLabels = <SyncStatus, String>{
@@ -132,9 +133,70 @@ class _Workspace extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     children: [
       const _StatusBanners(),
+      const _ActiveTimerStrip(),
       Expanded(child: child),
     ],
   );
+}
+
+class _ActiveTimerStrip extends ConsumerWidget {
+  const _ActiveTimerStrip();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final timer = ref.watch(studyTimerProvider);
+    final taskId = timer.activeTaskId;
+    if (taskId == null) return const SizedBox.shrink();
+    final task = ref
+        .watch(plannerDataProvider)
+        .data
+        ?.tasks
+        .where((task) => task.id == taskId)
+        .firstOrNull;
+    return ColoredBox(
+      color: PlannerColors.surface,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 20),
+        child: Row(
+          children: [
+            const Icon(
+              Icons.timer_outlined,
+              size: 18,
+              color: PlannerColors.blue,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                task?.title ?? '正在计时',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontSize: 12),
+              ),
+            ),
+            IconButton(
+              tooltip: '暂停当前计时',
+              icon: const Icon(Icons.pause, size: 20),
+              onPressed: timer.busy
+                  ? null
+                  : () async {
+                      try {
+                        await timer.pause();
+                      } catch (_) {
+                        if (context.mounted) {
+                          showPlannerMessage(
+                            context,
+                            timer.error ?? '计时保存失败',
+                            tone: PlannerNoticeTone.error,
+                          );
+                        }
+                      }
+                    },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// Surfaces storage and sync problems above the page, mirroring the Web notice area.

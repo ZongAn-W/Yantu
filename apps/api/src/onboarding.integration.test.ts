@@ -36,6 +36,8 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)("persisted onboarding", () 
     const user = await account();
     const initial = (await get(user)).json().session;
     expect(initial.question_options).toContain("考试备考");
+    // “其他”入口由客户端统一提供，服务端首题不返回该占位项。
+    expect(initial.question_options).not.toContain("其他");
     expect(initial.question_multiple).toBe(false);
     const answered = await act(user, initial, { type: "answer", answer: "准备雅思7分" });
     expect(answered.statusCode, answered.body).toBe(200);
@@ -58,7 +60,9 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)("persisted onboarding", () 
       session = response.json().session;
     }
     for (const text of ["考研", "上海交通大学", "计算机", "2027年", "高数一轮"]) await next({ type: "answer", answer: text });
-    expect(session.stage).toBe("checkpoint");
+    // 第五题之后不再暂停，直接显示下一题；生成入口由问卷页面提供。
+    expect(session.stage).toBe("interview");
+    expect(session.question).not.toBe(newSession().question);
     const { shanghaiDate: cycleToday } = await import("./onboarding-ai.js");
     const { dateAdd: cycleAdd } = await import("./planner.js");
     expect(session.recommendations.target_date).toBe("");

@@ -1,5 +1,7 @@
 import { type OnboardingAction, type OnboardingSession, CalendarDateSchema, FIRST_QUESTION, newSession, validateReferences } from "./onboarding-contracts.js";
 import { generateCourses, generateItems, nextInterview, recommendSchedule, shanghaiDate } from "./onboarding-ai.js";
+import { sanitizeInterviewSession } from "./onboarding-evidence.js";
+import { buildLearningContext, ResearchSchema } from "./learning-context.js";
 
 /** 日期相差的自然日数。 */
 export function daySpan(from: string, to: string) {
@@ -42,7 +44,7 @@ export function prepareSchedule(session: OnboardingSession, action: Extract<Onbo
     CalendarDateSchema.parse(deadline);
     return { ...item, earliest_date: earliest, deadline, deadline_kind: kind };
   });
-  const goal = session.answers.find(answer => answer.question === FIRST_QUESTION)?.answer;
+  const goal = session.answers.filter(answer => answer.question === FIRST_QUESTION).at(-1)?.answer;
   const goalText = session.profile.goal_text || goal || "";
   const constraints = goalText && !session.profile.constraints_text.includes(goalText)
     ? `学习目标：${goalText}\n${session.profile.constraints_text}`
@@ -65,7 +67,8 @@ export function prepareSchedule(session: OnboardingSession, action: Extract<Onbo
 }
 
 export async function advanceOnboarding(current: OnboardingSession, action: OnboardingAction): Promise<OnboardingSession> {
-  const session = structuredClone(current);
+  // 旧草稿里可能残留 AI 无依据推断的考试信息；先按本轮回答修正再继续，revision 由原有协议推进。
+  const session = sanitizeInterviewSession(structuredClone(current));
   const requireStage = (...stages: OnboardingSession["stage"][]) => {
     if (!stages.includes(session.stage)) throw new Error("当前阶段不支持此操作，请刷新后重试");
   };
@@ -77,23 +80,45 @@ export async function advanceOnboarding(current: OnboardingSession, action: Onbo
     Object.assign(session, await nextInterview(session), { stage: "interview", replanning: session.has_plan });
   } else if (action.type === "refresh_plan") {
     if (!session.replanning) throw new Error("当前没有需要更新的重新规划草案");
+  } else if (action.type === "retry_research") {
+    requireStage("interview", "checkpoint", "courses", "items", "schedule");
+  } else if (action.type === "set_exam_year") {
+    requireStage("interview", "checkpoint", "courses", "items", "schedule");
+    const currentYear = Number(shanghaiDate().slice(0, 4));
+    if (session.profile.goal_subtype !== "考研") throw new Error("只有考研目标需要设置初试年份");
+    if (action.year < currentYear || action.year > currentYear + 10) throw new Error("请选择未来十年内的初试年份");
+    session.exam_year_override = action.year;
+    session.learning_context = buildLearningContext(session);
+    session.research = ResearchSchema.parse({});
   } else if (action.type === "answer") {
     requireStage("interview");
-    if (session.answers.length >= 50) throw new Error("已达到50题，请根据当前回答生成课程");
-    session.answers.push({ question: session.question, answer: action.answer });
-    const result = await nextInterview(session);
-    session.question = result.question;
-    session.question_options = result.question_options;
-    session.question_multiple = result.question_multiple;
-    session.profile = result.profile;
-    session.recommendations = result.recommendations;
-    if (session.answers.length >= 5) session.stage = "checkpoint";
+    if (session.answers.length >= 50) throw new Error("已达到50题，请根据当前回答生成科目");
+    session.answers.push({ question: session.question, answer: action.answer, ...(session.question_fields.length ? { fields: session.question_fields } : {}) });
+    if (session.answers.length >= 50) {
+      // 到达题数上限后不再追加问题，保留“根据当前回答生成科目”入口。
+      session.question = "";
+      session.question_options = [];
+      session.question_multiple = false;
+    } else {
+      const result = await nextInterview(session);
+      session.question = result.question;
+      session.question_options = result.question_options;
+      session.question_multiple = result.question_multiple;
+      session.question_fields = result.question_fields ?? [];
+      session.learning_context = result.learning_context;
+      session.research = result.research;
+      session.profile = result.profile;
+      session.recommendations = result.recommendations;
+    }
   } else if (action.type === "continue") {
-    requireStage("checkpoint");
-    if (session.answers.length >= 50) throw new Error("已达到50题，请根据当前回答生成课程");
+    // 兼容旧客户端的暂停页动作；新流程已不再使用 checkpoint，直接保持访谈。
+    requireStage("interview", "checkpoint");
+    if (session.answers.length >= 50) throw new Error("已达到50题，请根据当前回答生成科目");
     session.stage = "interview";
   } else if (action.type === "generate_courses") {
-    requireStage("checkpoint");
+    requireStage("interview", "checkpoint");
+    const validAnswers = session.answers.filter(answer => answer.answer.trim().length > 0).length;
+    if (validAnswers < 5) throw new Error("请先完成至少5个有效回答，再根据当前回答生成科目");
     Object.assign(session, await generateCourses(session), { stage: "courses", items: [] });
   } else if (action.type === "save_courses" || action.type === "revise_courses" || action.type === "confirm_courses") {
     requireStage("courses");
@@ -122,7 +147,7 @@ export async function advanceOnboarding(current: OnboardingSession, action: Onbo
     }
   } else if (action.type === "back") {
     requireStage("courses", "items", "schedule");
-    if (action.target === "interview") session.stage = "checkpoint";
+    if (action.target === "interview") session.stage = "interview";
     else if (action.target === "courses") session.stage = "courses";
     else {
       requireStage("schedule");

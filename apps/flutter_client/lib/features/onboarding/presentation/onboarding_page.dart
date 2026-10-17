@@ -9,8 +9,13 @@ import '../../../shared/models/planner_models.dart';
 import '../../planner/domain/planner_format.dart';
 import '../../planner/presentation/planner_dialogs.dart' show DateField;
 import '../application/onboarding_flow.dart';
+import '../domain/onboarding_options.dart';
 import '../domain/onboarding_session.dart';
 import 'draft_editors.dart';
+import 'learning_context_view.dart';
+
+const _maxInterviewAnswers = 50;
+const _minAnswersToGenerate = 5;
 
 const _days = [
   ('1', '周一'),
@@ -98,6 +103,12 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       'schedule' || 'complete' => 3,
       _ => 0,
     };
+    // 访谈阶段的 AI 等待改用页面内固定高度的“AI 正在思考中…”提示；
+    // 其他阶段继续使用原有的处理中加载条。
+    final interviewThinking =
+        state.waitingForAi &&
+        session != null &&
+        (stage == 'interview' || stage == 'checkpoint');
     final body = SafeArea(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(20),
@@ -181,8 +192,19 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                     ),
                   if (stage != 'complete') const SizedBox(height: 28),
                   if (session != null) ...[
+                    if (stage != 'complete')
+                      LearningContextView(
+                        session: session,
+                        busy: state.loading,
+                        onAction: flow.act,
+                      ),
                     if (stage == 'interview' || stage == 'checkpoint')
-                      _interview(session, flow, state.loading),
+                      _interview(
+                        session,
+                        flow,
+                        state.loading,
+                        state.waitingForAi,
+                      ),
                     if (stage == 'courses' || stage == 'items')
                       _draft(session, flow, state.loading),
                     if (stage == 'schedule')
@@ -190,7 +212,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                     if (stage == 'complete')
                       _planningHome(session, flow, state.loading),
                   ],
-                  if (state.loading) ...[
+                  if (state.loading && !interviewThinking) ...[
                     const SizedBox(height: 24),
                     const LinearProgressIndicator(semanticsLabel: '正在处理学习规划'),
                     const SizedBox(height: 8),
@@ -336,6 +358,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     OnboardingSession session,
     OnboardingFlow flow,
     bool busy,
+    bool thinking,
   ) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
@@ -356,29 +379,17 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
           ],
         ),
       const SizedBox(height: 16),
-      if (session.stage == 'checkpoint') ...[
-        Text('信息已记录', style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 20),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            OutlinedButton.icon(
-              onPressed: busy || session.answers.length >= 50
-                  ? null
-                  : () => flow.act({'type': 'continue'}),
-              icon: const Icon(Icons.add_comment_outlined),
-              label: const Text('继续完善信息'),
-            ),
-            FilledButton.icon(
-              onPressed: busy
-                  ? null
-                  : () => flow.act({'type': 'generate_courses'}),
-              icon: const Icon(Icons.arrow_forward),
-              label: const Text('根据当前回答生成课程'),
-            ),
-          ],
+      if (session.answers.length >= _maxInterviewAnswers) ...[
+        Text(
+          '已达到 $_maxInterviewAnswers 题上限',
+          style: Theme.of(context).textTheme.headlineSmall,
         ),
+        const SizedBox(height: 8),
+        const Text(
+          '请根据当前回答生成科目，或重新访谈后再继续补充。',
+          style: TextStyle(color: PlannerColors.muted),
+        ),
+        const SizedBox(height: 20),
       ] else ...[
         Text(
           '第 ${session.answers.length + 1} 问${session.questionMultiple ? ' · 可多选' : ''}',
@@ -414,7 +425,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                 CheckboxListTile(
                   contentPadding: EdgeInsets.zero,
                   controlAffinity: ListTileControlAffinity.leading,
-                  title: const Text('其他'),
+                  title: const Text(otherOptionLabel),
                   value: _otherSelected,
                   onChanged: busy
                       ? null
@@ -428,12 +439,12 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
           else
             RadioGroup<String>(
               groupValue: _otherSelected
-                  ? '__other__'
+                  ? otherOptionKey
                   : _selectedAnswers.firstOrNull,
               onChanged: (value) {
                 if (busy || value == null) return;
                 setState(() {
-                  _otherSelected = value == '__other__';
+                  _otherSelected = value == otherOptionKey;
                   _selectedAnswers.clear();
                   if (!_otherSelected) _selectedAnswers.add(value);
                   _answerError = null;
@@ -450,8 +461,8 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                     ),
                   RadioListTile<String>(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('其他'),
-                    value: '__other__',
+                    title: const Text(otherOptionLabel),
+                    value: otherOptionKey,
                     enabled: !busy,
                   ),
                 ],
@@ -485,36 +496,89 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
             validator: (value) =>
                 value == null || value.trim().isEmpty ? '请先填写回答' : null,
           ),
-        const SizedBox(height: 16),
-        Align(
-          alignment: Alignment.centerRight,
-          child: FilledButton.icon(
-            onPressed: busy
-                ? null
-                : () async {
-                    if (!_form.currentState!.validate()) return;
-                    final options = session.questionOptions
-                        .where(_selectedAnswers.contains)
-                        .toList();
-                    final text = _answer.text.trim();
-                    final answer = [
-                      ...options,
-                      if (session.questionOptions.isEmpty || _otherSelected)
-                        text,
-                    ].join('；');
-                    if (answer.isEmpty) {
-                      setState(() => _answerError = '请选择一个选项或填写其他回答');
-                      return;
-                    }
-                    if (await flow.act({'type': 'answer', 'answer': answer})) {
-                      _answer.clear();
-                    }
-                  },
-            icon: const Icon(Icons.arrow_forward),
-            label: Text(session.answers.length < 4 ? '提交回答，继续' : '提交回答'),
-          ),
-        ),
+        const SizedBox(height: 8),
       ],
+      // 固定高度的等待提示，避免 AI 处理期间页面跳动或按钮错位。
+      SizedBox(
+        height: 28,
+        child: thinking
+            ? Semantics(
+                liveRegion: true,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    const SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    ),
+                    const SizedBox(width: 8),
+                    const Text(
+                      'AI 正在思考中…',
+                      style: TextStyle(color: PlannerColors.muted),
+                    ),
+                  ],
+                ),
+              )
+            : null,
+      ),
+      Wrap(
+        alignment: WrapAlignment.end,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 12,
+        runSpacing: 10,
+        children: [
+          if (session.answers.length >= _minAnswersToGenerate)
+            OutlinedButton.icon(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      // 生成只使用服务端已保存的回答；当前未提交的输入不参与生成，也不触发必填校验。
+                      if (await flow.act({'type': 'generate_courses'})) {
+                        _answer.clear();
+                        _selectedAnswers.clear();
+                        _otherSelected = false;
+                        _answerError = null;
+                      }
+                    },
+              icon: const Icon(Icons.checklist_rtl),
+              label: const Text('根据当前回答生成科目'),
+            ),
+          if (session.answers.length < _maxInterviewAnswers)
+            FilledButton.icon(
+              onPressed: busy
+                  ? null
+                  : () async {
+                      // 选项在解析会话时已归一化；“其他”入口由客户端统一提供。
+                      // 只有“其他”入口可见时才提交输入框内容，切换回普通选项后隐藏的旧内容不会提交。
+                      if (!_form.currentState!.validate()) return;
+                      final selected = session.questionOptions
+                          .where(_selectedAnswers.contains)
+                          .toList();
+                      final customText =
+                          session.questionOptions.isEmpty || _otherSelected
+                          ? _answer.text.trim()
+                          : '';
+                      final answer = [
+                        ...selected,
+                        if (customText.isNotEmpty) customText,
+                      ].join('；');
+                      if (answer.isEmpty) {
+                        setState(() => _answerError = '请选择一个选项或填写其他回答');
+                        return;
+                      }
+                      if (await flow.act({
+                        'type': 'answer',
+                        'answer': answer,
+                      })) {
+                        _answer.clear();
+                      }
+                    },
+              icon: const Icon(Icons.arrow_forward),
+              label: Text(session.answers.length < 4 ? '提交回答，继续' : '提交回答'),
+            ),
+        ],
+      ),
     ],
   );
 
@@ -1020,9 +1084,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                         'type': 'finish',
                         'start_date': _start,
                         'end_date': _end,
-                        'target_date': (_target ?? '').isEmpty
-                            ? null
-                            : _target,
+                        'target_date': (_target ?? '').isEmpty ? null : _target,
                         'weekly_minutes': _weekly,
                       });
                       if (ok && mounted && widget.embedded) context.go('/');

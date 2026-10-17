@@ -10,8 +10,10 @@ import 'package:sjtu_study_planner_client/core/sync/planner_coordinator.dart';
 import 'package:sjtu_study_planner_client/core/providers.dart';
 import 'package:sjtu_study_planner_client/core/storage/identity_store.dart';
 import 'package:sjtu_study_planner_client/core/storage/storage_repository.dart';
+import 'package:sjtu_study_planner_client/core/storage/study_timer_store.dart';
 import 'package:sjtu_study_planner_client/core/sync/sync_state.dart';
 import 'package:sjtu_study_planner_client/features/planner/application/planner_sync.dart';
+import 'package:sjtu_study_planner_client/features/planner/application/study_timer.dart';
 import 'package:sjtu_study_planner_client/features/planner/domain/planner_format.dart';
 import 'package:sjtu_study_planner_client/features/planner/domain/study_day.dart'
     as day_ops;
@@ -60,6 +62,8 @@ Future<ProviderContainer> signIn(
   WidgetTester tester, {
   required Respond respond,
   int? revision,
+  DateTime Function()? timerNow,
+  Duration Function()? monotonicNow,
 }) async {
   final adapter = TestAdapter(respond);
   final client = ApiClient(
@@ -73,6 +77,15 @@ Future<ProviderContainer> signIn(
       identityStoreProvider.overrideWithValue(MemoryIdentityStore()),
       storageRepositoryProvider.overrideWithValue(MemoryStorageRepository()),
       syncRetryIntervalProvider.overrideWithValue(null),
+      studyTimerProvider.overrideWith(
+        (ref) => StudyTimer(
+          coordinator: ref.watch(plannerSyncProvider.notifier),
+          store: _MemoryStudyTimerStore(),
+          now: timerNow,
+          monotonicNow: monotonicNow,
+          tickInterval: null,
+        ),
+      ),
     ],
   );
   addTearDown(container.dispose);
@@ -279,6 +292,12 @@ void main() {
         tester.widget<TextField>(fieldWithLabel('卡点或反馈')).controller?.text,
         '原有反馈',
       );
+      expect(fieldWithLabel('实际用时'), findsNothing);
+      expect(
+        find.byType(DropdownButtonFormField<CompletionStatus>),
+        findsNothing,
+      );
+      expect(find.textContaining('未开始'), findsWidgets);
       await tester.tap(find.text('保存今日记录'));
       await tester.pump(const Duration(milliseconds: 400));
       await drainSync(tester, coordinator);
@@ -290,6 +309,8 @@ void main() {
   testWidgets(
     'daily review edits and overall feedback survive reopening and sync',
     (tester) async {
+      var elapsed = Duration.zero;
+      final now = DateTime.now();
       final fixture = todayFixture();
       final server = FakeSyncServer(
         plan: fixture.copyWith(
@@ -302,8 +323,15 @@ void main() {
           dailyFeedback: {shanghaiToday(): '原有整体反馈'},
         ),
       );
-      final container = await signIn(tester, respond: server.respond);
+      final container = await signIn(
+        tester,
+        respond: server.respond,
+        timerNow: () => now.add(elapsed),
+        monotonicNow: () => elapsed,
+      );
       final coordinator = container.read(plannerSyncProvider);
+      final timer = container.read(studyTimerProvider);
+      await timer.start(fixture.tasks.single.id, shanghaiToday());
       await tester.tap(find.text('结束今天'));
       await tester.pump(const Duration(milliseconds: 400));
       expect(
@@ -312,7 +340,11 @@ void main() {
       );
       await tester.enterText(fieldWithLabel('卡点或反馈'), '修正后的卡点');
       await tester.enterText(fieldWithLabel('今天整体反馈'), '修正后的整体反馈');
-      await tester.enterText(fieldWithLabel('实际用时'), '75');
+      expect(fieldWithLabel('实际用时'), findsNothing);
+      elapsed = const Duration(minutes: 2, seconds: 17);
+      await timer.checkpoint();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.textContaining('已学 2分钟'), findsOneWidget);
       await tester.tap(find.text('保存今日记录'));
       await tester.pump(const Duration(milliseconds: 400));
       await drainSync(tester, coordinator);
@@ -327,7 +359,7 @@ void main() {
           fixture.tasks.single.id,
           shanghaiToday(),
         ),
-        75,
+        2,
       );
       expect(server.document.dailyFeedback?[shanghaiToday()], '修正后的整体反馈');
       await tester.tap(find.text('结束今天'));
@@ -342,6 +374,8 @@ void main() {
       );
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
+      await timer.pause();
+      await drainSync(tester, coordinator);
     },
   );
   testWidgets('the login form validates before sending anything', (
@@ -531,55 +565,56 @@ void main() {
     );
   });
 
-  testWidgets('the record-time dialog corrects the day total', (tester) async {
+  testWidgets('study time comes from the inline timer and cannot be edited', (
+    tester,
+  ) async {
+    var elapsed = Duration.zero;
+    final now = DateTime.now();
     final server = FakeSyncServer();
-    final container = await signIn(tester, respond: server.respond);
+    final container = await signIn(
+      tester,
+      respond: server.respond,
+      timerNow: () => now.add(elapsed),
+      monotonicNow: () => elapsed,
+    );
     final coordinator = container.read(plannerSyncProvider);
     final taskId = coordinator.data!.tasks.first.id;
-    final before = day_ops.taskDayMinutes(
-      coordinator.data!,
-      taskId,
-      coordinator.data!.blocks.first.date,
-    );
-
     final date = coordinator.data!.blocks.first.date;
-    container.read(appRouterProvider).go('/');
-    await tester.pumpAndSettle(const Duration(seconds: 3));
-    await tester.tap(find.widgetWithText(OutlinedButton, '记录用时').first);
-    await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('记录实际用时'), findsOneWidget);
+    final action = find.byKey(Key('study-timer-action-$taskId-$date'));
+    final clock = find.byKey(Key('study-clock-$taskId-$date'));
 
-    // The minutes field is addressed by its label: the dialog also holds dropdowns.
-    final minutes = fieldWithLabel('实际用时（分钟）');
-    expect(minutes, findsOneWidget);
+    expect(find.text('今日已完成'), findsNothing);
+    expect(find.text('记录用时'), findsNothing);
+    expect(find.text('修改用时'), findsNothing);
+    expect(tester.widget<Text>(clock).data, '00:00:00');
+    await tester.ensureVisible(action);
+    await tester.tap(action);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('暂停计时'), findsOneWidget);
+    expect(find.byType(AlertDialog), findsNothing);
 
-    // Out-of-range input is refused with a message instead of saving.
-    await tester.enterText(minutes, '99999');
-    await tester.pump(const Duration(milliseconds: 200));
-    await tester.tap(find.widgetWithText(FilledButton, '保存实际用时'));
-    await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('请输入 0 至 1440 的整数分钟'), findsOneWidget);
-    expect(day_ops.taskDayMinutes(coordinator.data!, taskId, date), before);
-    // The dialog stays open so the user can correct the value.
-    expect(find.text('记录实际用时'), findsOneWidget);
-
-    // A valid value replaces the day total.
-    await tester.enterText(minutes, '80');
-    await tester.pump(const Duration(milliseconds: 200));
-    await tester.tap(find.widgetWithText(FilledButton, '保存实际用时'));
-    await waitUntil(
-      tester,
-      () => day_ops.taskDayMinutes(coordinator.data!, taskId, date) == 80,
-      reason: '保存实际用时后当天累计没有改为 80',
-    );
+    elapsed = const Duration(minutes: 2, seconds: 7);
+    await tester.tap(action);
+    await tester.pump(const Duration(milliseconds: 100));
     await drainSync(tester, coordinator);
-    // The corrected total survives the sync cycle and reaches the server.
-    expect(day_ops.taskDayMinutes(coordinator.data!, taskId, date), 80);
-    expect(
-      day_ops.taskDayMinutes(server.document, taskId, date),
-      80,
-      reason: '服务端应保存修正后的当天累计用时',
-    );
+    expect(tester.widget<Text>(clock).data, '00:02:07');
+    expect(day_ops.taskDayMinutes(server.document, taskId, date), 2);
+
+    container.read(appRouterProvider).go('/calendar');
+    await tester.pumpAndSettle();
+    expect(find.text('记录用时'), findsNothing);
+    expect(find.text('修改用时'), findsNothing);
+    expect(tester.widget<Text>(clock).data, '00:02:07');
+
+    await tester.ensureVisible(action);
+    await tester.tap(action);
+    await tester.pump(const Duration(milliseconds: 100));
+    elapsed += const Duration(seconds: 30);
+    await tester.tap(action);
+    await tester.pump(const Duration(milliseconds: 100));
+    await drainSync(tester, coordinator);
+    expect(tester.widget<Text>(clock).data, '00:02:37');
+    expect(day_ops.taskDayMinutes(server.document, taskId, date), 2);
   });
 
   testWidgets('the shell is responsive and reports sync state', (tester) async {
@@ -665,6 +700,16 @@ void main() {
     );
     expect(find.text('重新读取本机数据'), findsOneWidget);
   });
+}
+
+class _MemoryStudyTimerStore implements StudyTimerStore {
+  final _values = <String, JsonMap>{};
+
+  @override
+  Future<JsonMap?> load(String key) async => _values[key];
+
+  @override
+  Future<void> save(String key, JsonMap value) async => _values[key] = value;
 }
 
 /// A storage repository whose main record cannot be decoded.

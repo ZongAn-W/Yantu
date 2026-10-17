@@ -17,11 +17,15 @@ class OnboardingFlowState {
   const OnboardingFlowState({
     this.session,
     this.loading = false,
+    this.waitingForAi = false,
     this.error,
     this.planChanged = false,
   });
   final OnboardingSession? session;
   final bool loading;
+
+  /// 正在等待 AI 回答下一题或生成科目；用于访谈页的“AI 正在思考中…”提示。
+  final bool waitingForAi;
   final String? error;
   final bool planChanged;
 }
@@ -33,10 +37,14 @@ final onboardingFlowProvider =
 
 class OnboardingFlow extends AutoDisposeNotifier<OnboardingFlowState> {
   int _generation = 0;
+  Timer? _researchTimer;
   @override
   OnboardingFlowState build() {
     ref.watch(authControllerProvider.select((state) => state.user?.id));
-    ref.onDispose(() => _generation++);
+    ref.onDispose(() {
+      _generation++;
+      _researchTimer?.cancel();
+    });
     unawaited(Future.microtask(reload));
     return const OnboardingFlowState(loading: true);
   }
@@ -49,6 +57,7 @@ class OnboardingFlow extends AutoDisposeNotifier<OnboardingFlowState> {
       final session = await api.load();
       if (generation != _generation) return;
       state = OnboardingFlowState(session: session);
+      _watchResearch(session);
       if (session.stage == 'complete') await _complete(session);
     } catch (error) {
       if (generation == _generation) {
@@ -71,8 +80,15 @@ class OnboardingFlow extends AutoDisposeNotifier<OnboardingFlowState> {
     final session = state.session;
     if (state.loading || session == null) return false;
     final generation = ++_generation;
+    _researchTimer?.cancel();
     final api = OnboardingApi(ref.read(apiClientProvider));
-    state = OnboardingFlowState(session: session, loading: true);
+    final waitsForAi =
+        action['type'] == 'answer' || action['type'] == 'generate_courses';
+    state = OnboardingFlowState(
+      session: session,
+      loading: true,
+      waitingForAi: waitsForAi,
+    );
     try {
       if (session.hasPlan &&
           const [
@@ -94,6 +110,7 @@ class OnboardingFlow extends AutoDisposeNotifier<OnboardingFlowState> {
       final next = await api.advance(session.revision, action);
       if (generation != _generation) return false;
       state = OnboardingFlowState(session: next);
+      _watchResearch(next);
       if (next.stage == 'complete') await _complete(next);
       return true;
     } catch (error) {
@@ -106,9 +123,36 @@ class OnboardingFlow extends AutoDisposeNotifier<OnboardingFlowState> {
               session.replanning &&
               error is ConflictFailure,
         );
+        _watchResearch(session);
       }
       return false;
     }
+  }
+
+  void _watchResearch(OnboardingSession session) {
+    _researchTimer?.cancel();
+    if (session.research['status'] != 'pending' ||
+        session.stage == 'complete') {
+      return;
+    }
+    final generation = _generation;
+    _researchTimer = Timer(const Duration(seconds: 3), () async {
+      try {
+        final next = await OnboardingApi(ref.read(apiClientProvider)).load();
+        if (generation != _generation || state.loading) return;
+        final current = state.session;
+        if (current == null ||
+            current.revision != next.revision ||
+            current.research['key'] != next.research['key']) {
+          return;
+        }
+        final updated = current.edit(research: next.research);
+        state = OnboardingFlowState(session: updated, error: state.error);
+        _watchResearch(updated);
+      } catch (_) {
+        if (generation == _generation) _watchResearch(session);
+      }
+    });
   }
 
   Future<void> _complete(OnboardingSession session) async {

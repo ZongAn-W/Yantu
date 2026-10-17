@@ -1,5 +1,6 @@
 import '../../../shared/models/api_models.dart';
 import '../../../shared/models/planner_models.dart';
+import 'onboarding_options.dart';
 
 class InterviewAnswer {
   const InterviewAnswer(this.question, this.answer);
@@ -63,6 +64,8 @@ class OnboardingSession {
     required this.warnings,
     required this.startDate,
     this.endDate = '',
+    this.learningContext = const {},
+    this.research = const {},
   });
 
   factory OnboardingSession.fromJson(JsonMap json) => OnboardingSession(
@@ -72,8 +75,9 @@ class OnboardingSession {
     planRevision: json['plan_revision'] as int?,
     stage: json['stage'] as String,
     question: json['question'] as String,
-    questionOptions: (json['question_options'] as List? ?? const [])
-        .cast<String>(),
+    questionOptions: normalizeQuestionOptions(
+      (json['question_options'] as List? ?? const []).whereType<String>(),
+    ),
     questionMultiple: json['question_multiple'] as bool? ?? false,
     recommendations: PlanningRecommendations.fromJson(
       JsonMap.from(json['recommendations'] as Map? ?? const {}),
@@ -98,6 +102,8 @@ class OnboardingSession {
     warnings: (json['warnings'] as List).cast<String>(),
     startDate: json['start_date'] as String? ?? '',
     endDate: json['end_date'] as String? ?? '',
+    learningContext: JsonMap.from(json['learning_context'] as Map? ?? const {}),
+    research: JsonMap.from(json['research'] as Map? ?? const {}),
   );
 
   final int revision;
@@ -120,10 +126,13 @@ class OnboardingSession {
 
   /// 本次规划周期的结束日期；目标日期允许为空，周期必须有边界。
   final String endDate;
+  final JsonMap learningContext;
+  final JsonMap research;
 
   OnboardingSession edit({
     List<CourseDraft>? courses,
     List<ItemDraft>? items,
+    JsonMap? research,
   }) => OnboardingSession(
     revision: revision,
     hasPlan: hasPlan,
@@ -143,5 +152,7 @@ class OnboardingSession {
     warnings: warnings,
     startDate: startDate,
     endDate: endDate,
+    learningContext: learningContext,
+    research: research ?? this.research,
   );
 }

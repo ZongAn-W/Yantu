@@ -1,8 +1,35 @@
 import { z } from "zod";
 import { CalendarDateSchema, CourseDraftSchema, ItemDraftSchema, NullableDateSchema, ProfileSchema } from "./contracts.js";
+import { LearningContextSchema, ResearchSchema, LEARNER_FIELDS } from "./learning-context.js";
 
 export const FIRST_QUESTION = "你接下来想学习什么，或者达成什么目标？";
-export const FIRST_QUESTION_OPTIONS = ["考试备考", "课程学习", "技能提升", "自主学习", "其他"];
+/** 首题只提供具体业务选项；“其他”自定义回答入口由客户端统一提供。 */
+export const FIRST_QUESTION_OPTIONS = ["考试备考", "课程学习", "技能提升", "自主学习"];
+
+/**
+ * 通用“自填”占位项：只匹配整个选项，不做前缀匹配，
+ * 避免把“其他语言课程”这类有具体含义的业务选项误删。
+ */
+const OTHER_PLACEHOLDER = /^(?:其他|其它|other)\s*(?:[：:]\s*)?(?:[（(]\s*(?:自填|自定义|请填写|请补充|填写|请说明)\s*[）)])?$/i;
+
+/**
+ * 归一化题目选项：去除首尾空格与空项、忽略大小写去重，并移除“其他”等自填占位项。
+ * 有效选项保持首次出现的顺序，服务端只返回具体业务选项。
+ */
+export function normalizeQuestionOptions(options: readonly string[]): string[] {
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const raw of options) {
+    if (typeof raw !== "string") continue;
+    const option = raw.trim();
+    if (!option || OTHER_PLACEHOLDER.test(option)) continue;
+    const key = option.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    normalized.push(option);
+  }
+  return normalized;
+}
 
 /** 每类目标在访谈里都必须继续追问具体学习内容，因此选项只是起点。 */
 export const FIRST_QUESTION_EXAMPLES = [
@@ -15,7 +42,10 @@ export const FIRST_QUESTION_EXAMPLES = [
 
 export { CalendarDateSchema };
 
-export const QuestionOptionsSchema = z.array(z.string().trim().min(1).max(200)).max(8);
+export const QuestionOptionsSchema = z
+  .array(z.string().trim().max(200))
+  .transform(options => normalizeQuestionOptions(options))
+  .refine(options => options.length <= 8, "题目选项不能超过8项");
 
 export const RecommendedWeeklyMinutesSchema = z
   .record(z.enum(["0", "1", "2", "3", "4", "5", "6"]), z.number().int().min(0).max(480))
@@ -63,7 +93,11 @@ export const SessionSchema = z.object({
   question: z.string().max(1000),
   question_options: QuestionOptionsSchema.default([]),
   question_multiple: z.boolean().default(false),
-  answers: z.array(z.object({ question: z.string().max(1000), answer: z.string().max(4000) })).max(50),
+  question_fields: z.array(z.enum(LEARNER_FIELDS)).default([]),
+  learning_context: LearningContextSchema,
+  research: ResearchSchema,
+  exam_year_override: z.number().int().min(2020).max(2100).nullable().default(null),
+  answers: z.array(z.object({ question: z.string().max(1000), answer: z.string().max(4000), fields: z.array(z.enum(LEARNER_FIELDS)).optional() })).max(50),
   profile: ProfileSchema,
   recommendations: RecommendationsSchema.default({}),
   courses: z.array(CourseDraftSchema).max(100),
@@ -80,6 +114,8 @@ export const ActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("resume_interview") }),
   z.object({ type: z.literal("restart_interview") }),
   z.object({ type: z.literal("refresh_plan") }),
+  z.object({ type: z.literal("set_exam_year"), year: z.number().int().min(2020).max(2100) }),
+  z.object({ type: z.literal("retry_research") }),
   z.object({ type: z.literal("answer"), answer: z.string().trim().min(1, "请先填写回答").max(4000) }),
   z.object({ type: z.literal("continue") }),
   z.object({ type: z.literal("generate_courses") }),
@@ -107,6 +143,7 @@ export function newSession(): OnboardingSession {
     revision: 0, has_plan: false, replanning: false, plan_revision: null, current_plan: null,
     stage: "interview", question: FIRST_QUESTION, answers: [],
     question_options: FIRST_QUESTION_OPTIONS, question_multiple: false,
+    question_fields: [], learning_context: LearningContextSchema.parse({}), research: ResearchSchema.parse({}), exam_year_override: null,
     profile: ProfileSchema.parse({}), recommendations: RecommendationsSchema.parse({}),
     courses: [], items: [], summary: "", assumptions: [], warnings: [], start_date: "", end_date: "",
   };

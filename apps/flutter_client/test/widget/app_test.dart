@@ -348,7 +348,7 @@ void main() {
       // A finished profile goes straight to today's plan, not the wizard.
       expect(router.routeInformationProvider.value.uri.path, '/');
       expect(find.text('今天，专注眼前的一步'), findsOneWidget);
-      expect(find.textContaining('项完成'), findsWidgets);
+      expect(find.textContaining('项达标'), findsWidgets);
 
       await client.clearSession();
       await tester.pumpAndSettle();

@@ -1,7 +1,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProfileSchema } from "./contracts.js";
-import { ActionSchema, CalendarDateSchema, FIRST_QUESTION, FIRST_QUESTION_OPTIONS, newSession, SessionSchema, type OnboardingSession } from "./onboarding-contracts.js";
+import { ActionSchema, CalendarDateSchema, FIRST_QUESTION, FIRST_QUESTION_OPTIONS, QuestionOptionsSchema, newSession, normalizeQuestionOptions, SessionSchema, type OnboardingSession } from "./onboarding-contracts.js";
 import { advanceOnboarding } from "./onboarding.js";
+import { sanitizeInterviewSession } from "./onboarding-evidence.js";
 import { generateCourses, generateItems, nextInterview } from "./onboarding-ai.js";
 
 const aiConfig = vi.hoisted(() => ({ aiApiKey: "", aiBaseUrl: "https://ai.invalid", aiModel: "test", aiReasoningEffort: "max" }));
@@ -14,6 +15,15 @@ async function fiveAnswers() {
   return session;
 }
 const week = { "0": 120, "1": 120, "2": 120, "3": 120, "4": 120, "5": 120, "6": 120 };
+/** 生成课程要求至少 5 个有效回答；补齐测试用回答，不改变既有目标资料。 */
+const withMinimumAnswers = (session: OnboardingSession) => ({
+  ...session,
+  stage: "interview" as const,
+  answers: [
+    ...session.answers,
+    ...Array.from({ length: Math.max(0, 5 - session.answers.length) }, (_, i) => ({ question: `补充问题${i}`, answer: `补充回答${i}` })),
+  ],
+});
 
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-17T04:00:00Z")); aiConfig.aiApiKey = ""; fetchMock.mockReset(); vi.stubGlobal("fetch", fetchMock); });
 afterEach(() => { vi.useRealTimers(); vi.unstubAllGlobals(); });
@@ -43,12 +53,18 @@ describe("guided onboarding", () => {
 
   it("starts with a freeform learning goal and stops after five answers", async () => {
     expect(newSession().question).toBe(FIRST_QUESTION);
-    expect(newSession().question_options).toEqual(FIRST_QUESTION_OPTIONS);
+    // 首题只返回具体业务选项；“其他”自定义回答入口由客户端统一提供。
+    expect(newSession().question_options).toEqual(["考试备考", "课程学习", "技能提升", "自主学习"]);
+    expect(newSession().question_options).not.toContain("其他");
+    expect(FIRST_QUESTION_OPTIONS).toEqual(newSession().question_options);
     expect(newSession().profile.goal_type).toBe("other");
     expect(newSession().profile.target_date).toBeNull();
     const session = await fiveAnswers();
-    expect(session.stage).toBe("checkpoint");
+    // 第五题之后直接显示第六题，不再进入“信息已记录”暂停页。
+    expect(session.stage).toBe("interview");
     expect(session.answers).toHaveLength(5);
+    expect(session.question).not.toBe(FIRST_QUESTION);
+    expect(session.question).not.toBe("");
     expect(session.profile).toMatchObject({ goal_type: "exam", goal_subtype: "考研", target_school: "上海交通大学",
       target_program: "计算机技术", target_date: null });
     expect(session.profile.goal_text).toBe("我要考研");
@@ -62,12 +78,12 @@ describe("guided onboarding", () => {
 
   it("offers contextual answer choices only in the matching scene", async () => {
     const first = await answer(newSession(), "考研");
-    expect(first.question_options).toContain("已确定目标院校");
+    expect(first.question_options).toContain("本科大三");
     expect(first.question_multiple).toBe(false);
-    const schoolName = await answer(first, "已确定目标院校");
+    const schoolName = await answer(first, "本科大三");
     expect(schoolName.profile.target_school).toBe("");
-    expect(schoolName.question).toContain("专业");
-    const program = await answer(schoolName, "计算机技术");
+    expect(schoolName.question).toContain("院校");
+    const program = await answer(schoolName, "上海交通大学计算机技术专硕");
     expect(program.profile.target_program).toBe("计算机技术");
     expect(program.question).not.toContain("院校");
   });
@@ -108,12 +124,12 @@ describe("guided onboarding", () => {
   });
 
   it("builds fallback courses from the real goal instead of exam subjects", async () => {
-    const skillSession = { ...(await answer(newSession(), "从零学习 Python，能独立处理 CSV 并完成简单的数据分析练习")), stage: "checkpoint" as const };
+    const skillSession = withMinimumAnswers(await answer(newSession(), "从零学习 Python，能独立处理 CSV 并完成简单的数据分析练习"));
     const skill = await advanceOnboarding(skillSession, { type: "generate_courses" });
     expect(skill.profile.goal_type).toBe("skill");
     expect(skill.courses.map(course => course.name)).toEqual(["数据分析基础", "数据分析练习", "数据分析实践"]);
     expect(skill.courses.some(course => /政治|数学/.test(course.name))).toBe(false);
-    const readingSession = { ...(await answer(newSession(), "每天读一点历史，没有固定截止日期")), stage: "checkpoint" as const };
+    const readingSession = withMinimumAnswers(await answer(newSession(), "每天读一点历史，没有固定截止日期"));
     const reading = await advanceOnboarding(readingSession, { type: "generate_courses" });
     expect(reading.profile.goal_type).toBe("self_study");
     expect(reading.courses.map(course => course.name)).toEqual(["历史阅读与记录", "历史专题整理"]);
@@ -128,15 +144,51 @@ describe("guided onboarding", () => {
     expect(legacy.recommendations.plan_end_date).toBe("");
   });
 
-  it("asks one follow-up and returns to the choice after each additional answer", async () => {
+  it("keeps asking after five answers and advances to the next generated question", async () => {
     const session = await fiveAnswers();
-    const continued = await advanceOnboarding(session, { type: "continue" });
-    expect(continued.stage).toBe("interview");
-    const next = await answer(continued, "工作日2小时，周末4小时");
-    expect(next.stage).toBe("checkpoint");
+    expect(session.stage).toBe("interview");
+    const next = await answer(session, "工作日2小时，周末4小时");
+    expect(next.stage).toBe("interview");
     expect(next.answers).toHaveLength(6);
     expect(next.profile.weekly_minutes["1"]).toBe(120);
+    expect(next.question).not.toBe(session.question);
     expect(session.answers).toHaveLength(5);
+  });
+
+  it("requires five valid answers before course generation", async () => {
+    let session = newSession();
+    for (let index = 0; index < 4; index++) session = await answer(session, `第${index + 1}个回答`);
+    expect(session.stage).toBe("interview");
+    await expect(advanceOnboarding(session, { type: "generate_courses" })).rejects.toThrow("至少5个");
+    const fifth = await answer(session, "第5个回答");
+    const courses = await advanceOnboarding(fifth, { type: "generate_courses" });
+    expect(courses.stage).toBe("courses");
+    expect(courses.answers).toHaveLength(5);
+  });
+
+  it("resumes a legacy checkpoint session directly in the interview with generation available", async () => {
+    const legacy = { ...(await fiveAnswers()), stage: "checkpoint" as const };
+    const restored = sanitizeInterviewSession(legacy);
+    expect(restored.stage).toBe("interview");
+    expect(restored.answers).toEqual(legacy.answers);
+    expect(restored.question).toBe(legacy.question);
+    // 当前待答问题不需要回答，也不会被当成已确认回答。
+    const courses = await advanceOnboarding(legacy, { type: "generate_courses" });
+    expect(courses.stage).toBe("courses");
+    expect(courses.answers).toEqual(legacy.answers);
+  });
+
+  it("stops adding questions at the limit but keeps generation available", async () => {
+    let session = newSession();
+    for (let index = 0; index < 50; index++) session = await answer(session, `第${index + 1}个回答`);
+    expect(session.answers).toHaveLength(50);
+    expect(session.stage).toBe("interview");
+    expect(session.question).toBe("");
+    expect(session.question_options).toEqual([]);
+    await expect(answer(session, "第51个回答")).rejects.toThrow("已达到50题");
+    const courses = await advanceOnboarding(session, { type: "generate_courses" });
+    expect(courses.stage).toBe("courses");
+    expect(courses.answers).toHaveLength(50);
   });
 
   it("keeps courses and items behind separate confirmations and finishes a finite cycle", async () => {
@@ -162,7 +214,7 @@ describe("guided onboarding", () => {
   });
 
   it("allows finishing without any target date", async () => {
-    const readingSession = { ...(await answer(newSession(), "每天读一点历史，没有固定截止日期")), stage: "checkpoint" as const };
+    const readingSession = withMinimumAnswers(await answer(newSession(), "每天读一点历史，没有固定截止日期"));
     const session = await advanceOnboarding(readingSession, { type: "generate_courses" });
     const items = await advanceOnboarding(session, { type: "confirm_courses", courses: session.courses });
     const schedule = await advanceOnboarding(items, { type: "confirm_items", items: items.items });
@@ -175,7 +227,7 @@ describe("guided onboarding", () => {
   });
 
   it("rejects stage skipping, orphan items and duplicate course ids", async () => {
-    await expect(advanceOnboarding(newSession(), { type: "generate_courses" })).rejects.toThrow("当前阶段");
+    await expect(advanceOnboarding(newSession(), { type: "generate_courses" })).rejects.toThrow("至少5个");
     const session = await advanceOnboarding(await fiveAnswers(), { type: "generate_courses" });
     await expect(advanceOnboarding(session, { type: "confirm_courses", courses: [session.courses[0], session.courses[0]] })).rejects.toThrow("重复");
     const items = await advanceOnboarding(session, { type: "confirm_courses", courses: session.courses });
@@ -317,10 +369,32 @@ describe("guided onboarding", () => {
     const session = newSession();
     session.answers = [{ question: FIRST_QUESTION, answer: "学习英语" }];
     fetchMock.mockResolvedValue(Response.json({ choices: [{ message: { content: JSON.stringify({ question: "目前基础如何？", profile: session.profile,
-      question_options: ["零基础", "零基础", " 已开始 ", "其他", "其他（自填）", "Other"] }) } }] }));
+      question_options: ["零基础", "零基础", " 已开始 ", "其他", "其它", "Other", "其他（自填）", "其他语言课程", " other(自填) "] }) } }] }));
     const result = await nextInterview(session);
-    expect(result.question_options).toEqual(["零基础", "已开始"]);
+    // 只移除通用自填占位项；“其他语言课程”是有具体含义的业务选项，必须保留。
+    expect(result.question_options).toEqual(["零基础", "已开始", "其他语言课程"]);
+    expect(result.question_options.filter(option => /^其他$/i.test(option))).toHaveLength(0);
     expect(Object.keys(result.recommendations.weekly_minutes)).toHaveLength(7);
+  });
+
+  it("normalizes saved session options so legacy duplicates cannot add a second Other entry", () => {
+    const legacy = SessionSchema.parse({ ...newSession(), question_options: [
+      " 考试备考 ", "", "考试备考", "其他", "其它", "Other", "其他（自填）", "其他语言课程", "课程学习",
+    ] });
+    expect(legacy.question_options).toEqual(["考试备考", "其他语言课程", "课程学习"]);
+    expect(legacy.question_options.filter(option => option === "其他")).toHaveLength(0);
+    // 没有选项的旧题目继续表示自由文字回答。
+    expect(SessionSchema.parse({ ...newSession(), question_options: [] }).question_options).toEqual([]);
+    expect(QuestionOptionsSchema.parse(["其他", "  ", "Other（自填）"])).toEqual([]);
+    expect(QuestionOptionsSchema.parse(["其他语言课程", "其他语言课程", " 二外 "])).toEqual(["其他语言课程", "二外"]);
+  });
+
+  it("normalizes the fallback template options without removing business options", async () => {
+    // 无 AI 时的基础模板同样经过归一化，不会夹带“其他”入口。
+    const first = await answer(newSession(), "考研");
+    expect(first.question_options.length).toBeGreaterThan(0);
+    expect(first.question_options).not.toContain("其他");
+    expect(normalizeQuestionOptions(["其他语言课程", "其他", "Other"])).toEqual(["其他语言课程"]);
   });
 
   it("backfills recommendations for a legacy items draft without another interview question", async () => {
@@ -371,7 +445,7 @@ describe("guided onboarding", () => {
     aiConfig.aiApiKey = "key";
     fetchMock.mockResolvedValue(new Response(null, { status: 503 }));
     await expect(advanceOnboarding(session, { type: "generate_courses" })).rejects.toThrow("503");
-    expect(session.stage).toBe("checkpoint");
+    expect(session.stage).toBe("interview");
     aiConfig.aiApiKey = "";
     await expect(generateCourses(session, "增加一门课")).rejects.toThrow("尚未配置 AI");
   });

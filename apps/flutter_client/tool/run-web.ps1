@@ -4,6 +4,8 @@ param(
     [ValidateRange(1024, 65535)]
     [int]$Port = 5180,
     [string]$ApiBaseUrl = 'http://127.0.0.1:8787',
+    [ValidateSet('chrome', 'web-server')]
+    [string]$Device = 'chrome',
     [ValidateSet('Debug', 'Release')]
     [string]$Mode = 'Debug',
     [switch]$PrepareOnly
@@ -129,7 +131,7 @@ try {
         ConvertTo-Json | Set-Content -LiteralPath $statePath -Encoding UTF8
 
     if (-not $PrepareOnly) {
-        $runArguments = @('run', '-d', 'chrome', '--web-hostname=127.0.0.1', "--web-port=$Port", "--dart-define=API_BASE_URL=$ApiBaseUrl", '--no-pub', '--no-web-resources-cdn')
+        $runArguments = @('run', '-d', $Device, '--web-hostname=127.0.0.1', "--web-port=$Port", "--dart-define=API_BASE_URL=$ApiBaseUrl", '--no-pub', '--no-web-resources-cdn')
         if ($Mode -eq 'Release') {
             $runArguments += '--release'
         } else {

@@ -6,321 +6,11 @@ import '../../../core/theme.dart';
 import '../../../core/widgets.dart';
 import '../../../shared/models/planner_models.dart';
 import '../application/planner_session.dart';
+import '../application/study_timer.dart';
 import '../domain/planner_format.dart';
 import '../domain/scheduler/planner_scheduler.dart' as scheduler;
 import '../domain/study_day.dart' as day_ops;
 import '../domain/study_day.dart' show unscheduledTaskMinutes;
-
-/// Records the accumulated minutes of one task on one day.
-///
-/// The value is the day total, matching the Web "记录实际用时" dialog: writing it
-/// again corrects the day instead of adding to it.
-class RecordTimeDialog extends ConsumerStatefulWidget {
-  const RecordTimeDialog({required this.date, this.taskId, super.key});
-
-  final String date;
-  final String? taskId;
-
-  static Future<void> show(
-    BuildContext context, {
-    required String date,
-    String? taskId,
-  }) => showDialog<void>(
-    context: context,
-    builder: (context) => RecordTimeDialog(date: date, taskId: taskId),
-  );
-
-  @override
-  ConsumerState<RecordTimeDialog> createState() => _RecordTimeDialogState();
-}
-
-class _RecordTimeDialogState extends ConsumerState<RecordTimeDialog> {
-  late String _subjectId;
-  late String _taskId;
-  late TextEditingController _minutes;
-  String? _error;
-  bool _saving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    final data = ref.read(plannerSessionProvider).data;
-    final task = widget.taskId == null
-        ? null
-        : data.tasks.where((item) => item.id == widget.taskId).firstOrNull;
-    _subjectId = task?.subjectId ?? data.subjects.first.id;
-    _taskId =
-        task?.id ??
-        data.tasks
-            .where(
-              (item) =>
-                  item.subjectId == _subjectId &&
-                  item.status != TaskStatus.archived,
-            )
-            .firstOrNull
-            ?.id ??
-        '';
-    _minutes = TextEditingController(
-      text: '${day_ops.taskDayMinutes(data, _taskId, widget.date)}',
-    );
-  }
-
-  @override
-  void dispose() {
-    _minutes.dispose();
-    super.dispose();
-  }
-
-  void _selectTask(String taskId) {
-    final data = ref.read(plannerSessionProvider).data;
-    setState(() {
-      _taskId = taskId;
-      _minutes.text = '${day_ops.taskDayMinutes(data, taskId, widget.date)}';
-      _error = null;
-    });
-  }
-
-  Future<void> _save() async {
-    if (_saving) return;
-    final parsed = int.tryParse(_minutes.text.trim());
-    if (parsed == null || parsed < 0 || parsed > 1440) {
-      setState(() => _error = '请输入 0 至 1440 的整数分钟');
-      return;
-    }
-    if (_taskId.isEmpty) {
-      setState(() => _error = '请先创建并选择事项');
-      return;
-    }
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-    try {
-      await ref
-          .read(plannerSessionProvider)
-          .recordDayMinutes(_taskId, widget.date, parsed);
-      if (mounted) Navigator.pop(context);
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _saving = false;
-          _error = error is StateError ? error.message : '$error';
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final data = ref.watch(plannerSessionProvider).data;
-    final task = data.tasks.where((item) => item.id == _taskId).firstOrNull;
-    final planned = task == null
-        ? 0
-        : day_ops.taskDayPlannedMinutes(data, task.id, widget.date);
-    final minutes = int.tryParse(_minutes.text.trim()) ?? 0;
-    final subjects = data.subjects
-        .where(
-          (subject) => data.tasks.any(
-            (item) =>
-                item.subjectId == subject.id &&
-                item.status != TaskStatus.archived,
-          ),
-        )
-        .toList();
-    return AlertDialog(
-      title: const Text('记录实际用时'),
-      content: SizedBox(
-        width: 420,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Row(
-                children: [
-                  const Icon(Icons.event_outlined, size: 16),
-                  const SizedBox(width: 6),
-                  Text('${widget.date} · 当天累计用时'),
-                ],
-              ),
-              const SizedBox(height: 12),
-              if (task != null)
-                Row(
-                  children: [
-                    SubjectChip(
-                      name: _subjectName(data, task.subjectId),
-                      color: subjectColor(
-                        task.subjectId,
-                        data.subjects
-                            .where((item) => item.id == task.subjectId)
-                            .firstOrNull
-                            ?.color,
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        task.title,
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                  ],
-                )
-              else ...[
-                DropdownButtonFormField<String>(
-                  initialValue: subjects.any((s) => s.id == _subjectId)
-                      ? _subjectId
-                      : subjects.firstOrNull?.id,
-                  decoration: const InputDecoration(labelText: '课程'),
-                  items: [
-                    for (final subject in subjects)
-                      DropdownMenuItem(
-                        value: subject.id,
-                        child: Text(subject.name),
-                      ),
-                  ],
-                  onChanged: _saving
-                      ? null
-                      : (value) {
-                          if (value == null) return;
-                          final next = data.tasks
-                              .where(
-                                (item) =>
-                                    item.subjectId == value &&
-                                    item.status != TaskStatus.archived,
-                              )
-                              .firstOrNull;
-                          setState(() {
-                            _subjectId = value;
-                            if (next != null) _selectTask(next.id);
-                          });
-                        },
-                ),
-                const SizedBox(height: 12),
-                DropdownButtonFormField<String>(
-                  initialValue: data.tasks.any((item) => item.id == _taskId)
-                      ? _taskId
-                      : null,
-                  decoration: const InputDecoration(labelText: '事项'),
-                  items: [
-                    for (final item in data.tasks.where(
-                      (item) =>
-                          item.subjectId == _subjectId &&
-                          item.status != TaskStatus.archived,
-                    ))
-                      DropdownMenuItem(value: item.id, child: Text(item.title)),
-                  ],
-                  onChanged: _saving
-                      ? null
-                      : (value) {
-                          if (value != null) _selectTask(value);
-                        },
-                ),
-              ],
-              const SizedBox(height: 16),
-              TimeProgressTrack(
-                planned: planned,
-                actual: minutes,
-                color: subjectColor(
-                  task?.subjectId ?? _subjectId,
-                  data.subjects
-                      .where(
-                        (item) => item.id == (task?.subjectId ?? _subjectId),
-                      )
-                      .firstOrNull
-                      ?.color,
-                ),
-                semanticsLabel: '记录用时与计划对比',
-              ),
-              const SizedBox(height: 6),
-              Text(
-                planned == 0
-                    ? '今天未安排此事项，可直接记录用时'
-                    : minutes > planned
-                    ? '超出计划 ${duration(minutes - planned)}'
-                    : minutes >= planned
-                    ? '已达到计划时长'
-                    : minutes == 0
-                    ? '尚未记录用时'
-                    : '距计划还差 ${duration(planned - minutes)}',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: 16),
-              TextField(
-                controller: _minutes,
-                autofocus: true,
-                enabled: !_saving,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: const InputDecoration(
-                  labelText: '实际用时（分钟）',
-                  helperText: '再次填写会修正当天总时长，不会重复相加',
-                ),
-                onChanged: (_) => setState(() => _error = null),
-                onSubmitted: (_) => _save(),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                children: [
-                  for (final preset in const [30, 60, 90, 120])
-                    OutlinedButton(
-                      onPressed: _saving
-                          ? null
-                          : () => setState(() {
-                              _minutes.text = '$preset';
-                              _error = null;
-                            }),
-                      child: Text(duration(preset)),
-                    ),
-                  if (planned > 0 && planned <= 1440)
-                    TextButton.icon(
-                      onPressed: _saving
-                          ? null
-                          : () => setState(() {
-                              _minutes.text = '$planned';
-                              _error = null;
-                            }),
-                      icon: const Icon(Icons.check, size: 15),
-                      label: Text('按计划填写 · ${duration(planned)}'),
-                    ),
-                ],
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                PlannerNotice(_error!, tone: PlannerNoticeTone.error),
-              ],
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _saving ? null : () => Navigator.pop(context),
-          child: const Text('取消'),
-        ),
-        FilledButton.icon(
-          onPressed: _saving ? null : _save,
-          icon: _saving
-              ? const SizedBox.square(
-                  dimension: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Icon(Icons.save_outlined, size: 18),
-          label: const Text('保存实际用时'),
-        ),
-      ],
-    );
-  }
-
-  String _subjectName(PlannerData data, String subjectId) =>
-      data.subjects
-          .where((subject) => subject.id == subjectId)
-          .firstOrNull
-          ?.name ??
-      subjectId;
-}
 
 String subjectNameOf(PlannerData data, String subjectId) =>
     data.subjects
@@ -383,6 +73,11 @@ class _MoveTaskDayDialogState extends ConsumerState<MoveTaskDayDialog> {
   bool get _movable {
     final data = ref.read(plannerSessionProvider).data;
     final first = widget.blocks.first;
+    final timer = ref.read(studyTimerProvider);
+    if (timer.isRunning(first.taskId, first.date) ||
+        timer.elapsedFor(first.taskId, first.date) > Duration.zero) {
+      return false;
+    }
     final task = data.tasks
         .where((item) => item.id == first.taskId)
         .firstOrNull;
@@ -432,13 +127,13 @@ class _MoveTaskDayDialogState extends ConsumerState<MoveTaskDayDialog> {
             ),
             const SizedBox(height: 8),
             const Text(
-              '只调整日期，不指定学习开始时间。实际学习用时请使用“记录用时”。',
+              '只调整日期，不指定学习开始时间。',
               style: TextStyle(color: PlannerColors.muted, fontSize: 12),
             ),
             if (!_movable) ...[
               const SizedBox(height: 8),
               const Text(
-                '已记录用时、已完成或固定的计划保留在原日期。',
+                '计时中、已有学习用时、已完成或固定的计划保留在原日期。',
                 style: TextStyle(color: PlannerColors.muted, fontSize: 12),
               ),
             ],
@@ -965,7 +660,7 @@ class _ScheduleTaskDialogState extends ConsumerState<ScheduleTaskDialog> {
   }
 }
 
-/// "标记事项完成" dialog: records the last session and completes the task.
+/// Completes the whole task without adding or editing measured study time.
 class CompleteTaskDialog extends ConsumerStatefulWidget {
   const CompleteTaskDialog({required this.taskId, super.key});
 
@@ -982,35 +677,21 @@ class CompleteTaskDialog extends ConsumerStatefulWidget {
 }
 
 class _CompleteTaskDialogState extends ConsumerState<CompleteTaskDialog> {
-  final _minutes = TextEditingController(text: '0');
   String? _error;
   bool _saving = false;
 
-  @override
-  void dispose() {
-    _minutes.dispose();
-    super.dispose();
-  }
-
   Future<void> _save() async {
     if (_saving) return;
-    final parsed = int.tryParse(_minutes.text.trim());
-    if (parsed == null || parsed < 0 || parsed > 1440) {
-      setState(() => _error = '请输入 0 至 1440 的整数分钟');
-      return;
-    }
     setState(() {
       _saving = true;
       _error = null;
     });
     try {
+      final timer = ref.read(studyTimerProvider);
+      if (timer.activeTaskId == widget.taskId) await timer.pause();
       await ref
           .read(plannerSessionProvider)
-          .completeTask(
-            widget.taskId,
-            actualMinutes: parsed,
-            date: shanghaiToday(),
-          );
+          .completeTask(widget.taskId, actualMinutes: 0, date: shanghaiToday());
       if (mounted) Navigator.pop(context);
     } catch (error) {
       if (mounted) {
@@ -1051,17 +732,8 @@ class _CompleteTaskDialogState extends ConsumerState<CompleteTaskDialog> {
               ),
             ],
             const SizedBox(height: 12),
-            TextField(
-              controller: _minutes,
-              autofocus: true,
-              enabled: !_saving,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(labelText: '本次实际学习时长（分钟）'),
-            ),
-            const SizedBox(height: 8),
             const Text(
-              '仅把你填写的时长计入进度；标记完成会停止安排这项事项。',
+              '标记完成后，不再安排这项事项。已学时长保留计时记录。',
               style: TextStyle(color: PlannerColors.muted, fontSize: 12),
             ),
             if (_error != null) ...[
@@ -1294,6 +966,13 @@ class _DailyReviewDialogState extends ConsumerState<DailyReviewDialog> {
   String? _error;
   bool _saving = false;
 
+  String _progressLabel(PlannerData data, String taskId) {
+    final actual = day_ops.taskDayMinutes(data, taskId, widget.date);
+    final planned = day_ops.taskDayPlannedMinutes(data, taskId, widget.date);
+    if (planned > 0 && actual >= planned) return '已达目标';
+    return actual > 0 ? '进行中' : '未开始';
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1355,8 +1034,6 @@ class _DailyReviewDialogState extends ConsumerState<DailyReviewDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('记录今天完成到哪里；本机先保存，服务端结算在下一阶段接入。'),
-              const SizedBox(height: 12),
               if (_entries.isEmpty)
                 const PlannerEmpty(
                   message: '今天没有安排，无需结算。',
@@ -1374,50 +1051,14 @@ class _DailyReviewDialogState extends ConsumerState<DailyReviewDialog> {
                         style: const TextStyle(fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 8),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: TextFormField(
-                              initialValue: '${entry.actualMinutes}',
-                              keyboardType: TextInputType.number,
-                              inputFormatters: [
-                                FilteringTextInputFormatter.digitsOnly,
-                              ],
-                              decoration: const InputDecoration(
-                                labelText: '实际用时',
-                              ),
-                              enabled: !_saving,
-                              onChanged: (value) => _updateEntry(
-                                entry.copyWith(
-                                  actualMinutes: int.tryParse(value) ?? 0,
-                                ),
-                              ),
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: DropdownButtonFormField<CompletionStatus>(
-                              initialValue: entry.completionStatus,
-                              decoration: const InputDecoration(
-                                labelText: '完成程度',
-                              ),
-                              items: [
-                                for (final status in CompletionStatus.values)
-                                  DropdownMenuItem(
-                                    value: status,
-                                    child: Text(
-                                      completionStatusLabels[status]!,
-                                    ),
-                                  ),
-                              ],
-                              onChanged: _saving
-                                  ? null
-                                  : (value) => _updateEntry(
-                                      entry.copyWith(completionStatus: value!),
-                                    ),
-                            ),
-                          ),
-                        ],
+                      Text(
+                        '已学 ${duration(day_ops.taskDayMinutes(data, entry.taskId, widget.date))} / '
+                        '目标 ${duration(day_ops.taskDayPlannedMinutes(data, entry.taskId, widget.date))} · '
+                        '${_progressLabel(data, entry.taskId)}',
+                        style: tabularFigures.copyWith(
+                          color: PlannerColors.muted,
+                          fontSize: 12,
+                        ),
                       ),
                       const SizedBox(height: 8),
                       TextFormField(

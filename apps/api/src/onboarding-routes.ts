@@ -6,6 +6,8 @@ import { query, transaction } from "./db.js";
 import { InterviewProfileSchema } from "./contracts.js";
 import { ActionSchema, newSession, SessionSchema, type OnboardingSession } from "./onboarding-contracts.js";
 import { advanceOnboarding } from "./onboarding.js";
+import { sanitizeInterviewSession } from "./onboarding-evidence.js";
+import { attachExamResearch, expireExamResearch } from "./exam-research.js";
 import { PROFILE_COLUMNS, confirmDraft, itemToJson, replanDocument, saveProfile, snapshot } from "./planner.js";
 import { commitPlannerState, PlannerRevisionConflict, readPlannerState } from "./sync.js";
 import type { PlannerDocument } from "./sync-contracts.js";
@@ -61,23 +63,26 @@ async function loadSession(client: pg.PoolClient, userId: string) {
     session.plan_revision = plan.revision;
     session.current_plan = planContext(plan.data);
   }
-  return { session, plan };
+  return { session: sanitizeInterviewSession(session), plan };
 }
 
 export async function onboardingRoutes(app: FastifyInstance) {
   app.get("/api/onboarding/session", async (request, reply) => {
     const user = await requireUser(request, reply); if (!user) return;
-    return transaction(async client => ({ session: (await loadSession(client, user.id)).session }));
+    const { session } = await transaction(client => loadSession(client, user.id));
+    return { session: await attachExamResearch(session) };
   });
   app.post("/api/ai/onboarding/advance", { config: { rateLimit: { max: 30, timeWindow: "1 minute" } } }, async (request, reply) => {
     const user = await requireUser(request, reply); if (!user) return;
     const parsed = z.object({ revision: z.number().int().nonnegative(), action: ActionSchema }).safeParse(request.body);
     if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "请检查输入内容" });
     try {
-      const { session: current, plan } = await transaction(client => loadSession(client, user.id));
+      const { session: saved, plan } = await transaction(client => loadSession(client, user.id));
+      const current = await attachExamResearch(saved);
       // A lost response to the final request may be retried without duplicating a plan.
       if (current.stage === "complete" && parsed.data.action.type === "finish") return { session: current };
       if (current.revision !== parsed.data.revision) throw new SessionConflict("引导已在其他页面更新，请刷新读取最新进度");
+      if (parsed.data.action.type === "retry_research") await expireExamResearch(current);
       if (["resume_interview", "restart_interview", "refresh_plan"].includes(parsed.data.action.type) && plan.data) {
         current.plan_revision = plan.revision;
         current.current_plan = planContext(plan.data);
@@ -122,7 +127,7 @@ export async function onboardingRoutes(app: FastifyInstance) {
         await client.query("update onboarding_sessions set revision=$2,payload=$3,updated_at=now() where user_id=$1", [user.id, next.revision, JSON.stringify(next)]);
         return next;
       });
-      return { session: next };
+      return { session: await attachExamResearch(next) };
     } catch (error) {
       const message = error instanceof z.ZodError ? "AI 返回内容不完整或格式有误，请重试；已有进度已保留" : error instanceof Error ? error.message : "操作失败，请重试";
       return reply.code(error instanceof SessionConflict || error instanceof PlannerRevisionConflict

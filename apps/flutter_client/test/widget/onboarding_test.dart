@@ -14,7 +14,7 @@ import '../support/onboarding_fixture.dart';
 
 void main() {
   testWidgets(
-    'five answers offer both paths, further answers return to the choice and failures retain input',
+    'five answers keep the interview going, later answers advance, and failures retain input',
     (tester) async {
       var session = onboardingFixture();
       var failure = false;
@@ -30,12 +30,7 @@ void main() {
               if (failure) return jsonResponse({'error': 'AI暂时不可用，请重试'}, 502);
               if (action['type'] == 'answer') {
                 final count = (session['answers'] as List).length + 1;
-                session = onboardingFixture(
-                  answers: count,
-                  stage: count >= 5 ? 'checkpoint' : 'interview',
-                );
-              } else if (action['type'] == 'continue') {
-                session['stage'] = 'interview';
+                session = onboardingFixture(answers: count);
               }
             }
             return jsonResponse({'session': session});
@@ -53,16 +48,26 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('你的长期目标是什么？'), findsOneWidget);
+      expect(find.text('根据当前回答生成科目'), findsNothing);
       for (var i = 0; i < 5; i++) {
         await tester.enterText(find.byType(TextFormField), '回答$i');
         await tester.tap(find.text(i < 4 ? '提交回答，继续' : '提交回答'));
         await tester.pumpAndSettle();
       }
-      expect(find.text('继续完善信息'), findsOneWidget);
-      expect(find.text('根据当前回答生成课程'), findsOneWidget);
+      // 第五题之后不再暂停，直接显示第六题和生成入口。
+      expect(find.text('信息已记录'), findsNothing);
+      expect(find.text('继续完善信息'), findsNothing);
+      expect(find.text('第 6 问'), findsOneWidget);
+      expect(find.text('根据当前回答生成科目'), findsOneWidget);
       expect(actions.where((a) => a == 'answer'), hasLength(5));
-      await tester.tap(find.text('继续完善信息'));
+
+      // 继续回答后仍会生成下一题。
+      await tester.enterText(find.byType(TextFormField), '回答5');
+      await tester.tap(find.text('提交回答'));
       await tester.pumpAndSettle();
+      expect(find.text('第 7 问'), findsOneWidget);
+      expect(find.text('根据当前回答生成科目'), findsOneWidget);
+
       failure = true;
       await tester.enterText(find.byType(TextFormField), '保留我的回答');
       await tester.tap(find.text('提交回答'));
@@ -72,8 +77,8 @@ void main() {
       failure = false;
       await tester.tap(find.text('提交回答'));
       await tester.pumpAndSettle();
-      expect(find.text('已回答 6 个问题'), findsOneWidget);
-      expect(find.text('根据当前回答生成课程'), findsOneWidget);
+      expect(find.text('已回答 7 个问题'), findsOneWidget);
+      expect(find.text('第 8 问'), findsOneWidget);
     },
   );
 

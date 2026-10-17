@@ -5,10 +5,12 @@ import '../../../core/theme.dart';
 import '../../../core/widgets.dart';
 import '../../../shared/models/planner_models.dart';
 import '../../planner/application/planner_session.dart';
+import '../../planner/application/study_timer.dart';
 import '../../planner/domain/planner_format.dart';
 import '../../planner/domain/study_day.dart' as day_ops;
 import '../../planner/presentation/planner_dialogs.dart';
 import '../../planner/presentation/planner_page_state.dart';
+import '../../planner/presentation/task_study_timer.dart';
 
 /// Web `/calendar` — day/week plan, fixed events, capacity and conflict feedback.
 class CalendarPage extends ConsumerStatefulWidget {
@@ -54,7 +56,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
         final data = snapshot.data!;
         return PlannerPage(
           title: '学习日历',
-          subtitle: '按事项安排每日时长，分别记录实际用时与完成状态。',
+          subtitle: '按事项安排每日时长，查看实际学习记录。',
           actions: [
             AsyncActionButton(
               label: '创建固定事件',
@@ -121,11 +123,6 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
               PlannerNotice(_notice!, tone: _noticeTone),
               const SizedBox(height: 12),
             ],
-            const Text(
-              '拖动事项或点击“调整日期”修改安排，学完后直接记录实际用时。',
-              style: TextStyle(color: PlannerColors.muted, fontSize: 12),
-            ),
-            const SizedBox(height: 12),
             LayoutBuilder(
               builder: (context, constraints) {
                 final columns = _week && constraints.maxWidth >= 1100
@@ -341,6 +338,7 @@ class _CalendarTaskRow extends ConsumerWidget {
       (sum, block) => sum + block.durationMinutes,
     );
     final actual = day_ops.taskDayMinutes(data, item.id, date);
+    final timer = ref.watch(studyTimerProvider);
     final completed =
         item.status == TaskStatus.completed ||
         blocks.every((block) => block.status == BlockStatus.completed);
@@ -353,6 +351,8 @@ class _CalendarTaskRow extends ConsumerWidget {
     );
     final movable =
         editable &&
+        !timer.isRunning(item.id, date) &&
+        timer.elapsedFor(item.id, date) == Duration.zero &&
         item.status != TaskStatus.archived &&
         actual == 0 &&
         !item.isFixed &&
@@ -372,58 +372,49 @@ class _CalendarTaskRow extends ConsumerWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Row(
-            children: [
-              Container(
-                width: 10,
-                height: 10,
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(
-                  '${subjectNameOf(data, item.subjectId)} · ${item.title}',
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+          TaskStudyTimer(
+            heading: Row(
+              children: [
+                Container(
+                  width: 10,
+                  height: 10,
+                  decoration: BoxDecoration(
+                    color: color,
+                    shape: BoxShape.circle,
+                  ),
                 ),
-              ),
-              if (item.isFixed)
-                const Tooltip(
-                  message: '固定事项',
-                  child: Icon(Icons.lock_outline, size: 13),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    '${subjectNameOf(data, item.subjectId)} · ${item.title}',
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
                 ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Text(
-            '计划 ${duration(planned)} · 已学 ${duration(actual)}',
-            style: tabularFigures.copyWith(fontSize: 12),
-          ),
-          const SizedBox(height: 6),
-          TimeProgressTrack(
-            planned: planned,
-            actual: actual,
+                if (item.isFixed)
+                  const Tooltip(
+                    message: '固定事项',
+                    child: Icon(Icons.lock_outline, size: 13),
+                  ),
+              ],
+            ),
+            taskId: item.id,
+            date: date,
+            plannedMinutes: planned,
             color: color,
-            semanticsLabel: '${item.title}用时进度',
-          ),
-          const SizedBox(height: 6),
-          Wrap(
-            spacing: 4,
-            children: [
-              TextButton.icon(
-                onPressed: () =>
-                    RecordTimeDialog.show(context, date: date, taskId: item.id),
-                icon: const Icon(Icons.schedule, size: 15),
-                label: Text(actual > 0 ? '修改用时' : '记录用时'),
-              ),
-              TextButton.icon(
-                onPressed: movable
-                    ? () => MoveTaskDayDialog.show(context, blocks)
-                    : null,
-                icon: const Icon(Icons.event_outlined, size: 15),
-                label: const Text('调整日期'),
-              ),
-            ],
+            canDiscard: editable,
+            canStart:
+                editable &&
+                date == shanghaiToday() &&
+                item.status != TaskStatus.archived &&
+                item.status != TaskStatus.completed,
+            secondaryAction: movable
+                ? IconButton(
+                    tooltip: '调整日期',
+                    onPressed: () => MoveTaskDayDialog.show(context, blocks),
+                    icon: const Icon(Icons.event_outlined, size: 15),
+                  )
+                : null,
           ),
         ],
       ),

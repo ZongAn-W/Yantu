@@ -17,6 +17,8 @@ export const config = {
   aiApiKey: required("AI_API_KEY"),
   aiModel: required("AI_MODEL", "deepseek-flash"),
   aiReasoningEffort,
+  researchProvider: required("RESEARCH_SEARCH_PROVIDER", process.env.NODE_ENV === "test" ? "disabled" : "bing"),
+  researchApiKey: required("RESEARCH_SEARCH_API_KEY"),
   smtpHost: required("SMTP_HOST", "smtp.qq.com"),
   smtpPort: Number(required("SMTP_PORT", "465")),
   smtpUser: required("SMTP_USER"),
