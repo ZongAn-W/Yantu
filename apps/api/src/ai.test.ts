@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createPlanDraft } from "./ai.js";
-import { ProfileSchema } from "./contracts.js";
+import { PlanDraftSchema, ProfileSchema } from "./contracts.js";
 
 const aiConfig = vi.hoisted(() => ({
   aiApiKey: "test-key",
@@ -66,9 +66,37 @@ describe("AI plan draft generation", () => {
     await expect(createPlanDraft(profile)).rejects.toThrow("AI 请求失败（503）");
   });
 
+  it("provides numeric priority constraints and a valid typed JSON example", async () => {
+    fetchMock.mockResolvedValue(Response.json({ choices: [{ message: { content: JSON.stringify(draft) } }] }));
+
+    await createPlanDraft(profile);
+
+    const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    const prompt = JSON.parse(request.messages.find((message: { role: string }) => message.role === "user").content);
+    const properties = prompt.output_schema.properties;
+    for (const collection of [properties.courses, properties.items]) {
+      expect(collection.items.properties.priority).toEqual({ type: "integer", enum: [1, 2, 3] });
+      expect(collection.items.required).toContain("priority");
+    }
+    expect(PlanDraftSchema.parse(prompt.example)).toEqual(prompt.example);
+    expect(prompt.example.items[0].course_id).toBe(prompt.example.courses[0].id);
+    expect(prompt.profile).toEqual(profile);
+    expect(prompt.current_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
   it.each([
     ["invalid JSON", "not JSON"],
     ["an invalid draft", JSON.stringify({ courses: [], items: [] })],
+    ["numeric-string priorities", JSON.stringify({
+      ...draft,
+      courses: draft.courses.map((course) => ({ ...course, priority: "3" })),
+      items: draft.items.map((item) => ({ ...item, priority: "3" })),
+    })],
+    ["named priorities", JSON.stringify({
+      ...draft,
+      courses: draft.courses.map((course) => ({ ...course, priority: "高" })),
+      items: draft.items.map((item) => ({ ...item, priority: "high" })),
+    })],
   ])("reports %s without returning a fallback draft", async (_name, content) => {
     fetchMock.mockResolvedValue(Response.json({ choices: [{ message: { content } }] }));
 

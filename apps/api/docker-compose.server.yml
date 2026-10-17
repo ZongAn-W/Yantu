@@ -34,11 +34,16 @@ services:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL in apps/api/.env}
       JWT_ACCESS_SECRET: ${JWT_ACCESS_SECRET:?Set JWT_ACCESS_SECRET in apps/api/.env}
       JWT_REFRESH_SECRET: ${JWT_REFRESH_SECRET:?Set JWT_REFRESH_SECRET in apps/api/.env}
-      WEB_ORIGIN: ${WEB_ORIGIN:-http://127.0.0.1:5174}
+      WEB_ORIGIN: ${WEB_ORIGIN:-http://127.0.0.1:5180}
       AI_BASE_URL: ${AI_BASE_URL:-https://api.deepseek.com}
       AI_API_KEY: ${AI_API_KEY:-}
       AI_MODEL: ${AI_MODEL:-deepseek-flash}
       AI_REASONING_EFFORT: ${AI_REASONING_EFFORT:-max}
+      SMTP_HOST: ${SMTP_HOST:-smtp.qq.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM: ${SMTP_FROM:-}
     depends_on:
       db:
         condition: service_healthy

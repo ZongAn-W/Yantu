@@ -1,0 +1,499 @@
+import { createHash } from "node:crypto";
+import type pg from "pg";
+import type { FastifyInstance } from "fastify";
+import { z } from "zod";
+import { transaction } from "./db.js";
+import { requireUser } from "./auth.js";
+import { snapshot } from "./planner.js";
+import {
+  PlannerDocumentSchema,
+  type PlannerDocument,
+} from "./sync-contracts.js";
+
+type Row = Record<string, any>;
+type StateRow = {
+  revision: string;
+  document: PlannerDocument | null;
+  projection: PlannerDocument | null;
+};
+const clone = <T>(value: T): T => structuredClone(value);
+const stable = (value: unknown): string =>
+  JSON.stringify(value, (_key, child) => {
+    if (child && typeof child === "object" && !Array.isArray(child))
+      return Object.fromEntries(
+        Object.entries(child)
+          .filter(([key]) => !["updated_at", "created_at"].includes(key))
+          .sort(([a], [b]) => a.localeCompare(b)),
+      );
+    return child;
+  });
+const same = (a: unknown, b: unknown) => stable(a) === stable(b);
+
+class ProjectionConflict extends Error {}
+
+function mergeProjectedDay(
+  blocks: PlannerDocument["blocks"],
+  before: PlannerDocument["blocks"][number],
+  after: PlannerDocument["blocks"][number],
+  document: PlannerDocument,
+) {
+  const durationChanged = before.duration_minutes !== after.duration_minutes;
+  if (durationChanged && (
+    blocks.length !== 1 ||
+    document.profile.planning_mode === "timed" ||
+    blocks.some((block) => block.is_fixed || block.status === "completed") ||
+    document.tasks.some((task) => task.id === before.task_id && task.is_fixed)
+  )) {
+    throw new ProjectionConflict("云端汇总时长与已有时间块冲突，原计划已保留；请先核对云端时长再重试同步");
+  }
+  const changes: Row = {};
+  for (const key of ["duration_minutes", "status", "completion_status", "advice_text", "advice_topics"] as const) {
+    if (!same(before[key], after[key])) changes[key] = after[key];
+  }
+  const result = blocks.map((block) => ({ ...block, ...changes, updated_at: after.updated_at }));
+  if (before.actual_minutes !== after.actual_minutes) {
+    // The relational row is a daily total; allocate it without changing slot identities.
+    let remaining = after.actual_minutes;
+    const ordered = [...result].sort((a, b) => a.start_minute - b.start_minute);
+    for (const [index, block] of ordered.entries()) {
+      block.actual_minutes = index === ordered.length - 1
+        ? remaining
+        : Math.min(block.duration_minutes, remaining);
+      remaining -= block.actual_minutes;
+    }
+  }
+  return result;
+}
+
+// Legacy exports use string ids; relational tables keep UUIDs. Map without changing exports.
+function dbId(owner: string, table: string, id: string): string {
+  if (
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id)
+  )
+    return id;
+  const hex = createHash("sha256")
+    .update(`${owner}:${table}:${id}`)
+    .digest("hex")
+    .slice(0, 32);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-a${hex.slice(17, 20)}-${hex.slice(20)}`;
+}
+
+function mappedNative(
+  native: PlannerDocument,
+  document: PlannerDocument,
+): PlannerDocument {
+  const owner = document.profile.user_id;
+  const ids = (table: string, rows: { id: string }[]) =>
+    new Map(rows.map((row) => [dbId(owner, table, row.id), row.id]));
+  const subjects = ids("courses", document.subjects),
+    tasks = ids("items", document.tasks),
+    logs = ids("study_logs", document.logs);
+  const blocks = new Map<string, string>();
+  for (const block of document.blocks) {
+    const key = `${block.task_id}:${block.date}`;
+    if (!blocks.has(key)) blocks.set(key, block.id);
+  }
+  const nativeBlocks = new Map(
+    native.blocks.map((row) => [
+      row.id,
+      blocks.get(`${tasks.get(row.task_id) ?? row.task_id}:${row.date}`) ??
+        row.id,
+    ]),
+  );
+  return {
+    ...native,
+    subjects: native.subjects.map((row) => ({
+      ...row,
+      id: subjects.get(row.id) ?? row.id,
+    })),
+    tasks: native.tasks.map((row) => ({
+      ...row,
+      id: tasks.get(row.id) ?? row.id,
+      subject_id: subjects.get(row.subject_id) ?? row.subject_id,
+    })),
+    blocks: native.blocks.map((row) => ({
+      ...row,
+      id: nativeBlocks.get(row.id)!,
+      task_id: tasks.get(row.task_id) ?? row.task_id,
+    })),
+    logs: native.logs.map((row) => ({
+      ...row,
+      id: logs.get(row.id) ?? row.id,
+      task_id: tasks.get(row.task_id) ?? row.task_id,
+      block_id: row.block_id
+        ? (nativeBlocks.get(row.block_id) ?? row.block_id)
+        : null,
+    })),
+  };
+}
+
+function applyRemoteRows(base: Row[], local: Row[], remote: Row[]): Row[] {
+  const before = new Map(base.map((row) => [row.id, row]));
+  const after = new Map(remote.map((row) => [row.id, row]));
+  const result = new Map(local.map((row) => [row.id, row]));
+  for (const [id, old] of before) {
+    const next = after.get(id);
+    if (!next) result.delete(id);
+    else if (!same(old, next)) {
+      const current = { ...result.get(id) };
+      for (const key of Object.keys({ ...old, ...next }))
+        if (!same(old[key], next[key])) current[key] = next[key];
+      result.set(id, current);
+    }
+  }
+  for (const [id, row] of after) if (!before.has(id)) result.set(id, row);
+  return [...result.values()];
+}
+
+function rebase(
+  document: PlannerDocument,
+  previous: PlannerDocument,
+  next: PlannerDocument,
+): PlannerDocument {
+  const base = mappedNative(previous, document),
+    remote = mappedNative(next, document);
+  const result = clone(document);
+  for (const key of Object.keys(remote.profile))
+    if (!same(base.profile[key], remote.profile[key]))
+      result.profile[key] = remote.profile[key];
+  for (const key of ["subjects", "tasks"] as const)
+    result[key] = applyRemoteRows(base[key], result[key], remote[key]) as any;
+  const blockGroup = (row: Row) => `${row.task_id}:${row.date}`;
+  for (const key of new Set(
+    [...base.blocks, ...remote.blocks].map(blockGroup),
+  )) {
+    const old = base.blocks.filter((row) => blockGroup(row) === key),
+      fresh = remote.blocks.filter((row) => blockGroup(row) === key);
+    if (same(old, fresh)) continue;
+    const existing = result.blocks.filter((row) => blockGroup(row) === key);
+    if (!fresh.length && existing.some((block) => block.is_fixed || block.status === "completed" || document.tasks.some((task) => task.id === block.task_id && task.is_fixed))) {
+      throw new ProjectionConflict("云端日计划已移除，但本机仍有固定或已完成时间块；原计划已保留，请先核对后重试同步");
+    }
+    if (old.length && fresh.length && existing.length) {
+      const merged = new Map(mergeProjectedDay(existing, old[0], fresh[0], document).map((block) => [block.id, block]));
+      result.blocks = result.blocks.map((block) => merged.get(block.id) ?? block);
+    } else {
+      result.blocks = [
+        ...result.blocks.filter((row) => blockGroup(row) !== key),
+        ...fresh,
+      ];
+    }
+  }
+  // Native corrections delete/replace the day's rows. Patch surviving IDs so a
+  // lossy block_id projection cannot detach unchanged logs from their split slots.
+  result.logs = applyRemoteRows(base.logs, result.logs, remote.logs) as PlannerDocument["logs"];
+  const tasks = new Set(result.tasks.map((row) => row.id));
+  result.blocks = result.blocks.filter((row) => tasks.has(row.task_id));
+  const blocks = new Set(result.blocks.map((row) => row.id));
+  result.logs = result.logs
+    .filter((row) => tasks.has(row.task_id))
+    .map((row) => ({
+      ...row,
+      block_id: row.block_id && blocks.has(row.block_id) ? row.block_id : null,
+    }));
+  return result;
+}
+
+async function lockedState(client: pg.PoolClient, owner: string) {
+  // SERIALIZABLE captures state and all relationship rows from one database snapshot.
+  await client.query(
+    "insert into planner_sync_state(user_id) values($1) on conflict do nothing",
+    [owner],
+  );
+  return (
+    await client.query<StateRow>(
+      "select revision,document,projection from planner_sync_state where user_id=$1 for update",
+      [owner],
+    )
+  ).rows[0];
+}
+
+async function currentState(
+  client: pg.PoolClient,
+  owner: string,
+  row: StateRow,
+) {
+  const raw = (await snapshot(owner, client)) as PlannerDocument | null;
+  const data =
+    row.document && raw && row.projection
+      ? rebase(row.document, row.projection, raw)
+      : (row.document ?? raw);
+  if (row.document && data)
+    await client.query(
+      "update planner_sync_state set document=$2,projection=$3 where user_id=$1",
+      [owner, JSON.stringify(data), JSON.stringify(raw)],
+    );
+  return { data, revision: Number(row.revision) };
+}
+
+async function assertOwnership(
+  client: pg.PoolClient,
+  owner: string,
+  table: string,
+  ids: string[],
+) {
+  const found = await client.query(
+    `select 1 from ${table} where id=any($1::uuid[]) and user_id<>$2 limit 1`,
+    [ids, owner],
+  );
+  if (found.rowCount) throw new Error("导入包含其他账号的标识");
+}
+
+async function upsert(client: pg.PoolClient, sql: string, values: unknown[]) {
+  const result = await client.query(sql, values);
+  if (result.rowCount !== 1) throw new Error("导入包含其他账号的标识");
+}
+
+async function writeProjection(
+  client: pg.PoolClient,
+  owner: string,
+  data: PlannerDocument,
+) {
+  const id = (table: string, value: string) => dbId(owner, table, value);
+  const groups = new Map<string, Row>();
+  const blockToDay = new Map<string, string>();
+  const existingDays = await client.query<{
+    id: string;
+    item_id: string;
+    date: string;
+  }>("select id,item_id,date::text from daily_plan_items where user_id=$1", [
+    owner,
+  ]);
+  const existingByKey = new Map(
+    existingDays.rows.map((row) => [`${row.item_id}:${row.date}`, row.id]),
+  );
+  for (const block of data.blocks) {
+    const key = `${block.task_id}:${block.date}`;
+    let day = groups.get(key);
+    if (!day) {
+      day = {
+        ...block,
+        id:
+          existingByKey.get(`${id("items", block.task_id)}:${block.date}`) ??
+          id("daily_plan_items", block.id),
+        task_id: id("items", block.task_id),
+        duration_minutes: 0,
+        actual_minutes: 0,
+      };
+      groups.set(key, day);
+    }
+    day.duration_minutes += block.duration_minutes;
+    day.actual_minutes += block.actual_minutes;
+    blockToDay.set(block.id, day.id);
+  }
+  const days = [...groups.values()];
+  for (const [table, rows] of [
+    ["courses", data.subjects],
+    ["items", data.tasks],
+    ["study_logs", data.logs],
+  ] as const)
+    await assertOwnership(
+      client,
+      owner,
+      table,
+      rows.map((row) => id(table, row.id)),
+    );
+  await assertOwnership(
+    client,
+    owner,
+    "daily_plan_items",
+    days.map((row) => row.id),
+  );
+  const profile = data.profile;
+  await client.query(
+    `insert into profiles(user_id,exam_date,target_school,target_program,current_progress,weekly_minutes) values($1,$2,$3,$4,$5,$6)
+    on conflict(user_id) do update set exam_date=excluded.exam_date,target_school=excluded.target_school,target_program=excluded.target_program,current_progress=excluded.current_progress,updated_at=now()`,
+    [
+      owner,
+      profile.exam_date,
+      profile.target_school,
+      profile.target_program,
+      profile.foundation,
+      JSON.stringify(
+        Object.fromEntries(
+          [0, 1, 2, 3, 4, 5, 6].map((day) => [
+            day,
+            profile.daily_limit_minutes,
+          ]),
+        ),
+      ),
+    ],
+  );
+  for (const subject of data.subjects)
+    await upsert(
+      client,
+      `insert into courses(id,user_id,name,priority) values($1,$2,$3,$4) on conflict(id) do update set name=excluded.name,priority=excluded.priority where courses.user_id=excluded.user_id`,
+      [id("courses", subject.id), owner, subject.name, subject.priority],
+    );
+  const priorItems = await client.query<{
+    id: string;
+    description: string;
+    completion_criteria: string;
+  }>("select id,description,completion_criteria from items where user_id=$1", [
+    owner,
+  ]);
+  const priorById = new Map(priorItems.rows.map((row) => [row.id, row]));
+  for (const task of data.tasks) {
+    const old = priorById.get(id("items", task.id));
+    let description = task.description ?? "",
+      criteria = "";
+    if (
+      old &&
+      description ===
+        [
+          old.description,
+          old.completion_criteria ? `完成标准：${old.completion_criteria}` : "",
+        ]
+          .filter(Boolean)
+          .join("\n")
+    ) {
+      description = old.description;
+      criteria = old.completion_criteria;
+    }
+    await upsert(
+      client,
+      `insert into items(id,user_id,course_id,title,description,completion_criteria,estimated_minutes,earliest_date,deadline,priority,status,confirmed,created_at,updated_at)
+      values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,true,$12,$13) on conflict(id) do update set course_id=excluded.course_id,title=excluded.title,description=excluded.description,completion_criteria=excluded.completion_criteria,estimated_minutes=excluded.estimated_minutes,earliest_date=excluded.earliest_date,deadline=excluded.deadline,priority=excluded.priority,status=excluded.status,updated_at=excluded.updated_at where items.user_id=excluded.user_id`,
+      [
+        id("items", task.id),
+        owner,
+        id("courses", task.subject_id),
+        task.title,
+        description,
+        criteria,
+        task.estimated_minutes,
+        task.earliest_date ?? null,
+        task.deadline,
+        task.priority,
+        task.status,
+        task.created_at,
+        task.updated_at,
+      ],
+    );
+  }
+  // Remove vanished children before parents. Foreign keys continue protecting old API rows.
+  await client.query(
+    "delete from study_logs where user_id=$1 and not(id=any($2::uuid[]))",
+    [owner, data.logs.map((row) => id("study_logs", row.id))],
+  );
+  await client.query(
+    "delete from daily_plan_items where user_id=$1 and not(id=any($2::uuid[]))",
+    [owner, days.map((row) => row.id)],
+  );
+  for (const day of days)
+    await client.query(
+      `insert into daily_plan_items(id,user_id,item_id,date,planned_minutes,actual_minutes,advice_text,advice_topics,completion_status) values($1,$2,$3,$4,$5,$6,$7,$8,$9)
+    on conflict(user_id,item_id,date) do update set planned_minutes=excluded.planned_minutes,actual_minutes=excluded.actual_minutes,advice_text=excluded.advice_text,advice_topics=excluded.advice_topics,completion_status=excluded.completion_status,updated_at=now()`,
+      [
+        day.id,
+        owner,
+        day.task_id,
+        day.date,
+        day.duration_minutes,
+        day.actual_minutes,
+        day.advice_text ?? "",
+        JSON.stringify(day.advice_topics ?? []),
+        day.completion_status ??
+          (day.status === "completed" ? "completed" : "not_started"),
+      ],
+    );
+  for (const log of data.logs)
+    await upsert(
+      client,
+      `insert into study_logs(id,user_id,item_id,daily_plan_item_id,date,minutes,created_at) values($1,$2,$3,$4,$5,$6,$7)
+    on conflict(id) do update set item_id=excluded.item_id,daily_plan_item_id=excluded.daily_plan_item_id,date=excluded.date,minutes=excluded.minutes where study_logs.user_id=excluded.user_id`,
+      [
+        id("study_logs", log.id),
+        owner,
+        id("items", log.task_id),
+        log.block_id ? (blockToDay.get(log.block_id) ?? null) : null,
+        log.date,
+        log.minutes,
+        log.started_at,
+      ],
+    );
+  await client.query(
+    "delete from items where user_id=$1 and not(id=any($2::uuid[]))",
+    [owner, data.tasks.map((row) => id("items", row.id))],
+  );
+  await client.query(
+    "delete from courses where user_id=$1 and not(id=any($2::uuid[]))",
+    [owner, data.subjects.map((row) => id("courses", row.id))],
+  );
+}
+
+const revision = z.number().int().min(0).max(Number.MAX_SAFE_INTEGER);
+const PutSchema = z.object({
+  data: PlannerDocumentSchema,
+  base: PlannerDocumentSchema.nullable(),
+  expectedRevision: revision,
+});
+
+async function withSnapshot<T>(
+  operation: (client: pg.PoolClient) => Promise<T>,
+): Promise<T> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await transaction(async (client) => {
+        await client.query("set transaction isolation level serializable");
+        return operation(client);
+      });
+    } catch (error) {
+      if (
+        attempt < 2 &&
+        ["40001", "40P01"].includes((error as { code: string }).code)
+      )
+        continue;
+      throw error;
+    }
+  }
+}
+
+export async function syncRoutes(app: FastifyInstance) {
+  app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof ProjectionConflict) return reply.code(409).send({ error: error.message });
+    throw error;
+  });
+  app.get("/api/planner/sync", async (request, reply) => {
+    const user = await requireUser(request, reply);
+    if (!user) return;
+    reply.header("Cache-Control", "no-store");
+    return withSnapshot(async (client) =>
+      currentState(client, user.id, await lockedState(client, user.id)),
+    );
+  });
+  app.put(
+    "/api/planner/sync",
+    { bodyLimit: 32 * 1024 * 1024 },
+    async (request, reply) => {
+      const user = await requireUser(request, reply);
+      if (!user) return;
+      const parsed = PutSchema.safeParse(request.body);
+      if (!parsed.success)
+        return reply
+          .code(400)
+          .send({ error: parsed.error.issues[0]?.message ?? "计划格式不正确" });
+      const { data, base, expectedRevision } = parsed.data;
+      if (
+        data.profile.user_id !== user.id ||
+        (base && base.profile.user_id !== user.id)
+      )
+        return reply.code(403).send({ error: "计划不属于当前账号" });
+      const result = await withSnapshot(async (client) => {
+        const state = await lockedState(client, user.id);
+        const current = await currentState(client, user.id, state);
+        if (current.revision !== expectedRevision || !same(base, current.data))
+          return { conflict: true as const, ...current };
+        await writeProjection(client, user.id, data);
+        const projection = await snapshot(user.id, client);
+        const updated = await client.query<{ revision: string }>(
+          "update planner_sync_state set document=$2,projection=$3,revision=revision+1,updated_at=now() where user_id=$1 returning revision",
+          [user.id, JSON.stringify(data), JSON.stringify(projection)],
+        );
+        return { data, revision: Number(updated.rows[0].revision) };
+      });
+      if ("conflict" in result) reply.code(409);
+      return result;
+    },
+  );
+}

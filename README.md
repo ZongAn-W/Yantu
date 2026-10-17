@@ -1,142 +1,93 @@
 # 不白学 · 考研执行台
 
-面向上海理工大学计算机专业大三学生的单用户统考计划工具。首页直接进入今日学习任务。每日学习计划只列任务与时长，学习顺序由你决定；固定课程、考试和休息可保留具体时刻。
+面向考研备考的学习执行工具：今日任务、课程与事项、日历、真实学习用时、进度、备考资料与 AI 草案。
 
-## 本地运行
+## 维护范围
 
-要求 Node.js 22+ 与 npm 10+。项目路径：`D:\_projects\sjtu-study-planner`。
+Flutter 是唯一维护的客户端，覆盖 Web、Windows、Android 和 iOS。原 React 网页版、Tauri 桌面壳及旧测试和部署目录已移除，详情见 [旧版清理记录](REACT_REMOVAL.md)。
+
+- `apps/flutter_client/`：Flutter / Dart 客户端。
+- `apps/api/`：Node.js / Fastify API、认证、AI 接口与 PostgreSQL。
+- `packages/planner-engine/`：TypeScript 排程参考实现和共享测试 fixture；Flutter 与 API 的回归测试仍使用它。
+
+## 本地启动
+
+要求 Node.js 22+、npm 10+、PostgreSQL，以及 Flutter stable 3.47.3 / Dart 3.13.3。本机 Flutter SDK 为 `D:\tools\flutter`，启动脚本可通过 `-FlutterSdk` 指定其他路径。Flutter 依赖按 `pubspec.lock` 解析。
+
+首次准备 API：从 `apps/api/.env.example` 创建 `apps/api/.env`，设置数据库连接、两个 JWT secret 和来源白名单。数据库须先应用 `apps/api/db/schema.sql`；API 启动时自动执行后续增量迁移。
+
+```dotenv
+WEB_ORIGIN=http://127.0.0.1:5180
+```
+
+在仓库根目录打开两个终端，分别启动 API 与客户端：
 
 ```powershell
 Set-Location D:\_projects\sjtu-study-planner
 npm install --cache D:\_projects\.npm-cache
-npm run dev
+npm run api:dev
 ```
 
-浏览器打开 `http://127.0.0.1:5173`。未配置 Supabase 时会自动使用完整 localStorage Demo，无需登录。刷新页面保留任务、每日安排、实际学习日志、固定事件和重排历史。Demo 数据仅在当前浏览器中保存，可在设置中导出 JSON 并在其他浏览器恢复。
+```powershell
+Set-Location D:\_projects\sjtu-study-planner
+npm run dev
+# 自定义地址或端口时，同时更新 API 的 WEB_ORIGIN
+npm run dev -- -Port 5181 -ApiBaseUrl http://127.0.0.1:8787
+```
+
+默认客户端地址为 `http://127.0.0.1:5180`，API 为 `http://127.0.0.1:8787`。端口已占用时使用其他端口。Windows 客户端的运行命令见 [Flutter 客户端说明](apps/flutter_client/README.md)。
+
+账号登录后进入学习工作台；新账号经备考向导生成课程和事项。注册需要邮箱验证码，QQ SMTP 配置见 [邮箱注册部署](apps/api/AUTH_DEPLOYMENT.md)。未配置 AI 密钥时，API 提供确定性草案和建议回退。
+
+## 验证与构建
+
+仓库根目录的检查覆盖 API 和 TypeScript 排程参考实现：
 
 ```powershell
 npm run typecheck
 npm test
-npm run build
-npm run desktop:test
-$env:PLAYWRIGHT_BROWSERS_PATH = 'D:\_projects\sjtu-study-planner\.playwright-browsers'
-npx playwright install chromium
-npm run test:e2e
+npm run api:build
 ```
 
-## Windows 桌面版（Tauri 2）
+API 数据库集成测试需配置独立测试库的 `AUTH_TEST_DATABASE_URL`；未配置时会跳过这部分测试，不要指向生产数据库。
 
-桌面版复用 `apps/web` 的 React 页面、CSS 和 `packages/planner-engine`，不会改变网页版入口。首次准备 Windows 构建环境：
-
-1. 安装 Node.js 22+、npm 10+。
-2. 安装 Rust stable（`rustup`，选择 `stable-x86_64-pc-windows-msvc`）并重启终端，使 `cargo` 可用。
-3. 在 Visual Studio Build Tools 2022 中安装“使用 C++ 的桌面开发”、MSVC v143、Windows 10/11 SDK。
-4. 安装并启用 WebView2 Runtime。Windows 10 通常需要单独安装 Evergreen WebView2。
-5. 在项目根目录执行 `npm install`；Tauri CLI 已作为开发依赖安装。
-
-启动桌面开发版：
+Flutter 的分析和单元测试在客户端目录运行：
 
 ```powershell
-Set-Location D:\_projects\sjtu-study-planner
-npm run desktop:dev
+Set-Location D:\_projects\sjtu-study-planner\apps\flutter_client
+$env:PUB_CACHE = 'D:\_projects\sjtu-study-planner\apps\flutter_client\.dart_tool\pub-cache'
+& D:\tools\flutter\bin\flutter.bat analyze --no-pub
+& D:\tools\flutter\bin\flutter.bat test --no-pub
 ```
 
-构建 Windows 安装包（NSIS `.exe` 和 MSI）：
+从仓库根目录构建 Flutter Web，脚本默认执行分析和测试：
 
 ```powershell
-npm run desktop:build
+npm run build -- -ApiBaseUrl https://api.example.com
 ```
 
-构建产物位于 `apps/desktop/src-tauri/target/release/bundle/`。桌面版启动后直接打开今日任务页，使用 Hash 路由保证离线加载稳定；网页版仍使用 BrowserRouter。
+Web 产物为 `apps/flutter_client/build/web/`。Windows、Android 构建与签名要求见 [Flutter 客户端说明](apps/flutter_client/README.md)。Android、iOS 尚未完成实机验收；Windows 安装包尚未打包。Web 未实现 Service Worker 离线资源缓存。
 
-## 桌面数据、备份与迁移
+## 学习规则与数据
 
-桌面版把本地 Demo 保存到 Tauri 应用数据目录：`%APPDATA%\cn.sjtu.studyplanner\planner-data.json`；登录账号的离线缓存保存为同目录下的 `planner-account-<用户ID>.json`，与 Demo 分离。每次写入先验证并保存最近备份，再通过临时文件替换主文件；启动发现主文件损坏时会自动读取最近备份、把损坏文件另存为 `.corrupt-*`，并在界面显示恢复结果。主文件和备份都不可读取时会停止编辑和同步，不会覆盖原数据；可以重试读取、导出当前可读数据或从 JSON 恢复。
+学习结构为“课程 → 事项”两层。事项可设置总时间预算、起止日期和优先级，学习内容与完成标准写在事项说明中。每日安排只列事项与时长；固定课程、考试和休息保留具体时刻。
 
-在网页版“设置 → 数据管理”点击“导出本地数据”，然后在桌面版点击同一处的“恢复数据”并选择 JSON 文件，即可迁移浏览器计划。桌面版导出使用 Windows 系统保存对话框；网页版继续使用浏览器下载。建议定期把导出的 JSON 保存到 OneDrive、U 盘或其他独立位置，恢复时选择该文件即可。
+默认每日最多 8 小时，保留至少 30 分钟机动，每课程每天最多 4 小时。固定事件重叠时按时间并集扣除容量。客户端自动重排最多处理未来 14 天，超额完成最多提前 7 天内任务，先预览后确认。
 
-未配置 Supabase 时，网页版和桌面版都提供完整本地 Demo，离线修改会持续保存，不需要登录。配置 `VITE_SUPABASE_URL` 与 `VITE_SUPABASE_ANON_KEY`（或 publishable key）并重启后，桌面版仍先写本地账号文件，再在网络可用时自动同步；待同步标记、revision 和同步基线都随本地数据保存。退出应用前会等待最后一次写入完成，重新打开会继续同步；恢复网络后自动重试。云端写入失败或版本冲突不会覆盖本地修改，现有合并逻辑会保留双方独立编辑并在设置页显示同步状态。
+实际用时按“事项 + 日期”累计记录；再次填写是修正当天总量。每日完成勾选只表示当天安排完成，整项完成需单独确认；用完时间预算不会自动完成事项，超额实际用时仍保留。
 
-`npm test` 运行独立排程算法测试；Playwright 覆盖桌面与 Pixel 7 手机视口。`npm run build` 先做 TypeScript 检查，再生成 `apps/web/dist`。所有源码、依赖缓存和测试产物可保留在 D 盘。
+Flutter Web 在 IndexedDB 保存本机计划；Windows 和移动端使用应用数据目录中的 Sembast 数据库。本机数据按 API 地址和账号隔离，修改先落本机，再通过 revision/base 协议同步到 PostgreSQL；冲突需要显式选择。本机缓存和备份不因停用旧版而删除。
 
-## 功能与数据
+JSON 导出与恢复保留计划、事项说明、实际日志、固定事件和重排记录。格式与历史 v1 导出兼容；历史浏览器缓存或桌面文件需要显式导入。
 
-- `/`：今日任务列表、计划和实际时长、手动记录学习用时、重排预览与撤销。
-- `/calendar`：按天/周查看每日任务和时长、跨日期移动任务、固定事件。
-- `/tasks`：任务创建、编辑、删除、筛选、拆分到每日计划。
-- `/progress`：实际完成环、周对比、月度热力图、剩余任务燃尽和各科累计真实用时。
-- `/settings`：目标学校和方向、考试日期、每日容量、科目优先级、数据导出恢复、登录与同步状态。
+客户端“结束今天”和重排经快照同步提交，尚未接入服务端正式结算与生成接口。详细规则、存储位置和已知限制见 [Flutter 客户端说明](apps/flutter_client/README.md)。
 
-默认计划包含 2026 年 10 月至 2027 年 12 月的六个备考阶段，数学一、英语一、408 和 2027 年 7 月开始的政治。初试暂定 2027-12-25（政治、英语一）与 2027-12-26（数学一、408），可在设置中按官方通知修改。
+## 部署与记录
 
-学习结构仅有“课程 → 事项”两层。高数、线代、概率论、数据结构等课程下面是基础一轮、强化、真题训练、考前回顾；英语按首轮记忆、滚动复习、真题精读、限时训练等实际学习方式组织。政治各课程下面是知识学习与选择题训练，分析题背诵归政治综合。数学、英语和408的整卷练习及复盘独立记时。
+- [邮箱注册与 API 升级](apps/api/AUTH_DEPLOYMENT.md)
+- `apps/api/docker-compose.yml`：本地 PostgreSQL 与 API。
+- `apps/api/docker-compose.server.yml`：服务器部署，保留已有数据库卷和环境变量。
+- `apps/api/setup-ip-web.sh`：Nginx 静态根目录使用 Flutter Web 产物。
+- [测试报告](TEST_REPORT.md) 与 [迁移设计](FLUTTER_MIGRATION_DESIGN.md)：包含历史阶段记录；当前维护范围以本文为准。
 
-`packages/planner-engine/src/categories.ts` 提供预设课程和事项名称建议；`apps/web/src/item-seeds.ts` 提供阶段事项、日期、起始时间预算及说明。课程与事项均可自定义。章节内容、材料与完成标准写进事项的 `description`，不新增章节层级。事项管理默认隐藏未来事项，可以勾选“显示后续事项”。
-
-学习块按 30 分钟拆分，但只表示哪一天学习多少分钟。默认每天上限 8 小时、至少留 30 分钟机动、每科每天最多 4 小时；固定课程、考试和休息先占用每日容量，重叠固定事件按时间并集扣除。自动重排最多处理未来 14 天，超额完成最多提前 7 天内任务，先预览再确认；容量不足会显示冲突。
-
-总时长和当天分配分钟数直接设置在事项上。每天按事项记录累计实际用时，例如“高数 / 基础一轮 120 分钟”。再次填写修正该事项当天总时长；没有当天计划的事项也可补记。每天的完成勾选只表示当天安排完成，整项学习完成在事项管理里确认。进度页汇总课程并显示事项明细。
-
-时间投入来自实际学习记录；用于计算剩余预算的分钟数最多计入预计总时长，超额实际记录仍全部保留。用完时间预算不会自动完成事项。同一事项、同一天的并发修正使用本机本次累计值；不同事项或不同日期的修改可以合并。
-
-新版本地数据使用 `sjtu-study-planner:items-v2`，不读取旧格式、不自动迁移章节事项。导出与恢复保留事项说明、时间预算、学习日志和每日安排。已有云端计划需按新版结构准备；应用不会自动重置云端数据。
-
-## Supabase Auth / PostgreSQL / Realtime
-
-将 `apps/web/.env.example` 复制为 `apps/web/.env.local`，填写公开环境变量后重启开发服务器：
-
-```dotenv
-VITE_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
-VITE_SUPABASE_ANON_KEY=YOUR_PUBLIC_ANON_KEY
-# 也可使用 VITE_SUPABASE_PUBLISHABLE_KEY 代替 ANON_KEY
-```
-
-浏览器环境只允许公开 anon/publishable key。新建 Supabase 项目后，按顺序应用：
-
-1. `supabase/migrations/202610130001_planner.sql`：八张表、RLS、Realtime 与原子快照 RPC。
-2. `supabase/migrations/202610140001_daily_plan_compat.sql`：已有 payload schema 的每日任务兼容迁移和触发器。
-3. `supabase/migrations/202610140002_study_categories.sql`：任务与实际日志的二级分类、旧数据回填和分类索引。
-4. `supabase/migrations/202610140003_courses_items.sql`：取消旧分类约束与触发器，允许自定义课程；事项说明使用原有 JSON payload，无需新增列。
-
-`001_initial.sql` 已保留为空占位。CLI 首次使用时先运行 `npx supabase login` 和 `npx supabase link --project-ref YOUR_PROJECT_REF`，之后运行 `npx supabase db push`；也可在 SQL Editor 按顺序执行上述文件。Auth Site URL / Redirect URL 应包含实际应用域名，开发可填写 `http://127.0.0.1:5173` 和 `http://localhost:5173`。启用邮箱确认时需要先确认注册邮件。
-
-首次登录先读取账号云端数据，仅当云端没有 profile 时才导入当前 Demo。账号缓存与 Demo 分离；任务、学习块和日志等通过 Realtime 同步，写入使用版本号避免异步覆盖。完整计划、重排变更及撤销均由事务 RPC 保存。
-
-本项目不含真实 Supabase 凭据，云端注册、RLS 与多设备同步需配置你自己的项目后验收。当前云端 migration 已静态核对，尚未连接真实 Supabase 项目执行。若你的项目曾使用旧版非 payload `001_initial.sql` schema，需先备份并做人工 schema 迁移，不能直接套用新建项目 migration。更多说明见 `supabase/README.md`。
-
-## 目录
-
-```text
-apps/api/                  Node.js / Fastify API、AI 接口与 PostgreSQL schema
-apps/web/                 React / TypeScript / Vite 应用与本地/云端存储
-packages/planner-engine/  独立排程引擎、共享类型、Vitest 测试
-supabase/migrations/      PostgreSQL schema、RLS、Realtime、兼容迁移
-tests/                    Playwright 页面与移动端交互测试
-```
-
-## Node API、AI 与 Docker
-
-新流程可以使用自有服务器上的 Node API。API 负责注册登录、备考资料、AI 课程与事项草案、每日建议和每日结算；浏览器不会接触 AI 密钥。复制 `apps/api/.env.example` 为 `apps/api/.env`，填写 `JWT_ACCESS_SECRET`、`JWT_REFRESH_SECRET`、`WEB_ORIGIN`，以及兼容 OpenAI Chat Completions 的 `AI_BASE_URL`、`AI_API_KEY`、`AI_MODEL` 和 `AI_REASONING_EFFORT`。DeepSeek V4.1 Flash 使用 `AI_BASE_URL=https://api.deepseek.com`、`AI_MODEL=deepseek-flash`；`AI_REASONING_EFFORT=max` 启用最大推理强度。不填写 AI 密钥时，服务器使用确定性草案和建议回退，便于本地验证完整流程。
-
-本地启动 API（需要 PostgreSQL）：
-
-```powershell
-npm run api:dev
-```
-
-Linux 服务器使用 Docker：
-
-```bash
-cd apps/api
-cp .env.example .env
-# 编辑 .env，至少修改两个 JWT secret、WEB_ORIGIN 和 AI 配置
-docker compose up --build -d
-```
-
-然后在 `apps/web/.env.local` 设置：
-
-```dotenv
-VITE_API_URL=http://127.0.0.1:8787
-```
-
-重启 Vite 后，注册入口会进入分步备考向导。用户确认 AI 草案后，服务器生成直到考试日的每日安排；“结束今天”会提交实际用时、完成程度和反馈，并自动调整后续安排。服务器不可用时，原有 localStorage Demo 仍可运行；API 模式下正式账号数据保存在 PostgreSQL。
+客户端仅注入公开的 `API_BASE_URL`。数据库凭据、JWT secret、AI key、SMTP 授权码和签名材料只留在服务器或构建机。

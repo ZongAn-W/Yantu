@@ -1,0 +1,669 @@
+import 'package:dio/dio.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:sjtu_study_planner_client/app.dart';
+import 'package:sjtu_study_planner_client/core/auth/token_store.dart';
+import 'package:sjtu_study_planner_client/core/config/app_config.dart';
+import 'package:sjtu_study_planner_client/core/http/api_client.dart';
+import 'package:sjtu_study_planner_client/core/sync/planner_coordinator.dart';
+import 'package:sjtu_study_planner_client/core/providers.dart';
+import 'package:sjtu_study_planner_client/core/storage/identity_store.dart';
+import 'package:sjtu_study_planner_client/core/storage/storage_repository.dart';
+import 'package:sjtu_study_planner_client/core/sync/sync_state.dart';
+import 'package:sjtu_study_planner_client/features/planner/application/planner_sync.dart';
+import 'package:sjtu_study_planner_client/features/planner/domain/planner_format.dart';
+import 'package:sjtu_study_planner_client/features/planner/domain/study_day.dart'
+    as day_ops;
+import 'package:sjtu_study_planner_client/router/app_router.dart';
+import 'package:sjtu_study_planner_client/shared/models/planner_models.dart';
+
+import '../support/http_adapter.dart';
+import '../support/planner_fixture.dart';
+
+/// The shared fixture with its block moved to today.
+///
+/// The committed fixture is pinned to 2026-10-16; the workbench only renders the
+/// current Asia/Shanghai day, so tests that exercise the daily rows must move it.
+PlannerData todayFixture() {
+  final base = plannerFixture();
+  return base.copyWith(
+    blocks: [base.blocks.first.copyWith(date: shanghaiToday())],
+    logs: const [],
+  );
+}
+
+const _profile = {
+  'exam_type': '考研',
+  'exam_date': '2027-12-25',
+  'target_school': '上海交通大学',
+  'target_program': '计算机技术',
+  'current_progress': '高数基础一轮',
+  'weekly_minutes': {
+    '0': 0,
+    '1': 120,
+    '2': 120,
+    '3': 120,
+    '4': 120,
+    '5': 120,
+    '6': 180,
+  },
+  'constraints_text': '周三晚上有课',
+};
+
+/// Builds the app with a signed-in session and a plan served by the stub.
+Future<ProviderContainer> signIn(
+  WidgetTester tester, {
+  required Respond respond,
+  int? revision,
+}) async {
+  final adapter = TestAdapter(respond);
+  final client = ApiClient(
+    config: const AppConfig(apiBaseUrl: 'http://api.test'),
+    tokenStore: MemoryTokenStore(),
+    dio: Dio()..httpClientAdapter = adapter,
+  );
+  final container = ProviderContainer(
+    overrides: [
+      apiClientProvider.overrideWithValue(client),
+      identityStoreProvider.overrideWithValue(MemoryIdentityStore()),
+      storageRepositoryProvider.overrideWithValue(MemoryStorageRepository()),
+      syncRetryIntervalProvider.overrideWithValue(null),
+    ],
+  );
+  addTearDown(container.dispose);
+  addTearDown(client.close);
+  await tester.pumpWidget(
+    UncontrolledProviderScope(container: container, child: const PlannerApp()),
+  );
+  await tester.pumpAndSettle();
+  await tester.enterText(
+    find.byType(TextFormField).at(0),
+    'student@example.com',
+  );
+  await tester.enterText(find.byType(TextFormField).at(1), 'Study4089');
+  await tester.tap(find.widgetWithText(FilledButton, '登录'));
+  await tester.pumpAndSettle();
+  return container;
+}
+
+Respond plannerResponder({int? revision, bool today = false}) =>
+    (request) async {
+      if (request.path.endsWith('/api/auth/login')) {
+        return jsonResponse({
+          'user': testUser,
+          'accessToken': 'access',
+          'refreshToken': 'refresh',
+          'expiresIn': 900,
+        });
+      }
+      if (request.path.endsWith('/api/onboarding/profile')) {
+        return jsonResponse({'profile': _profile});
+      }
+      if (request.path.endsWith('/api/planner/sync')) {
+        final plan = today ? todayFixture() : plannerFixture();
+        return jsonResponse({'data': plan.toJson(), 'revision': revision ?? 1});
+      }
+      return jsonResponse({'error': 'unexpected ${request.path}'}, 404);
+    };
+
+/// Finds the text field whose `InputDecoration` carries [label].
+///
+/// `find.byType(TextField).first` and label-ancestor lookups are both unsafe here:
+/// the page behind a dialog also owns text fields and is mounted first, while the
+/// decoration sits inside the field rather than above it in the widget tree.
+Finder fieldWithLabel(String label) => find.byWidgetPredicate(
+  (widget) => widget is TextField && widget.decoration?.labelText == label,
+  description: 'TextField(labelText: $label)',
+);
+
+/// Pumps frames until [condition] holds.
+///
+/// A save goes through the coordinator's serialized write queue, so the plan changes
+/// on a later microtask rather than during the tap.
+Future<void> waitUntil(
+  WidgetTester tester,
+  bool Function() condition, {
+  Duration timeout = const Duration(seconds: 10),
+  String reason = '条件未在超时前满足',
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) fail(reason);
+    await tester.pump(const Duration(milliseconds: 50));
+  }
+}
+
+/// Finishes the background sync that a save starts.
+///
+/// `edit` schedules the upload without awaiting it, and `Dio` puts its timeout on the
+/// fake clock. Awaiting the cycle while pumping frames lets it complete and leaves no
+/// pending timer after the widget tree is disposed.
+Future<void> drainSync(
+  WidgetTester tester,
+  PlannerCoordinator coordinator,
+) async {
+  final cycle = coordinator.sync();
+  for (var turn = 0; turn < 40; turn++) {
+    await tester.pump(const Duration(milliseconds: 250));
+    if (!coordinator.busy && !coordinator.pending) break;
+  }
+  await cycle;
+  await tester.pump(const Duration(milliseconds: 250));
+}
+
+/// A stub server that keeps the plan it was pushed, like the real sync endpoint.
+///
+/// A stateless stub that always answers with the initial revision makes a correct
+/// client look broken: after a successful upload the client's revision is ahead, so
+/// the next pull legitimately replaces the local copy. This double mirrors the real
+/// contract (store the pushed document, advance the revision) so tests can assert on
+/// uploads.
+class FakeSyncServer {
+  FakeSyncServer({PlannerData? plan, this.revision = 1})
+    : document = plan ?? todayFixture();
+
+  PlannerData document;
+  int revision;
+  int pushCount = 0;
+
+  /// When set, every push is refused once and another device writes first.
+  bool conflictOnNextPush = false;
+
+  Respond get respond => (request) async {
+    if (request.path.endsWith('/api/auth/login')) {
+      return jsonResponse({
+        'user': testUser,
+        'accessToken': 'access',
+        'refreshToken': 'refresh',
+        'expiresIn': 900,
+      });
+    }
+    if (request.path.endsWith('/api/onboarding/profile')) {
+      return jsonResponse({'profile': _profile});
+    }
+    if (request.path.endsWith('/api/planner/sync')) {
+      if (request.method == 'PUT') return _push(request);
+      return jsonResponse({'data': document.toJson(), 'revision': revision});
+    }
+    return jsonResponse({'error': 'unexpected ${request.path}'}, 404);
+  };
+
+  ResponseBody _push(RequestOptions request) {
+    final body = request.data as Map;
+    if (conflictOnNextPush) {
+      conflictOnNextPush = false;
+      // Another device wrote first, and it changed the same field.
+      revision++;
+      document = document.copyWith(
+        profile: document.profile.copyWith(
+          targetSchool: '其他设备的目标院校',
+          targetProgram: '其他设备的目标方向',
+        ),
+      );
+      return jsonResponse({'conflict': true}, 409);
+    }
+    if (body['expectedRevision'] != revision) {
+      return jsonResponse({'conflict': true}, 409);
+    }
+    pushCount++;
+    document = PlannerData.fromJson(JsonMap.from(body['data'] as Map));
+    revision++;
+    return jsonResponse({'data': document.toJson(), 'revision': revision});
+  }
+}
+
+void main() {
+  for (final completion in [
+    CompletionStatus.partial,
+    CompletionStatus.skipped,
+  ]) {
+    testWidgets('reopening daily review preserves feedback and $completion', (
+      tester,
+    ) async {
+      final fixture = todayFixture();
+      final server = FakeSyncServer(
+        plan: fixture.copyWith(
+          blocks: [
+            fixture.blocks.single.copyWith(
+              completionStatus: completion,
+              feedback: '原有反馈',
+            ),
+          ],
+        ),
+      );
+      final container = await signIn(tester, respond: server.respond);
+      final coordinator = container.read(plannerSyncProvider);
+      await tester.tap(find.text('结束今天'));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(
+        tester.widget<TextField>(fieldWithLabel('卡点或反馈')).controller?.text,
+        '原有反馈',
+      );
+      await tester.tap(find.text('保存今日记录'));
+      await tester.pump(const Duration(milliseconds: 400));
+      await drainSync(tester, coordinator);
+      expect(coordinator.data!.blocks.single.feedback, '原有反馈');
+      expect(coordinator.data!.blocks.single.completionStatus, completion);
+      expect(server.document.blocks.single.feedback, '原有反馈');
+    });
+  }
+  testWidgets(
+    'daily review edits and overall feedback survive reopening and sync',
+    (tester) async {
+      final fixture = todayFixture();
+      final server = FakeSyncServer(
+        plan: fixture.copyWith(
+          blocks: [
+            fixture.blocks.single.copyWith(
+              completionStatus: CompletionStatus.partial,
+              feedback: '原有反馈',
+            ),
+          ],
+          dailyFeedback: {shanghaiToday(): '原有整体反馈'},
+        ),
+      );
+      final container = await signIn(tester, respond: server.respond);
+      final coordinator = container.read(plannerSyncProvider);
+      await tester.tap(find.text('结束今天'));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(
+        tester.widget<TextField>(fieldWithLabel('今天整体反馈')).controller?.text,
+        '原有整体反馈',
+      );
+      await tester.enterText(fieldWithLabel('卡点或反馈'), '修正后的卡点');
+      await tester.enterText(fieldWithLabel('今天整体反馈'), '修正后的整体反馈');
+      await tester.enterText(fieldWithLabel('实际用时'), '75');
+      await tester.tap(find.text('保存今日记录'));
+      await tester.pump(const Duration(milliseconds: 400));
+      await drainSync(tester, coordinator);
+      expect(server.document.blocks.single.feedback, '修正后的卡点');
+      expect(
+        server.document.blocks.single.completionStatus,
+        CompletionStatus.partial,
+      );
+      expect(
+        day_ops.taskDayMinutes(
+          server.document,
+          fixture.tasks.single.id,
+          shanghaiToday(),
+        ),
+        75,
+      );
+      expect(server.document.dailyFeedback?[shanghaiToday()], '修正后的整体反馈');
+      await tester.tap(find.text('结束今天'));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(
+        tester.widget<TextField>(fieldWithLabel('卡点或反馈')).controller?.text,
+        '修正后的卡点',
+      );
+      expect(
+        tester.widget<TextField>(fieldWithLabel('今天整体反馈')).controller?.text,
+        '修正后的整体反馈',
+      );
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+    },
+  );
+  testWidgets('the login form validates before sending anything', (
+    tester,
+  ) async {
+    final adapter = TestAdapter(plannerResponder());
+    final client = ApiClient(
+      config: const AppConfig(apiBaseUrl: 'http://api.test'),
+      tokenStore: MemoryTokenStore(),
+      dio: Dio()..httpClientAdapter = adapter,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        apiClientProvider.overrideWithValue(client),
+        identityStoreProvider.overrideWithValue(MemoryIdentityStore()),
+        syncRetryIntervalProvider.overrideWithValue(null),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(client.close);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const PlannerApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Empty submit is refused by the form, not by the server.
+    await tester.tap(find.widgetWithText(FilledButton, '登录'));
+    await tester.pumpAndSettle();
+    expect(find.text('请输入有效的邮箱'), findsOneWidget);
+    expect(adapter.requests, isEmpty);
+
+    // A malformed address is refused too.
+    await tester.enterText(find.byType(TextFormField).at(0), 'not-an-email');
+    await tester.enterText(find.byType(TextFormField).at(1), 'Study4089');
+    await tester.tap(find.widgetWithText(FilledButton, '登录'));
+    await tester.pumpAndSettle();
+    expect(find.text('请输入有效的邮箱'), findsOneWidget);
+    expect(adapter.requests, isEmpty);
+
+    // Registration requires both password fields to agree.
+    await tester.tap(find.text('注册'));
+    await tester.pumpAndSettle();
+    final fields = find.byType(TextFormField);
+    await tester.enterText(fields.at(0), '小明');
+    await tester.enterText(fields.at(1), 'student@example.com');
+    await tester.enterText(fields.at(2), '123456');
+    await tester.enterText(fields.at(3), 'Study4089');
+    await tester.enterText(fields.at(4), 'Different9');
+    await tester.ensureVisible(find.text('注册并登录'));
+    await tester.tap(find.text('注册并登录'));
+    await tester.pumpAndSettle();
+    expect(find.text('两次输入的密码不一致'), findsOneWidget);
+    expect(adapter.requests, isEmpty);
+  });
+
+  testWidgets('a server error is shown with the server message', (
+    tester,
+  ) async {
+    final adapter = TestAdapter(
+      (request) async => jsonResponse({'error': '邮箱或密码错误'}, 401),
+    );
+    final client = ApiClient(
+      config: const AppConfig(apiBaseUrl: 'http://api.test'),
+      tokenStore: MemoryTokenStore(),
+      dio: Dio()..httpClientAdapter = adapter,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        apiClientProvider.overrideWithValue(client),
+        identityStoreProvider.overrideWithValue(MemoryIdentityStore()),
+        syncRetryIntervalProvider.overrideWithValue(null),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(client.close);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const PlannerApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextFormField).at(0),
+      'student@example.com',
+    );
+    await tester.enterText(find.byType(TextFormField).at(1), 'Wrong1234');
+    await tester.tap(find.widgetWithText(FilledButton, '登录'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('邮箱或密码错误'), findsOneWidget);
+    // The form stays usable for a retry.
+    expect(find.widgetWithText(FilledButton, '登录'), findsOneWidget);
+  });
+
+  testWidgets('a failed plan load offers a retry that reaches the data', (
+    tester,
+  ) async {
+    var syncCalls = 0;
+    final container = await signIn(
+      tester,
+      respond: (request) async {
+        if (request.path.endsWith('/api/auth/login')) {
+          return jsonResponse({
+            'user': testUser,
+            'accessToken': 'access',
+            'refreshToken': 'refresh',
+            'expiresIn': 900,
+          });
+        }
+        if (request.path.endsWith('/api/onboarding/profile')) {
+          return jsonResponse({'profile': _profile});
+        }
+        if (request.path.endsWith('/api/planner/sync')) {
+          syncCalls++;
+          // The first pull fails, the retry succeeds.
+          if (syncCalls == 1) {
+            return jsonResponse({'error': '服务端暂时不可用'}, 503);
+          }
+          return jsonResponse({'data': todayFixture().toJson(), 'revision': 3});
+        }
+        return jsonResponse({'error': 'unexpected'}, 404);
+      },
+    );
+
+    final coordinator = container.read(plannerSyncProvider);
+    expect(coordinator.status, SyncStatus.error);
+    // The failure state explains itself and offers a retry.
+    expect(find.text('重试加载'), findsOneWidget);
+    expect(find.textContaining('服务端暂时不可用'), findsWidgets);
+
+    await tester.tap(find.text('重试加载'));
+    await tester.pumpAndSettle(const Duration(seconds: 5));
+    expect(coordinator.status, SyncStatus.connected);
+    expect(find.text('今天，专注眼前的一步'), findsOneWidget);
+    expect(find.text('基础一轮'), findsWidgets);
+  });
+
+  testWidgets('the new-task form rejects bad input before editing the plan', (
+    tester,
+  ) async {
+    final server = FakeSyncServer();
+    final container = await signIn(tester, respond: server.respond);
+    final coordinator = container.read(plannerSyncProvider);
+    final tasksBefore = coordinator.data!.tasks.length;
+    final router = container.read(appRouterProvider);
+    router.go('/tasks');
+    await tester.pumpAndSettle(const Duration(seconds: 3));
+
+    await tester.tap(find.widgetWithText(FilledButton, '新建事项'));
+    // The dialog animates in; a bounded settle avoids depending on its exact frames.
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('新建事项'), findsWidgets);
+    expect(find.text('保存事项'), findsOneWidget);
+
+    // An empty title is refused.
+    await tester.tap(find.widgetWithText(FilledButton, '保存事项'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('请填写事项名称和课程'), findsOneWidget);
+    expect(coordinator.data!.tasks.length, tasksBefore);
+
+    // A valid title saves and the plan grows by exactly one task. The dialog field is
+    // addressed by its label, because the page behind it also owns a TextField.
+    await tester.enterText(fieldWithLabel('事项名称'), '阶段七验收事项');
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.tap(find.widgetWithText(FilledButton, '保存事项'));
+    await waitUntil(
+      tester,
+      () => coordinator.data!.tasks.length == tasksBefore + 1,
+      reason: '保存事项后计划没有新增事项',
+    );
+    await drainSync(tester, coordinator);
+    // The new task survives the sync cycle locally and reaches the server.
+    expect(
+      coordinator.data!.tasks.any((task) => task.title == '阶段七验收事项'),
+      isTrue,
+      reason: '同步后本机计划不应丢失新增事项',
+    );
+    expect(server.pushCount, greaterThan(0), reason: '新增事项应上传到服务端');
+    expect(
+      server.document.tasks.any((task) => task.title == '阶段七验收事项'),
+      isTrue,
+      reason: '服务端应保存新增事项',
+    );
+  });
+
+  testWidgets('the record-time dialog corrects the day total', (tester) async {
+    final server = FakeSyncServer();
+    final container = await signIn(tester, respond: server.respond);
+    final coordinator = container.read(plannerSyncProvider);
+    final taskId = coordinator.data!.tasks.first.id;
+    final before = day_ops.taskDayMinutes(
+      coordinator.data!,
+      taskId,
+      coordinator.data!.blocks.first.date,
+    );
+
+    final date = coordinator.data!.blocks.first.date;
+    container.read(appRouterProvider).go('/');
+    await tester.pumpAndSettle(const Duration(seconds: 3));
+    await tester.tap(find.widgetWithText(OutlinedButton, '记录用时').first);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('记录实际用时'), findsOneWidget);
+
+    // The minutes field is addressed by its label: the dialog also holds dropdowns.
+    final minutes = fieldWithLabel('实际用时（分钟）');
+    expect(minutes, findsOneWidget);
+
+    // Out-of-range input is refused with a message instead of saving.
+    await tester.enterText(minutes, '99999');
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.tap(find.widgetWithText(FilledButton, '保存实际用时'));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('请输入 0 至 1440 的整数分钟'), findsOneWidget);
+    expect(day_ops.taskDayMinutes(coordinator.data!, taskId, date), before);
+    // The dialog stays open so the user can correct the value.
+    expect(find.text('记录实际用时'), findsOneWidget);
+
+    // A valid value replaces the day total.
+    await tester.enterText(minutes, '80');
+    await tester.pump(const Duration(milliseconds: 200));
+    await tester.tap(find.widgetWithText(FilledButton, '保存实际用时'));
+    await waitUntil(
+      tester,
+      () => day_ops.taskDayMinutes(coordinator.data!, taskId, date) == 80,
+      reason: '保存实际用时后当天累计没有改为 80',
+    );
+    await drainSync(tester, coordinator);
+    // The corrected total survives the sync cycle and reaches the server.
+    expect(day_ops.taskDayMinutes(coordinator.data!, taskId, date), 80);
+    expect(
+      day_ops.taskDayMinutes(server.document, taskId, date),
+      80,
+      reason: '服务端应保存修正后的当天累计用时',
+    );
+  });
+
+  testWidgets('the shell is responsive and reports sync state', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final container = await signIn(
+      tester,
+      respond: plannerResponder(revision: 9, today: true),
+    );
+
+    // Desktop shows the sidebar and the exam card.
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.text('考研执行台'), findsOneWidget);
+    expect(find.textContaining('初试 2027-12-25'), findsOneWidget);
+    expect(container.read(plannerSyncProvider).metadata.revision, 9);
+
+    // Narrow: bottom navigation, no overflow, all five destinations reachable.
+    tester.view.physicalSize = const Size(390, 844);
+    await tester.pumpAndSettle();
+    expect(find.byType(NavigationBar), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    for (final label in const ['今日', '日历', '事项', '进度', '设置']) {
+      expect(
+        find.widgetWithText(NavigationDestination, label),
+        findsOneWidget,
+        reason: '底部导航缺少「$label」',
+      );
+    }
+
+    // Very narrow: the layout still renders without an overflow exception.
+    tester.view.physicalSize = const Size(320, 640);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a blocked local store stops editing and explains recovery', (
+    tester,
+  ) async {
+    final storage = MemoryStorageRepository();
+    await storage.save(
+      'sjtu-study-planner:items-v2:http%3A%2F%2Fapi.test:cloud:user-1',
+      plannerFixture(),
+      const StorageMetadata(),
+    );
+    final adapter = TestAdapter(plannerResponder());
+    final client = ApiClient(
+      config: const AppConfig(apiBaseUrl: 'http://api.test'),
+      tokenStore: MemoryTokenStore(),
+      dio: Dio()..httpClientAdapter = adapter,
+    );
+    final container = ProviderContainer(
+      overrides: [
+        apiClientProvider.overrideWithValue(client),
+        identityStoreProvider.overrideWithValue(MemoryIdentityStore()),
+        storageRepositoryProvider.overrideWithValue(_BlockedStorage()),
+        syncRetryIntervalProvider.overrideWithValue(null),
+      ],
+    );
+    addTearDown(container.dispose);
+    addTearDown(client.close);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const PlannerApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextFormField).at(0),
+      'student@example.com',
+    );
+    await tester.enterText(find.byType(TextFormField).at(1), 'Study4089');
+    await tester.tap(find.widgetWithText(FilledButton, '登录'));
+    await tester.pumpAndSettle();
+
+    final coordinator = container.read(plannerSyncProvider);
+    expect(coordinator.blocked, isTrue);
+    expect(
+      find.textContaining('本地数据读取失败'),
+      findsWidgets,
+      reason: '阻断状态必须向用户说明',
+    );
+    expect(find.text('重新读取本机数据'), findsOneWidget);
+  });
+}
+
+/// A storage repository whose main record cannot be decoded.
+class _BlockedStorage implements StorageRepository {
+  static const _error = '主数据和备份都无法读取，已停止编辑和同步：测试注入';
+
+  @override
+  Future<StorageSnapshot> load(String userKey) async => const StorageSnapshot(
+    data: null,
+    metadata: StorageMetadata(),
+    error: _error,
+  );
+
+  @override
+  Future<void> save(
+    String userKey,
+    PlannerData data,
+    StorageMetadata metadata, {
+    bool recovery = false,
+  }) async => throw StateError(_error);
+
+  @override
+  Future<String?> exportJson(PlannerData data) async => null;
+
+  @override
+  Future<PlannerData?> importJson() async => null;
+
+  @override
+  Future<void> restore(String userKey, PlannerData data) async {}
+
+  @override
+  Future<void> markPending(String userKey, bool pending) async {}
+
+  @override
+  Future<StorageSnapshot> recoverFromBackup(String userKey) async =>
+      const StorageSnapshot(
+        data: null,
+        metadata: StorageMetadata(),
+        error: _error,
+      );
+}

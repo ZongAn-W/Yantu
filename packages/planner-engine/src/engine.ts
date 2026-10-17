@@ -11,12 +11,10 @@ import type {
   Task,
   TimeLog,
 } from "./types";
+import { defaultPlannerRuntime, type PlannerRuntime } from "./runtime";
 
 const DAY = 86_400_000;
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
-const newId = () =>
-  globalThis.crypto?.randomUUID?.() ??
-  `plan-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 const finiteMinutes = (value: number) =>
   Number.isFinite(value) ? Math.max(0, value) : 0;
 
@@ -313,6 +311,7 @@ function findSlot(
   firstDate: string,
   lastDate: string,
   timestamp: string,
+  runtime: PlannerRuntime,
 ): ScheduleBlock | null {
   const capacity = limits(input.profile);
   const first =
@@ -321,7 +320,7 @@ function findSlot(
   for (let date = first; date <= last; date = addDays(date, 1)) {
     if (input.profile.planning_mode !== "timed") {
       const block: ScheduleBlock = {
-        id: newId(),
+        id: runtime.newId(),
         user_id: input.profile.user_id,
         task_id: task.id,
         date,
@@ -343,7 +342,7 @@ function findSlot(
       start += capacity.quantum
     ) {
       const block: ScheduleBlock = {
-        id: newId(),
+        id: runtime.newId(),
         user_id: input.profile.user_id,
         task_id: task.id,
         date,
@@ -387,9 +386,10 @@ function makePreview(
   after: ScheduleBlock[],
   conflicts: Conflict[],
   timestamp: string,
+  runtime: PlannerRuntime,
 ): ReplanPreview {
   const before = copy(input.blocks);
-  const id = newId();
+  const id = runtime.newId();
   const oldMap = new Map(before.map((block) => [block.id, block]));
   const nextMap = new Map(after.map((block) => [block.id, block]));
   const changes: ReplanChange[] = [];
@@ -397,7 +397,7 @@ function makePreview(
     const next = nextMap.get(block.id);
     if (!next || snapshotKey([block]) !== snapshotKey([next]))
       changes.push({
-        id: newId(),
+        id: runtime.newId(),
         user_id: input.profile.user_id,
         run_id: id,
         type: next ? "moved" : "deleted",
@@ -409,7 +409,7 @@ function makePreview(
   for (const block of after)
     if (!oldMap.has(block.id))
       changes.push({
-        id: newId(),
+        id: runtime.newId(),
         user_id: input.profile.user_id,
         run_id: id,
         type: "added",
@@ -466,8 +466,8 @@ function makePreview(
 }
 
 /** Generate a proposal only: this function never mutates its input. */
-export function generateReplanPreview(input: ReplanInput): ReplanPreview {
-  const timestamp = new Date().toISOString();
+export function generateReplanPreview(input: ReplanInput, runtime: PlannerRuntime = defaultPlannerRuntime): ReplanPreview {
+  const timestamp = runtime.now().toISOString();
   const horizon = addDays(input.today, input.mode === "overcompleted" ? 7 : 14);
   const tasks = new Map(input.tasks.map((task) => [task.id, task]));
   const immutable = (block: ScheduleBlock) =>
@@ -542,6 +542,7 @@ export function generateReplanPreview(input: ReplanInput): ReplanPreview {
           input.today,
           input.today,
           timestamp,
+          runtime,
         );
         if (!slot) break;
         after.push(slot);
@@ -563,7 +564,7 @@ export function generateReplanPreview(input: ReplanInput): ReplanPreview {
         else
           after[index] = {
             ...source,
-            id: newId(),
+            id: runtime.newId(),
             duration_minutes: source.duration_minutes - moved,
             updated_at: timestamp,
           };
@@ -571,7 +572,7 @@ export function generateReplanPreview(input: ReplanInput): ReplanPreview {
       }
       if (available <= 0) break;
     }
-    return makePreview(input, after, [], timestamp);
+    return makePreview(input, after, [], timestamp, runtime);
   }
 
   const after: ScheduleBlock[] = [];
@@ -640,7 +641,7 @@ export function generateReplanPreview(input: ReplanInput): ReplanPreview {
           id:
             first && blockActual(source, input.logs) === 0
               ? source.id
-              : newId(),
+              : runtime.newId(),
           start_minute:
             input.profile.planning_mode === "timed"
               ? source.start_minute + offset
@@ -663,6 +664,7 @@ export function generateReplanPreview(input: ReplanInput): ReplanPreview {
             addDays(input.today, 1),
             horizon,
             timestamp,
+            runtime,
           );
           if (slot)
             next = {
@@ -698,7 +700,7 @@ export function generateReplanPreview(input: ReplanInput): ReplanPreview {
             : "截止日期前或未来14天内容量不足；未突破每日上限、机动时间和科目上限",
       });
   }
-  return makePreview(input, after, conflicts, timestamp);
+  return makePreview(input, after, conflicts, timestamp, runtime);
 }
 
 type RunWithTaskSnapshot = ReplanRun & {

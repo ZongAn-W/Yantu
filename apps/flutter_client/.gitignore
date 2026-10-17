@@ -1,0 +1,14 @@
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub/
+build/
+coverage/
+flutter_*.log
+
+# Generated platform files and IDE metadata are created by `flutter create`.
+.metadata
+.idea/
+.vscode/
+*.iml

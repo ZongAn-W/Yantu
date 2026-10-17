@@ -1,0 +1,442 @@
+import 'package:flutter_test/flutter_test.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:dio/dio.dart';
+import 'dart:async';
+import 'package:sjtu_study_planner_client/app.dart';
+import 'package:sjtu_study_planner_client/core/auth/token_store.dart';
+import 'package:sjtu_study_planner_client/core/http/api_client.dart';
+import 'package:sjtu_study_planner_client/core/providers.dart';
+import 'package:sjtu_study_planner_client/core/config/app_config.dart';
+import 'package:sjtu_study_planner_client/router/app_router.dart';
+import 'package:sjtu_study_planner_client/features/planner/application/planner_sync.dart';
+import 'package:sjtu_study_planner_client/core/storage/identity_store.dart';
+import 'package:sjtu_study_planner_client/core/storage/storage_repository.dart';
+import 'package:sjtu_study_planner_client/core/storage/planner_json.dart';
+import 'package:sjtu_study_planner_client/features/auth/application/auth_controller.dart';
+import 'package:sjtu_study_planner_client/features/planner/application/onboarding_controller.dart';
+
+import '../support/http_adapter.dart';
+import '../support/planner_fixture.dart';
+
+/// A finished profile: `/api/onboarding/profile` returning it keeps the router on
+/// the workbench instead of the wizard.
+const testProfile = {
+  'exam_type': '考研',
+  'exam_date': '2027-12-25',
+  'target_school': '上海交通大学',
+  'target_program': '计算机技术',
+  'current_progress': '高数基础一轮',
+  'weekly_minutes': {
+    '0': 0,
+    '1': 120,
+    '2': 120,
+    '3': 120,
+    '4': 120,
+    '5': 120,
+    '6': 180,
+  },
+  'constraints_text': '周三晚上有课',
+};
+
+Future<ResponseBody> Function(RequestOptions) plannerAdapter() =>
+    (options) async {
+      if (options.path.endsWith('/api/auth/login')) {
+        return jsonResponse({
+          'user': testUser,
+          'accessToken': 'access',
+          'refreshToken': 'refresh',
+          'expiresIn': 900,
+        });
+      }
+      if (options.path.endsWith('/api/onboarding/profile')) {
+        return jsonResponse({'profile': testProfile});
+      }
+      if (options.path.endsWith('/api/planner/sync')) {
+        return jsonResponse({'data': null, 'revision': 0});
+      }
+      return jsonResponse({'error': 'unexpected ${options.path}'}, 404);
+    };
+
+/// Shared overrides: an in-memory API client, identity store and plan storage.
+List<Override> testOverrides(ApiClient client) => [
+  apiClientProvider.overrideWithValue(client),
+  identityStoreProvider.overrideWithValue(MemoryIdentityStore()),
+  storageRepositoryProvider.overrideWithValue(MemoryStorageRepository()),
+  // No periodic retry timer may outlive a widget test.
+  syncRetryIntervalProvider.overrideWithValue(null),
+];
+
+void main() {
+  testWidgets(
+    'a new account does not start cloud sync before onboarding lookup finishes',
+    (tester) async {
+      final lookup = Completer<ResponseBody>();
+      final adapter = TestAdapter((request) async {
+        if (request.path == '/api/auth/login') {
+          return jsonResponse({
+            'user': testUser,
+            'accessToken': 'access',
+            'refreshToken': 'refresh',
+            'expiresIn': 900,
+          });
+        }
+        if (request.path == '/api/onboarding/profile') return lookup.future;
+        if (request.path == '/api/planner/sync') {
+          return jsonResponse({'data': null, 'revision': 0});
+        }
+        return jsonResponse({'error': 'expired'}, 401);
+      });
+      final client = ApiClient(
+        config: const AppConfig(apiBaseUrl: 'http://api.test'),
+        tokenStore: MemoryTokenStore(),
+        dio: Dio()..httpClientAdapter = adapter,
+      );
+      final container = ProviderContainer(overrides: testOverrides(client));
+      addTearDown(container.dispose);
+      addTearDown(client.close);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const PlannerApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byType(TextFormField).at(0),
+        'student@example.com',
+      );
+      await tester.enterText(find.byType(TextFormField).at(1), 'Study4089');
+      await tester.tap(find.widgetWithText(FilledButton, '登录'));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(
+        container
+            .read(appRouterProvider)
+            .routeInformationProvider
+            .value
+            .uri
+            .path,
+        '/loading',
+      );
+      expect(
+        adapter.requests.where(
+          (request) => request.path == '/api/planner/sync',
+        ),
+        isEmpty,
+      );
+      lookup.complete(jsonResponse({'profile': null}));
+      await tester.pumpAndSettle();
+      expect(
+        container
+            .read(appRouterProvider)
+            .routeInformationProvider
+            .value
+            .uri
+            .path,
+        '/onboarding',
+      );
+      expect(
+        adapter.requests.where(
+          (request) => request.path == '/api/planner/sync',
+        ),
+        isEmpty,
+      );
+    },
+  );
+  testWidgets(
+    'offline restart keeps cached workbench accessible and recovers online',
+    (tester) async {
+      final plan = forAccount(plannerFixture(), testUser['id']!);
+      final tokens = MemoryTokenStore();
+      await tokens.write(
+        TokenPair(
+          accessToken: 'access',
+          refreshToken: 'refresh',
+          expiresAt: DateTime.now().add(const Duration(hours: 1)),
+        ),
+      );
+      final identity = MemoryIdentityStore();
+      await identity.save(testUser);
+      final storage = MemoryStorageRepository();
+      const apiUrl = 'http://api.test';
+      await storage.save(
+        'sjtu-study-planner:items-v2:${Uri.encodeComponent(apiUrl)}:cloud:${testUser['id']}',
+        plan,
+        StorageMetadata(base: plan, revision: 1),
+      );
+      var offline = true;
+      final client = ApiClient(
+        config: const AppConfig(apiBaseUrl: apiUrl),
+        tokenStore: tokens,
+        usesBearer: true,
+        dio: Dio()
+          ..httpClientAdapter = TestAdapter((request) async {
+            if (offline) {
+              throw DioException.connectionError(
+                requestOptions: request,
+                reason: 'offline',
+              );
+            }
+            if (request.path == '/api/onboarding/profile') {
+              return jsonResponse({'profile': testProfile});
+            }
+            if (request.path == '/api/planner/sync') {
+              return jsonResponse({'data': plan.toJson(), 'revision': 1});
+            }
+            return jsonResponse({'user': testUser});
+          }),
+      );
+      final container = ProviderContainer(
+        overrides: [
+          ...testOverrides(client),
+          appConfigProvider.overrideWithValue(
+            const AppConfig(apiBaseUrl: apiUrl),
+          ),
+          identityStoreProvider.overrideWithValue(identity),
+          storageRepositoryProvider.overrideWithValue(storage),
+        ],
+      );
+      addTearDown(container.dispose);
+      addTearDown(client.close);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const PlannerApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(container.read(authControllerProvider).user?.id, testUser['id']);
+      final router = container.read(appRouterProvider);
+      expect(router.routeInformationProvider.value.uri.path, '/');
+      router.go('/tasks');
+      await tester.pumpAndSettle();
+      expect(find.text('事项管理'), findsOneWidget);
+      expect(container.read(plannerSyncProvider).data, plan);
+      offline = false;
+      final refresh = container
+          .read(onboardingStatusProvider.notifier)
+          .refresh();
+      await tester.pumpAndSettle();
+      await refresh;
+      expect(router.routeInformationProvider.value.uri.path, '/tasks');
+    },
+  );
+
+  testWidgets(
+    'profile lookup errors without a cache show retry instead of onboarding',
+    (tester) async {
+      var failed = true;
+      final client = ApiClient(
+        config: const AppConfig(apiBaseUrl: 'http://api.test'),
+        tokenStore: MemoryTokenStore(),
+        dio: Dio()
+          ..httpClientAdapter = TestAdapter((request) async {
+            if (request.path == '/api/onboarding/profile') {
+              return failed
+                  ? jsonResponse({'error': 'unavailable'}, 503)
+                  : jsonResponse({'profile': null});
+            }
+            if (request.path == '/api/planner/sync') {
+              throw DioException.connectionError(
+                requestOptions: request,
+                reason: 'offline',
+              );
+            }
+            if (request.path == '/api/auth/login') {
+              return jsonResponse({
+                'user': testUser,
+                'accessToken': 'access',
+                'refreshToken': 'refresh',
+                'expiresIn': 900,
+              });
+            }
+            return jsonResponse({'error': 'expired'}, 401);
+          }),
+      );
+      final container = ProviderContainer(overrides: testOverrides(client));
+      addTearDown(container.dispose);
+      addTearDown(client.close);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const PlannerApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byType(TextFormField).at(0),
+        'student@example.com',
+      );
+      await tester.enterText(find.byType(TextFormField).at(1), 'Study4089');
+      await tester.tap(find.widgetWithText(FilledButton, '登录'));
+      await tester.pumpAndSettle();
+      expect(
+        container
+            .read(appRouterProvider)
+            .routeInformationProvider
+            .value
+            .uri
+            .path,
+        '/loading',
+      );
+      expect(find.text('重试读取备考资料'), findsOneWidget);
+      failed = false;
+      await tester.tap(find.text('重试读取备考资料'));
+      await tester.pumpAndSettle();
+      expect(
+        container
+            .read(appRouterProvider)
+            .routeInformationProvider
+            .value
+            .uri
+            .path,
+        '/onboarding',
+      );
+    },
+  );
+  testWidgets(
+    'guards protected routes, loads the profile, logs in and returns to login on expiry',
+    (tester) async {
+      final adapter = TestAdapter(plannerAdapter());
+      final client = ApiClient(
+        config: const AppConfig(apiBaseUrl: 'http://api.test'),
+        tokenStore: MemoryTokenStore(),
+        dio: Dio()..httpClientAdapter = adapter,
+      );
+      final container = ProviderContainer(overrides: testOverrides(client));
+      addTearDown(container.dispose);
+      addTearDown(client.close);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const PlannerApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // The authentication guard keeps every workbench route behind the login page.
+      final router = container.read(appRouterProvider);
+      router.go('/settings');
+      await tester.pumpAndSettle();
+      expect(router.routeInformationProvider.value.uri.path, '/login');
+
+      await tester.enterText(
+        find.byType(TextFormField).at(0),
+        'student@example.com',
+      );
+      await tester.enterText(find.byType(TextFormField).at(1), 'Study4089');
+      await tester.tap(find.widgetWithText(FilledButton, '登录'));
+      await tester.pumpAndSettle();
+
+      // A finished profile goes straight to today's plan, not the wizard.
+      expect(router.routeInformationProvider.value.uri.path, '/');
+      expect(find.text('今天，专注眼前的一步'), findsOneWidget);
+      expect(find.textContaining('项完成'), findsWidgets);
+
+      await client.clearSession();
+      await tester.pumpAndSettle();
+      expect(find.text('登录考研执行台'), findsOneWidget);
+      expect(router.routeInformationProvider.value.uri.path, '/login');
+    },
+  );
+
+  testWidgets('bottom navigation and sidebar reach every workbench route', (
+    tester,
+  ) async {
+    final adapter = TestAdapter(plannerAdapter());
+    final client = ApiClient(
+      config: const AppConfig(apiBaseUrl: 'http://api.test'),
+      tokenStore: MemoryTokenStore(),
+      dio: Dio()..httpClientAdapter = adapter,
+    );
+    final container = ProviderContainer(overrides: testOverrides(client));
+    addTearDown(container.dispose);
+    addTearDown(client.close);
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const PlannerApp(),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.enterText(
+      find.byType(TextFormField).at(0),
+      'student@example.com',
+    );
+    await tester.enterText(find.byType(TextFormField).at(1), 'Study4089');
+    await tester.tap(find.widgetWithText(FilledButton, '登录'));
+    await tester.pumpAndSettle();
+
+    final router = container.read(appRouterProvider);
+    // Narrow layout: the bottom navigation bar carries all five destinations.
+    await tester.tap(find.widgetWithText(NavigationDestination, '事项'));
+    await tester.pumpAndSettle();
+    expect(router.routeInformationProvider.value.uri.path, '/tasks');
+    expect(find.text('事项管理'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(NavigationDestination, '日历'));
+    await tester.pumpAndSettle();
+    expect(router.routeInformationProvider.value.uri.path, '/calendar');
+    expect(find.text('学习日历'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(NavigationDestination, '进度'));
+    await tester.pumpAndSettle();
+    expect(router.routeInformationProvider.value.uri.path, '/progress');
+    expect(find.text('学习进度'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(NavigationDestination, '设置'));
+    await tester.pumpAndSettle();
+    expect(router.routeInformationProvider.value.uri.path, '/settings');
+    expect(find.text('备考信息'), findsOneWidget);
+
+    // Wide layout: the sidebar replaces the bottom bar on Web and Windows.
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpAndSettle();
+    expect(find.byType(NavigationBar), findsNothing);
+    expect(find.text('考研执行台'), findsOneWidget);
+    await tester.tap(find.text('今日'));
+    await tester.pumpAndSettle();
+    expect(router.routeInformationProvider.value.uri.path, '/');
+  });
+
+  testWidgets(
+    'registration shows verification fields and validates before sending',
+    (tester) async {
+      final adapter = TestAdapter(
+        (request) async => jsonResponse({'retryAfter': 60}),
+      );
+      final client = ApiClient(
+        config: const AppConfig(apiBaseUrl: 'http://api.test'),
+        tokenStore: MemoryTokenStore(),
+        dio: Dio()..httpClientAdapter = adapter,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          apiClientProvider.overrideWithValue(client),
+          identityStoreProvider.overrideWithValue(MemoryIdentityStore()),
+          syncRetryIntervalProvider.overrideWithValue(null),
+        ],
+      );
+      addTearDown(container.dispose);
+      addTearDown(client.close);
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const PlannerApp(),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('注册'));
+      await tester.pumpAndSettle();
+      expect(find.text('邮箱验证码'), findsOneWidget);
+      expect(find.text('确认密码'), findsOneWidget);
+      await tester.ensureVisible(find.text('注册并登录'));
+      await tester.tap(find.text('注册并登录'));
+      await tester.pumpAndSettle();
+      expect(find.text('请输入有效的邮箱'), findsOneWidget);
+      expect(adapter.requests, isEmpty);
+    },
+  );
+}

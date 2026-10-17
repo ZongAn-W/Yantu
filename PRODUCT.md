@@ -1,15 +1,15 @@
 # 不白学 · 考研执行台
 <!-- impeccable:product-schema 1 -->
 ## Platform
-web
+Web、Windows、Android、iOS（Flutter 统一客户端；移动端尚待实机验收）
 ## Stack
-用户指定 React、TypeScript、Vite、CSS、Lucide、Supabase、Vitest、Playwright。
+Flutter、Dart、Riverpod、GoRouter、Dio、Sembast；服务端使用 Node.js、TypeScript、Fastify、PostgreSQL。Flutter test 与 Vitest 覆盖客户端和服务端，TypeScript 排程包保留为算法对照测试基准。
 ## Users
 上海理工大学计算机专业大三学生，准备上海交通大学 408 统考，不考虑推免。
 ## Product Purpose
 每天执行学习计划，记录真实用时，预览并确认保守重排，在多设备同步。
 ## Capabilities and Constraints
-单用户第一版。无云端配置时 localStorage 完整运行。每天只安排事项列表与学习时长，不固定学习事项开始时间；固定课程、考试和休息保留具体时间。每天最多8小时、保留30分钟机动、同课程最多4小时。正式考试不可覆盖。新版使用独立的本地数据空间，不读取或转换旧格式。
+用户必须登录后才能使用工作台，不提供匿名或本地 Demo 入口。注册需要用户名、邮箱验证码和密码，验证码通过 QQ 邮箱 SMTP 发送；登录仅使用邮箱和密码。新注册密码至少 9 位，包含英文字母和数字。账号服务未配置或登录失效时停留在账号入口，服务器上的计划接口要求有效会话。本机缓存仍保留作数据持久化。每天只安排事项列表与学习时长，不固定学习事项开始时间；固定课程、考试和休息保留具体时间。每天最多8小时、保留30分钟机动、同课程最多4小时。正式考试不可覆盖。新版使用独立的本地数据空间，不读取或转换旧格式。
 ## Brand Commitments
 安静、清晰的中文学习工作台。首屏今日任务，蓝、绿、橙表达状态，每日任务列表、表格和图表优先，不做营销首页和嵌套卡片。
 ## Accessibility & Inclusion

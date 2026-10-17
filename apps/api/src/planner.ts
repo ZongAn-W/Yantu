@@ -48,13 +48,14 @@ export async function listDailyPlans(userId: string, from: string, to: string) {
   return result.rows;
 }
 
-export async function snapshot(userId: string) {
-  const profile = await getProfile(userId);
+export async function snapshot(userId: string, client?: pg.PoolClient) {
+  const read = <T extends pg.QueryResultRow>(sql: string, values: unknown[] = []) => client ? client.query<T>(sql, values) : query<T>(sql, values);
+  const profile = (await read<ProfileRow>("select exam_type, exam_date::text, target_school, target_program, current_progress, weekly_minutes, constraints_text from profiles where user_id=$1", [userId])).rows[0];
   if (!profile) return null;
-  const courses = await query<{ id: string; name: string; priority: number }>("select id,name,priority from courses where user_id=$1 order by created_at", [userId]);
-  const items = await query<ItemRow>("select id,course_id,title,description,completion_criteria,estimated_minutes,earliest_date::text,deadline::text,priority,status from items where user_id=$1 order by deadline,created_at", [userId]);
-  const days = await query<DailyRow>("select d.id,d.item_id,d.date::text,d.planned_minutes,d.actual_minutes,d.advice_text,d.advice_topics,d.completion_status,i.title as item_title,c.name as course_name from daily_plan_items d join items i on i.id=d.item_id join courses c on c.id=i.course_id where d.user_id=$1 order by d.date,d.id", [userId]);
-  const logs = await query<{ id: string; item_id: string; daily_plan_item_id: string | null; date: string; minutes: number; created_at: string }>("select id,item_id,daily_plan_item_id,date::text,minutes,created_at from study_logs where user_id=$1 order by created_at", [userId]);
+  const courses = await read<{ id: string; name: string; priority: number }>("select id,name,priority from courses where user_id=$1 order by created_at", [userId]);
+  const items = await read<ItemRow>("select id,course_id,title,description,completion_criteria,estimated_minutes,earliest_date::text,deadline::text,priority,status from items where user_id=$1 order by deadline,created_at", [userId]);
+  const days = await read<DailyRow>("select d.id,d.item_id,d.date::text,d.planned_minutes,d.actual_minutes,d.advice_text,d.advice_topics,d.completion_status,i.title as item_title,c.name as course_name from daily_plan_items d join items i on i.id=d.item_id join courses c on c.id=i.course_id where d.user_id=$1 order by d.date,d.id", [userId]);
+  const logs = await read<{ id: string; item_id: string; daily_plan_item_id: string | null; date: string; minutes: number; created_at: string }>("select id,item_id,daily_plan_item_id,date::text,minutes,created_at from study_logs where user_id=$1 order by created_at", [userId]);
   const logged = new Map<string, number>();
   for (const log of logs.rows) logged.set(log.item_id, (logged.get(log.item_id) ?? 0) + log.minutes);
   const now = new Date().toISOString();

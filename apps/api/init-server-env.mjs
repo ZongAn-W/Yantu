@@ -8,11 +8,16 @@ const contents = [
   `DATABASE_URL=postgres://planner:${password}@db:5432/planner`,
   `JWT_ACCESS_SECRET=${randomBytes(48).toString("base64url")}`,
   `JWT_REFRESH_SECRET=${randomBytes(48).toString("base64url")}`,
-  "WEB_ORIGIN=http://127.0.0.1:5174",
+  "WEB_ORIGIN=http://127.0.0.1:5180",
   "AI_BASE_URL=https://api.deepseek.com",
   "AI_API_KEY=",
   "AI_MODEL=deepseek-flash",
   "AI_REASONING_EFFORT=max",
+  "SMTP_HOST=smtp.qq.com",
+  "SMTP_PORT=465",
+  "SMTP_USER=",
+  "SMTP_PASS=",
+  "SMTP_FROM=",
   "",
 ].join("\n");
 

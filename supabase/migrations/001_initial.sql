@@ -1,4 +1,0 @@
--- Deprecated migration retained for history. The JSON payload schema and
--- transactional RPCs live in 202610130001_planner.sql. This file is
--- intentionally empty so a fresh Supabase project does not first create the
--- incompatible legacy columns before applying the canonical migration.

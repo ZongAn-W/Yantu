@@ -1,0 +1,90 @@
+import type { FixedEvent, PlannerData, Profile, ScheduleBlock, Task, TimeLog } from './types';
+
+// Inputs only. Expected values are recorded from the TypeScript engine and committed separately.
+const today = '2026-10-16';
+const stamp = '2026-09-01T00:00:00Z';
+export const goldenClock = '2026-10-16T08:09:10.123Z';
+const profile: Profile = { user_id: 'user-1', planning_mode: 'daily', target_school: '上海交通大学', target_program: '408', exam_date: '2027-12-25', exam_end_date: '2027-12-26', daily_limit_minutes: 480, granularity_minutes: 30, buffer_minutes: 30, subject_limit_minutes: 240, study_start_minute: 480, study_end_minute: 1200, foundation: '' };
+const task = (id = 'math', changes: Partial<Task> = {}): Task => ({ id, user_id: 'user-1', subject_id: 'math', title: `任务 ${id}`, estimated_minutes: 600, completed_minutes: 0, priority: 3, deadline: '2026-11-30', is_fixed: false, status: 'not_started', created_at: stamp, updated_at: stamp, ...changes });
+const block = (id = 'today', changes: Partial<ScheduleBlock> = {}): ScheduleBlock => ({ id, user_id: 'user-1', task_id: 'math', date: today, start_minute: 480, duration_minutes: 60, actual_minutes: 0, is_fixed: false, status: 'planned', created_at: stamp, updated_at: stamp, ...changes });
+const log = (id = 'log', changes: Partial<TimeLog> = {}): TimeLog => ({ id, user_id: 'user-1', task_id: 'math', block_id: 'today', date: today, minutes: 30, started_at: stamp, ended_at: stamp, source: 'manual', ...changes });
+const event = (id = 'event', changes: Partial<FixedEvent> = {}): FixedEvent => ({ id, user_id: 'user-1', title: id, date: today, start_minute: 480, duration_minutes: 60, kind: 'course', repeat: 'none', created_at: stamp, updated_at: stamp, ...changes });
+const data = (changes: Partial<PlannerData> = {}): PlannerData => ({ version: 1, profile, subjects: [{ id: 'math', user_id: 'user-1', name: '数学', color: '#123456', priority: 3 }, { id: 'english', user_id: 'user-1', name: '英语', color: '#654321', priority: 2 }], tasks: [task()], blocks: [block()], logs: [], fixed_events: [], replan_runs: [], phases: [], ...changes });
+
+export type GoldenCase = { name: string; operation: string; args: Record<string, unknown>; expected?: unknown };
+export function goldenInputs(): GoldenCase[] {
+  const cases: GoldenCase[] = [];
+  const add = (name: string, operation: string, args: Record<string, unknown>) => cases.push({ name, operation, args });
+  const preview = (name: string, changes: Partial<PlannerData> = {}, mode = 'unfinished', excess_minutes = 0) => add(name, 'lifecycle', { data: data(changes), today, mode, excess_minutes });
+  const place = (name: string, changes: Partial<PlannerData> = {}, candidate: Partial<ScheduleBlock> = {}, ignoreId?: string) => add(name, 'placement', { data: data(changes), candidate: block('candidate', candidate), ...(ignoreId ? { ignoreId } : {}) });
+  for (const [date, days] of [['2027-12-31', 1], ['2028-02-28', 1], ['2028-03-01', -1], ['2026-03-08', 1], ['bad', 1]] as const) add(`date ${date} ${days}`, 'date', { date, days });
+  for (const date of ['2026-02-30', '2026-13-01', '2026-00-01', '2026-10-32', '2026-10-00']) add(`date parse compatibility ${date}`, 'date', { date, days: 0 });
+  const recurring = [event('daily', { repeat: 'daily' }), event('weekly', { repeat: 'weekly', start_minute: 510, duration_minutes: 90 }), event('rest', { kind: 'rest', start_minute: 600, duration_minutes: 60 })];
+  for (const date of ['2026-10-15', today, '2026-10-17', '2026-10-23']) add(`recurrence ${date}`, 'capacity', { profile, events: recurring, date });
+  add('clipped event union', 'capacity', { profile, date: today, events: [event('negative', { start_minute: -30 }), event('adjacent', { start_minute: 30 }), event('late', { start_minute: 1410 }), event('duplicate', { start_minute: 30 })] });
+  for (const planning_mode of ['daily', 'timed'] as const) {
+    add(`${planning_mode} rest capacity`, 'capacity', { profile: { ...profile, planning_mode }, events: recurring, date: today });
+    preview(`${planning_mode} partial completion`, { profile: { ...profile, planning_mode }, tasks: [task('math', { estimated_minutes: 120, completed_minutes: 60, status: 'in_progress' })], blocks: [block('today', { duration_minutes: 120, actual_minutes: 60, advice_text: '保留建议', advice_topics: ['范围'], completion_status: 'partial', feedback: '卡点' })], logs: [log('actual', { minutes: 60 })] });
+    preview(`${planning_mode} hard daily and subject cap`, { profile: { ...profile, planning_mode, daily_limit_minutes: 1200, buffer_minutes: 0, subject_limit_minutes: 600 }, tasks: [task(), task('english', { subject_id: 'english' })], blocks: [block('math', { duration_minutes: 600 }), block('english', { task_id: 'english', duration_minutes: 600 })] });
+    preview(`${planning_mode} fixed overlapping events`, { profile: { ...profile, planning_mode }, blocks: [block('today', { duration_minutes: 120 })], fixed_events: [event('course', { date: '2026-10-17', duration_minutes: 120 }), event('rest', { date: '2026-10-17', start_minute: 540, duration_minutes: 120, kind: 'rest' }), event('official', { date: '2026-10-18', duration_minutes: 720, kind: 'official_exam' })] });
+    place(`${planning_mode} overlapping block`, { profile: { ...profile, planning_mode } });
+    place(`${planning_mode} unaligned start`, { profile: { ...profile, planning_mode }, blocks: [] }, { start_minute: 511 });
+    place(`${planning_mode} outside window`, { profile: { ...profile, planning_mode }, blocks: [] }, { start_minute: -1 });
+    place(`${planning_mode} rest intersection`, { profile: { ...profile, planning_mode }, blocks: [], fixed_events: [event('rest', { kind: 'rest' })] });
+    place(`${planning_mode} actual extends overlap`, { profile: { ...profile, planning_mode }, blocks: [block('actual', { duration_minutes: 30, actual_minutes: 90 })] }, { start_minute: 540, duration_minutes: 30 });
+    place(`${planning_mode} immutable move`, { profile: { ...profile, planning_mode }, blocks: [block('fixed', { is_fixed: true })] }, { date: '2026-10-17' }, 'fixed');
+  }
+  place('daily exact 450 capacity', { tasks: [task(), task('english', { subject_id: 'english' })], blocks: [block('used', { duration_minutes: 240 })] }, { task_id: 'english', duration_minutes: 210 });
+  place('daily above 450 capacity', { tasks: [task(), task('english', { subject_id: 'english' })], blocks: [block('used', { duration_minutes: 240 })] }, { task_id: 'english', duration_minutes: 211 });
+  place('exact subject 240', { blocks: [block('used', { duration_minutes: 210 })] }, { duration_minutes: 30 });
+  place('above subject 240', { blocks: [block('used', { duration_minutes: 211 })] }, { duration_minutes: 30 });
+  place('orphan log consumes daily capacity', { tasks: [task(), task('english', { subject_id: 'english' })], blocks: [], logs: [log('orphan', { block_id: null, task_id: 'english', minutes: 430 })] }, { duration_minutes: 30 });
+  place('missing block reference consumes subject capacity', { blocks: [], logs: [log('orphan', { block_id: 'missing', minutes: 220 })] }, { duration_minutes: 30 });
+  place('actual above plan consumes capacity', { blocks: [block('used', { duration_minutes: 30, actual_minutes: 220 })] }, { duration_minutes: 30 });
+  place('completed only consumes actual', { blocks: [block('used', { duration_minutes: 240, actual_minutes: 30, status: 'completed' })] }, { duration_minutes: 210 });
+  place('linked log not double counted', { blocks: [block('used', { duration_minutes: 30 })], logs: [log('linked', { block_id: 'used', minutes: 210 })] }, { duration_minutes: 30 });
+  place('before earliest', { tasks: [task('math', { earliest_date: '2026-10-17' })] });
+  place('after deadline', { tasks: [task('math', { deadline: '2026-10-15' })] });
+  place('completed task', { tasks: [task('math', { status: 'completed' })] });
+  place('zero duration', {}, { duration_minutes: 0 });
+  place('invalid placement date', {}, { date: 'bad' });
+  place('invalid placement month', {}, { date: '2026-13-01' });
+  place('missing task', {}, { task_id: 'missing' });
+  place('timed adjacent blocks', { profile: { ...profile, planning_mode: 'timed' } }, { start_minute: 540 });
+  place('fixed task move', { tasks: [task('math', { is_fixed: true })] }, { date: '2026-10-17' }, 'today');
+  preview('deadline conflict', { tasks: [task('math', { deadline: '2026-10-17', estimated_minutes: 300 })], blocks: [block('today', { duration_minutes: 300 })] });
+  preview('deadline reached', { tasks: [task('math', { deadline: today })] });
+  preview('earliest beyond horizon', { tasks: [task('math', { earliest_date: '2026-10-31' })] });
+  preview('14 day inclusive boundary', { tasks: [task('math', { earliest_date: '2026-10-30' })], blocks: [block('today'), block('edge', { date: '2026-10-30' }), block('far', { date: '2026-10-31' })] });
+  preview('immutable records and reserved future', { tasks: [task(), task('fixed-task', { is_fixed: true })], blocks: [block('today'), block('past', { date: '2026-10-15' }), block('fixed', { is_fixed: true, date: '2026-10-17' }), block('completed', { status: 'completed', actual_minutes: 60, date: '2026-10-17' }), block('fixed-task-block', { task_id: 'fixed-task', date: '2026-10-17' }), block('unknown-task', { task_id: 'missing' }), block('far', { date: '2026-10-31' })] });
+  preview('short remainder 15', { tasks: [task('math', { estimated_minutes: 75, completed_minutes: 60 })], blocks: [block('today', { duration_minutes: 75, actual_minutes: 60 })], logs: [log('actual', { minutes: 60 })] });
+  preview('completed by logs', { logs: [log('actual', { minutes: 700 })] });
+  preview('completed by status', { tasks: [task('math', { status: 'completed' })] });
+  preview('remaining subtracts immutable reservation', { tasks: [task('math', { estimated_minutes: 90 })], blocks: [block('today', { duration_minutes: 90 }), block('fixed', { date: '2026-10-17', is_fixed: true, duration_minutes: 60 })] });
+  preview('future placement identity and guidance retained', { blocks: [block('future', { date: '2026-10-17', duration_minutes: 30, advice_text: '建议', advice_topics: [], completion_status: 'not_started', feedback: '' })] });
+  preview('stable source ties', { blocks: [block('z-source'), block('a-source')] });
+  preview('stable source ties large array', { tasks: [task('math', { estimated_minutes: 2400 })], blocks: Array.from({ length: 40 }, (_, index) => block(`source-${40 - index}`)) });
+  preview('urgency deadline priority created id', { profile: { ...profile, daily_limit_minutes: 60 }, tasks: [task('z', { deadline: '2026-10-17' }), task('a', { deadline: '2026-10-17' }), task('old', { deadline: '2026-10-17', created_at: '2025-01-01T00:00:00Z' }), task('low', { deadline: '2026-10-17', priority: 1 }), task('later', { deadline: '2026-10-18' })], blocks: ['z', 'a', 'old', 'low', 'later'].map(id => block(id, { task_id: id, duration_minutes: 30 })) });
+  preview('7 day inclusive boundary', { blocks: [block('edge', { date: '2026-10-23', duration_minutes: 60 }), block('outside', { date: '2026-10-24', duration_minutes: 60 })] }, 'overcompleted', 90);
+  preview('overcompleted partial source identity', { blocks: [block('future', { date: '2026-10-17', duration_minutes: 90, advice_text: '保留原块信息' })] }, 'overcompleted', 30);
+  preview('excess cannot force partial quantum', { blocks: [block('future', { date: '2026-10-17' })] }, 'overcompleted', 15);
+  preview('short source permits partial quantum', { blocks: [block('future', { date: '2026-10-17', duration_minutes: 15 })] }, 'overcompleted', 15);
+  preview('overcompleted stable eligible ties', { blocks: [block('z-source', { date: '2026-10-17' }), block('a-source', { date: '2026-10-17' })] }, 'overcompleted', 30);
+  preview('overcompleted stable eligible ties large array', { blocks: Array.from({ length: 40 }, (_, index) => block(`source-${40 - index}`, { date: '2026-10-17' })) }, 'overcompleted', 30);
+  preview('overcompleted respects actual orphan capacity', { tasks: [task(), task('english', { subject_id: 'english' })], blocks: [block('future', { date: '2026-10-17' })], logs: [log('orphan', { task_id: 'english', block_id: null, minutes: 420 })] }, 'overcompleted', 60);
+  preview('overcompleted fixed completed and earliest', { tasks: [task('math', { earliest_date: '2026-10-17' }), task('done', { status: 'completed' })], blocks: [block('fixed', { date: '2026-10-17', is_fixed: true }), block('actual', { date: '2026-10-17', actual_minutes: 5 }), block('completed', { date: '2026-10-17', status: 'completed' }), block('early', { date: '2026-10-18' }), block('done', { task_id: 'done', date: '2026-10-18' })] }, 'overcompleted', 120);
+  preview('legacy missing planning mode', { profile: { ...profile, planning_mode: undefined } });
+  add('task totals use max not sum', 'totals', { task: task('math', { estimated_minutes: 120, completed_minutes: 60 }), logs: [log('a', { minutes: 60 }), log('b', { task_id: 'other', minutes: 500 })] });
+  add('task totals clamped', 'totals', { task: task('math', { estimated_minutes: 120, completed_minutes: 180 }), logs: [log('a', { minutes: 180 })] });
+  for (const minutes of [0, 20, 90, 150, 1440, -1, 1441]) add(`record daily total ${minutes}`, 'record', { data: data({ tasks: [task('math', { estimated_minutes: 120 }), task('other')], logs: [log('old'), log('other', { task_id: 'other', block_id: null, minutes: 45 })] }), taskId: 'math', date: today, minutes });
+  add('record distributes in input block order', 'record', { data: data({ blocks: [block('z', { duration_minutes: 30 }), block('a', { duration_minutes: 60 })] }), taskId: 'math', date: today, minutes: 150 });
+  add('record without blocks', 'record', { data: data({ blocks: [] }), taskId: 'math', date: today, minutes: 45 });
+  add('record completed stays completed', 'record', { data: data({ tasks: [task('math', { status: 'completed' })] }), taskId: 'math', date: today, minutes: 10 });
+  add('record missing task', 'record', { data: data(), taskId: 'missing', date: today, minutes: 30 });
+  add('repeat record replaces same task day', 'records', { data: data(), entries: [{ taskId: 'math', date: today, minutes: 90 }, { taskId: 'math', date: today, minutes: 20 }, { taskId: 'math', date: '2026-10-17', minutes: 35 }] });
+  add('merge task day corrections order', 'merge', { base: [log('base')], local: [log('local', { minutes: 20 })], remote: [log('remote', { minutes: 35 }), log('other', { task_id: 'other', block_id: null, minutes: 45 })] });
+  add('merge same group unchanged reordered input', 'merge', { base: [log('z'), log('a')], local: [log('a'), log('z')], remote: [log('remote', { minutes: 99 })] });
+  add('merge deletion', 'merge', { base: [log('base')], local: [], remote: [log('remote')] });
+  return cases;
+}
+

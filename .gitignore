@@ -2,13 +2,14 @@ node_modules/
 dist/
 .env
 .env.local
-apps/web/.env.local
+.env.*.local
+coverage/
+*.tsbuildinfo
 test-results/
 playwright-report/
+.dsh-verify/
 work/
 .impeccable/
 .playwright-browsers/
 .playwright-cli/
 output/
-apps/desktop/src-tauri/target/
-apps/desktop/src-tauri/gen/

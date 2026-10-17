@@ -1,6 +1,51 @@
 import { PlanDraftSchema, type PlanDraft, type ProfileInput } from "./contracts.js";
 import { config } from "./config.js";
 
+const priorityOutputSchema = { type: "integer", enum: [1, 2, 3] };
+const idOutputSchema = { type: "string", minLength: 1, maxLength: 80 };
+const dateOutputSchema = { type: "string", pattern: "^\\d{4}-\\d{2}-\\d{2}$" };
+const draftOutputSchema = {
+  type: "object",
+  additionalProperties: false,
+  required: ["courses", "items", "analysis_summary", "assumptions", "warnings"],
+  properties: {
+    courses: {
+      type: "array", minItems: 1, maxItems: 100,
+      items: {
+        type: "object", additionalProperties: false,
+        required: ["id", "name", "description", "priority"],
+        properties: {
+          id: idOutputSchema,
+          name: { type: "string", minLength: 1, maxLength: 100 },
+          description: { type: "string", maxLength: 1000 },
+          priority: priorityOutputSchema,
+        },
+      },
+    },
+    items: {
+      type: "array", minItems: 1, maxItems: 500,
+      items: {
+        type: "object", additionalProperties: false,
+        required: ["id", "course_id", "title", "description", "completion_criteria", "estimated_minutes", "deadline", "priority"],
+        properties: {
+          id: idOutputSchema,
+          course_id: idOutputSchema,
+          title: { type: "string", minLength: 1, maxLength: 200 },
+          description: { type: "string", maxLength: 4000 },
+          completion_criteria: { type: "string", maxLength: 1000 },
+          estimated_minutes: { type: "integer", minimum: 30, maximum: 100000 },
+          earliest_date: dateOutputSchema,
+          deadline: dateOutputSchema,
+          priority: priorityOutputSchema,
+        },
+      },
+    },
+    analysis_summary: { type: "string", maxLength: 4000 },
+    assumptions: { type: "array", maxItems: 20, items: { type: "string", maxLength: 500 } },
+    warnings: { type: "array", maxItems: 20, items: { type: "string", maxLength: 500 } },
+  },
+};
+
 function addDays(date: string, amount: number) {
   const value = new Date(`${date}T00:00:00Z`);
   value.setUTCDate(value.getUTCDate() + amount);
@@ -31,6 +76,18 @@ function fallback(profile: ProfileInput): PlanDraft {
 }
 
 async function callModel(profile: ProfileInput): Promise<PlanDraft> {
+  const currentDate = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Shanghai" }).format(new Date());
+  const example: PlanDraft = {
+    courses: [{ id: "course-1", name: "示例课程", description: "课程说明", priority: 2 }],
+    items: [{
+      id: "item-1", course_id: "course-1", title: "示例事项", description: "具体学习内容",
+      completion_criteria: "可以验证的完成标准", estimated_minutes: 60,
+      earliest_date: currentDate, deadline: profile.exam_date, priority: 2,
+    }],
+    analysis_summary: "根据备考资料说明规划依据",
+    assumptions: [],
+    warnings: [],
+  };
   const response = await fetch(`${config.aiBaseUrl}/chat/completions`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${config.aiApiKey}` },
@@ -40,8 +97,15 @@ async function callModel(profile: ProfileInput): Promise<PlanDraft> {
       temperature: 0.2,
       response_format: { type: "json_object" },
       messages: [
-        { role: "system", content: "你是学习规划师。只返回符合要求的 JSON，不要 Markdown。课程和事项必须可执行、可计时，事项日期不得晚于考试日期。" },
-        { role: "user", content: JSON.stringify({ profile, output: { courses: "课程数组，每个有 id,name,description,priority", items: "事项数组，每个有 id,course_id,title,description,completion_criteria,estimated_minutes,earliest_date,deadline,priority", analysis_summary: "分析摘要", assumptions: "假设数组", warnings: "风险数组" } }) },
+        { role: "system", content: [
+          "你是学习规划师。只返回满足 output_schema 的 JSON 对象，不要 Markdown 或额外说明。",
+          "课程和事项的 priority 必须是 JSON 整数 1、2 或 3，分别表示低、中、高。禁止数字字符串、英文或中文等级名称。",
+          "estimated_minutes 必须是 30 到 100000 之间的整数分钟，不能是字符串或小时数。assumptions 和 warnings 必须是字符串数组，没有内容时返回 []。",
+          "课程和事项必须可执行、可计时，分别使用唯一的字符串 id；事项的 course_id 必须引用本次课程数组中的 id。",
+          "使用 YYYY-MM-DD 日期字符串，earliest_date 可以省略但不能为 null。满足 current_date <= earliest_date <= deadline <= profile.exam_date。",
+          "依据 profile 和 constraints_text 生成课程数量、事项数量、内容和时长；example 仅展示结构与类型，不代表实际学习计划。",
+        ].join("\n") },
+        { role: "user", content: JSON.stringify({ profile, current_date: currentDate, output_schema: draftOutputSchema, example }) },
       ],
     }),
   });

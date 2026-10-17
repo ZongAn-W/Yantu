@@ -1,37 +1,42 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
+import rateLimit from "@fastify/rate-limit";
 import { config } from "./config.js";
 import { query } from "./db.js";
-import { clearSession, issueSession, loginUser, refreshSession, registerUser, requireUser, userFromRequest } from "./auth.js";
+import { requireUser } from "./auth.js";
+import { authRoutes } from "./auth-routes.js";
+import { syncRoutes } from "./sync.js";
+import { migrateDatabase } from "./migrate.js";
 import { PlanDraftSchema, ProfileSchema, SettleSchema } from "./contracts.js";
 import { createPlanDraft } from "./ai.js";
 import { confirmDraft, dateAdd, dateToday, generatePlan, getProfile, itemToJson, listCourses, listDailyPlans, listItems, saveProfile, settleDay, snapshot, undoRun, type ItemRow } from "./planner.js";
 import { z } from "zod";
+import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
 
-const app = Fastify({ logger: true });
+export async function buildApp() {
+const app = Fastify({ logger: process.env.NODE_ENV !== "test", trustProxy: (_address, hop) => hop === 0 });
+await migrateDatabase();
 await app.register(cookie);
-await app.register(cors, { origin: config.webOrigin.split(",").map((value) => value.trim()), credentials: true });
+const allowedOrigins = [...new Set([
+  ...config.webOrigin.split(",").map((value) => value.trim()).filter(Boolean),
+  ...(process.env.NODE_ENV !== "production" ? ["http://127.0.0.1:5180", "http://localhost:5180"] : []),
+])];
+await app.register(cors, { origin: allowedOrigins, credentials: true });
+app.addHook("onRequest", async (request, reply) => {
+  if (!["GET", "HEAD", "OPTIONS"].includes(request.method) && request.headers.origin && !allowedOrigins.includes(request.headers.origin)) {
+    return reply.code(403).send({ error: "请求来源不受信任，请从应用重新登录" });
+  }
+});
+await app.register(rateLimit, { global: false, errorResponseBuilder: (_request, context) => ({ statusCode: 429, error: "操作过于频繁，请稍后重试", retryAfter: Math.ceil(context.ttl / 1000) }) });
+await app.register(authRoutes);
+await app.register(syncRoutes);
 
 const bodyObject = (body: unknown) => body && typeof body === "object" ? body : {};
 function errorMessage(error: unknown) { return error instanceof Error ? error.message : String(error); }
 
 app.get("/api/health", async () => ({ ok: true, service: "planner-api", now: new Date().toISOString() }));
-app.post("/api/auth/register", async (request, reply) => {
-  const parsed = z.object({ email: z.string().email(), password: z.string().min(8).max(200) }).safeParse(bodyObject(request.body));
-  if (!parsed.success) return reply.code(400).send({ error: "邮箱或密码格式不正确" });
-  try { const user = await registerUser(parsed.data.email, parsed.data.password); await issueSession(reply, user); return reply.code(201).send({ user }); }
-  catch (error) { return reply.code((error as { code?: string }).code === "23505" ? 409 : 400).send({ error: "账号已存在或无法注册" }); }
-});
-app.post("/api/auth/login", async (request, reply) => {
-  const parsed = z.object({ email: z.string().email(), password: z.string().min(1) }).safeParse(bodyObject(request.body));
-  if (!parsed.success) return reply.code(400).send({ error: "邮箱或密码格式不正确" });
-  const user = await loginUser(parsed.data.email, parsed.data.password);
-  if (!user) return reply.code(401).send({ error: "邮箱或密码错误" });
-  await issueSession(reply, user); return { user };
-});
-app.post("/api/auth/refresh", async (request, reply) => { const user = await refreshSession(request, reply); return user ? { user } : reply.code(401).send({ error: "登录已过期" }); });
-app.post("/api/auth/logout", async (_request, reply) => { clearSession(reply); return { ok: true }; });
 app.get("/api/me", async (request, reply) => { const user = await requireUser(request, reply); return user ? { user } : undefined; });
 
 app.get("/api/onboarding/profile", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; return { profile: await getProfile(user.id) }; });
@@ -62,5 +67,16 @@ app.get("/api/progress", async (request, reply) => { const user = await requireU
 app.get("/api/replan-runs", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const result = await query("select id,date::text,explanation,undone_at,created_at from replan_runs where user_id=$1 order by created_at desc limit 50", [user.id]); return { runs: result.rows }; });
 app.post("/api/replan-runs/:id/undo", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const params = request.params as { id: string }; try { return await undoRun(user.id, params.id); } catch (error) { return reply.code(400).send({ error: errorMessage(error) }); } });
 
-app.setErrorHandler((error, _request, reply) => { app.log.error(error); reply.code(500).send({ error: "服务器内部错误" }); });
-app.listen({ port: config.port, host: "0.0.0.0" }).catch((error) => { app.log.error(error); process.exit(1); });
+app.setErrorHandler((error, _request, reply) => {
+  const status = (error as { statusCode?: number }).statusCode;
+  if (status === 429) return reply.code(429).send({ error: "操作过于频繁，请稍后重试" });
+  app.log.error(error);
+  reply.code(500).send({ error: "服务器内部错误" });
+});
+return app;
+}
+
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const app = await buildApp();
+  app.listen({ port: config.port, host: "0.0.0.0" }).catch((error) => { app.log.error(error); process.exit(1); });
+}

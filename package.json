@@ -5,29 +5,19 @@
   "type": "module",
   "workspaces": [
     "apps/api",
-    "apps/web",
-    "apps/desktop",
     "packages/planner-engine"
   ],
   "scripts": {
-    "dev": "npm run dev -w apps/web -- --host 127.0.0.1",
+    "dev": "powershell.exe -NoLogo -NoProfile -File apps/flutter_client/tool/run-web.ps1",
     "api:dev": "npm run dev -w @planner/api",
     "api:build": "npm run build -w @planner/api",
     "api:start": "npm run start -w @planner/api",
-    "desktop:dev": "tauri dev --config apps/desktop/src-tauri/tauri.conf.json",
-    "desktop:build": "tauri build --config apps/desktop/src-tauri/tauri.conf.json",
-    "desktop:test": "cargo test --manifest-path apps/desktop/src-tauri/Cargo.toml",
-    "build": "tsc --noEmit && npm run build -w apps/web",
+    "build": "powershell.exe -NoLogo -NoProfile -File apps/flutter_client/tool/build-release.ps1 -Target Web",
     "test": "vitest run",
-    "test:e2e": "playwright test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit && tsc --noEmit -p apps/api/tsconfig.json"
   },
   "devDependencies": {
-    "@playwright/test": "^1.56.0",
-    "@tauri-apps/cli": "^2.12.2",
-    "@testing-library/react": "^16.3.3",
     "@types/node": "^22.10.0",
-    "jsdom": "^29.1.1",
     "typescript": "^5.7.0",
     "vitest": "^3.2.0"
   }
