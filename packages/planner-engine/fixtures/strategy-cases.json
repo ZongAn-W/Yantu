@@ -1,0 +1,120 @@
+{
+  "version": 1,
+  "clock": "2026-10-12T00:00:00.000Z",
+  "cases": [
+    {
+      "name": "four weeks retain two recurring sessions per week",
+      "from": "2026-10-12", "to": "2026-11-08",
+      "tasks": [{"id":"reading","estimated_minutes":240,"planning":{"activity":{"kind":"recurring","starts_on":"2026-10-12","ends_on":"2026-11-08","sessions_per_week":2,"session_minutes":30}}}],
+      "expected": {"scheduled":240,"unscheduled":0,"instances":8,"last_date":"2026-11-06","issues":[]}
+    },
+    {
+      "name": "431 day deidentified exam practice continues to final week",
+      "from": "2026-10-17", "to": "2027-12-21",
+      "weekly_minutes":{"0":300,"1":300,"2":300,"3":300,"4":300,"5":300,"6":300},
+      "tasks": [{"id":"vocabulary","estimated_minutes":3720,"planning":{"activity":{"kind":"recurring","starts_on":"2026-10-17","ends_on":"2027-12-21","sessions_per_week":2,"session_minutes":30}}}],
+      "expected": {"scheduled":3720,"unscheduled":0,"instances":124,"last_date":"2027-12-21","issues":[]}
+    },
+    {
+      "name": "one available session reports a real weekly deficit",
+      "from":"2026-10-12","to":"2026-10-18",
+      "weekly_minutes":{"0":0,"1":0,"2":60,"3":0,"4":0,"5":0,"6":0},
+      "tasks":[{"id":"practice","estimated_minutes":90,"planning":{"activity":{"kind":"recurring","starts_on":"2026-10-12","ends_on":"2026-10-18","sessions_per_week":3,"session_minutes":30}}}],
+      "expected":{"scheduled":30,"unscheduled":60,"instances":1,"last_date":"2026-10-13","issues":["RECURRENCE_SHORTFALL","RECURRENCE_SHORTFALL"]}
+    },
+    {
+      "name":"budget exhaustion never unlocks a confirmed prerequisite",
+      "from":"2026-10-12","to":"2026-10-18",
+      "tasks":[{"id":"chapter","estimated_minutes":30,"completed_minutes":30,"status":"in_progress"},{"id":"assessment","estimated_minutes":30,"planning":{"dependencies":[{"task_id":"chapter","mode":"confirmed"}]}}],
+      "expected":{"scheduled":0,"unscheduled":30,"instances":0,"last_date":null,"issues":["DEPENDENCY_UNCONFIRMED"]}
+    },
+    {
+      "name":"planned prerequisites allocate predecessor before following day",
+      "from":"2026-10-12","to":"2026-10-18",
+      "tasks":[{"id":"chapter","estimated_minutes":30},{"id":"assessment","estimated_minutes":30,"planning":{"dependencies":[{"task_id":"chapter","mode":"planned"}]}}],
+      "expected":{"scheduled":60,"unscheduled":0,"instances":0,"last_date":"2026-10-13","issues":[]}
+    },
+    {
+      "name":"recurring review can follow a planned finite learning prerequisite",
+      "from":"2026-10-12","to":"2026-10-18",
+      "tasks":[{"id":"chapter","estimated_minutes":120},{"id":"review","estimated_minutes":60,"planning":{"dependencies":[{"task_id":"chapter","mode":"planned"}],"activity":{"kind":"recurring","starts_on":"2026-10-12","ends_on":"2026-10-18","sessions_per_week":2,"session_minutes":30}}}],
+      "expected":{"scheduled":180,"unscheduled":0,"instances":2,"last_date":"2026-10-16","issues":[]}
+    },
+    {
+      "name":"cyclic dependencies cannot receive allocations",
+      "from":"2026-10-12","to":"2026-10-18",
+      "tasks":[{"id":"first","estimated_minutes":30,"planning":{"dependencies":[{"task_id":"second","mode":"planned"}]}},{"id":"second","estimated_minutes":30,"planning":{"dependencies":[{"task_id":"first","mode":"planned"}]}}],
+      "expected":{"scheduled":0,"unscheduled":60,"instances":0,"last_date":null,"issues":["DEPENDENCY_INVALID","DEPENDENCY_INVALID"]}
+    },
+    {
+      "name":"overlapping fixed events reserve their union once",
+      "from":"2026-10-12","to":"2026-10-12",
+      "weekly_minutes":{"0":0,"1":150,"2":0,"3":0,"4":0,"5":0,"6":0},
+      "tasks":[{"id":"exercise","estimated_minutes":30}],
+      "fixed_events":[{"id":"one","start_minute":480,"duration_minutes":60},{"id":"two","start_minute":510,"duration_minutes":60}],
+      "expected":{"scheduled":30,"unscheduled":0,"instances":0,"last_date":"2026-10-12","issues":[]}
+    },
+    {
+      "name":"timed occupancy clips to the study window and unions events with protected blocks",
+      "from":"2026-10-12","to":"2026-10-12",
+      "profile":{"planning_mode":"timed","study_start_minute":480,"study_end_minute":660},
+      "weekly_minutes":{"0":0,"1":210,"2":0,"3":0,"4":0,"5":0,"6":0},
+      "tasks":[{"id":"legacy","estimated_minutes":90,"status":"completed"},{"id":"exercise","subject_id":"other-course","estimated_minutes":120}],
+      "blocks":[
+        {"id":"overlap-completed","user_id":"fixture-user","task_id":"legacy","date":"2026-10-12","start_minute":480,"duration_minutes":60,"actual_minutes":0,"is_fixed":false,"status":"completed","created_at":"2026-10-12T00:00:00.000Z","updated_at":"2026-10-12T00:00:00.000Z"},
+        {"id":"separate-completed","user_id":"fixture-user","task_id":"legacy","date":"2026-10-12","start_minute":600,"duration_minutes":30,"actual_minutes":0,"is_fixed":false,"status":"completed","created_at":"2026-10-12T00:00:00.000Z","updated_at":"2026-10-12T00:00:00.000Z"}
+      ],
+      "fixed_events":[{"id":"cross-window","start_minute":300,"duration_minutes":210},{"id":"overlap-block","start_minute":510,"duration_minutes":60},{"id":"outside-window","start_minute":700,"duration_minutes":60}],
+      "expected_new_starts":[570,630],
+      "expected":{"scheduled":60,"unscheduled":60,"instances":0,"last_date":"2026-10-12","issues":["WORK_UNSCHEDULED"]}
+    },
+    {
+      "name":"completed legacy blocks without actual history reserve their planned daily load",
+      "from":"2026-10-12","to":"2026-10-12",
+      "tasks":[{"id":"legacy","estimated_minutes":60,"status":"completed"},{"id":"exercise","subject_id":"other-course","estimated_minutes":60}],
+      "blocks":[{"id":"legacy-completed","user_id":"fixture-user","task_id":"legacy","date":"2026-10-12","start_minute":0,"duration_minutes":60,"actual_minutes":0,"is_fixed":false,"status":"completed","created_at":"2026-10-12T00:00:00.000Z","updated_at":"2026-10-12T00:00:00.000Z"}],
+      "expected":{"scheduled":30,"unscheduled":30,"instances":0,"last_date":"2026-10-12","issues":["WORK_UNSCHEDULED"]}
+    },
+    {
+      "name":"confirmed cycle clips a wider scheduling request",
+      "from":"2026-10-12","to":"2026-10-18",
+      "plan_start_date":"2026-10-14","plan_end_date":"2026-10-15",
+      "tasks":[{"id":"exercise","estimated_minutes":30}],
+      "expected":{"scheduled":30,"unscheduled":0,"instances":0,"last_date":"2026-10-14","issues":[]}
+    },
+    {
+      "name":"finite low intensity goal leaves reasonable free days",
+      "from":"2026-10-12","to":"2026-11-08",
+      "tasks":[{"id":"project-output","estimated_minutes":30}],
+      "expected":{"scheduled":30,"unscheduled":0,"instances":0,"last_date":"2026-10-12","issues":[]}
+    },
+    {
+      "name":"actual standalone recurring work reduces future session demand",
+      "from":"2026-10-12","to":"2026-10-18",
+      "tasks":[{"id":"reading","estimated_minutes":60,"planning":{"activity":{"kind":"recurring","starts_on":"2026-10-12","ends_on":"2026-10-18","sessions_per_week":2,"session_minutes":30}}}],
+      "logs":[{"id":"actual","user_id":"fixture-user","task_id":"reading","block_id":null,"date":"2026-10-12","minutes":10,"started_at":"2026-10-12T00:00:00.000Z","ended_at":"2026-10-12T00:10:00.000Z","source":"timer"}],
+      "expected":{"scheduled":50,"unscheduled":0,"instances":2,"last_date":"2026-10-16","issues":[]}
+    },
+    {
+      "name":"protected actual work and pending reservation are never counted twice",
+      "from":"2026-10-12","to":"2026-10-18",
+      "tasks":[{"id":"chapter","estimated_minutes":100,"completed_minutes":20}],
+      "blocks":[{"id":"protected","user_id":"fixture-user","task_id":"chapter","date":"2026-10-12","start_minute":0,"duration_minutes":60,"actual_minutes":20,"is_fixed":false,"status":"planned","created_at":"2026-10-12T00:00:00.000Z","updated_at":"2026-10-12T00:00:00.000Z"}],
+      "logs":[{"id":"actual","user_id":"fixture-user","task_id":"chapter","block_id":"protected","date":"2026-10-12","minutes":20,"started_at":"2026-10-12T00:00:00.000Z","ended_at":"2026-10-12T00:20:00.000Z","source":"timer"}],
+      "expected":{"scheduled":40,"unscheduled":0,"instances":0,"last_date":"2026-10-13","issues":[]}
+    },
+    {
+      "name":"paused recurrence generates neither instances nor invented debt",
+      "from":"2026-10-12","to":"2026-11-08",
+      "tasks":[{"id":"reading","estimated_minutes":240,"planning":{"activity":{"kind":"recurring","state":"paused","starts_on":"2026-10-12","ends_on":"2026-11-08","sessions_per_week":2,"session_minutes":30}}}],
+      "expected":{"scheduled":0,"unscheduled":0,"instances":0,"last_date":null,"issues":[]}
+    },
+    {
+      "name":"explicit content confirmation unlocks a dependency without inferring it from time",
+      "from":"2026-10-12","to":"2026-10-12",
+      "tasks":[{"id":"chapter","estimated_minutes":60,"completed_minutes":0,"planning":{"content_progress":{"confirmed":true}}},
+        {"id":"exercise","estimated_minutes":30,"planning":{"dependencies":[{"task_id":"chapter","mode":"confirmed"}]}}],
+      "expected":{"scheduled":30,"unscheduled":0,"instances":0,"last_date":"2026-10-12","issues":[]}
+    }
+  ]
+}

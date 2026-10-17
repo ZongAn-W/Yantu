@@ -218,7 +218,7 @@ describe("每日任务与时长模式", () => {
     ).toBe(true);
   });
 
-  it("当天120分钟完成60分钟，剩余两个30分钟块重排且可确认撤销", () => {
+  it("当天120分钟完成60分钟，整条记录受保护且确认撤销不改变记录", () => {
     const actual: TimeLog = {
       id: "log",
       user_id: profile.user_id,
@@ -242,10 +242,9 @@ describe("每日任务与时长模式", () => {
       logs: [actual],
     });
     const preview = generateReplanPreview(source);
-    const pending = preview.after.filter((item) => item.status === "planned");
-    expect(pending.map((item) => item.duration_minutes)).toEqual([30, 30]);
-    expect(pending.every((item) => item.date === date)).toBe(true);
-    expect(preview.postponed).toEqual(["math"]);
+    expect(preview.after).toEqual(source.blocks);
+    expect(preview.changes).toEqual([]);
+    expect(preview.postponed).toEqual([]);
     expect(undoLastReplan(confirmReplan(data(source), preview)).blocks).toEqual(
       source.blocks,
     );

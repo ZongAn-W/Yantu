@@ -61,10 +61,8 @@ void main() {
     final original = data.toJsonString();
     final preview = freshService().preview(data, today: '2026-10-16');
     expect(data.toJsonString(), original);
-    expect(
-      preview.preview.after.where((row) => row.status == BlockStatus.planned),
-      hasLength(2),
-    );
+    expect(preview.preview.after, data.blocks);
+    expect(preview.preview.changes, isEmpty);
   });
   final changes = <String, PlannerData Function(PlannerData)>{
     'profile': (state) =>
@@ -133,7 +131,7 @@ void main() {
         data,
         local.preview(data, today: '2026-10-16'),
       );
-      expect(confirmed.tasks.single.status, TaskStatus.delayed);
+      expect(confirmed.tasks.single.status, data.tasks.single.status);
       final restored = local.undo(
         PlannerData.fromJson(jsonDecode(confirmed.toJsonString()) as JsonMap),
       );

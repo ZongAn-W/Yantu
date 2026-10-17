@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ItemPlanningSchema, PlanPlanningSchema } from "./planning-contracts.js";
 
 /** 自然日 YYYY-MM-DD；用于目标日期、规划周期和事项日期。 */
 export const CalendarDateSchema = z
@@ -83,6 +84,7 @@ export const ItemDraftSchema = z.object({
   deadline: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   deadline_kind: ItemDateKindSchema.default("deadline"),
   priority: z.number().int().min(1).max(3).default(2),
+  planning: ItemPlanningSchema.nullable().optional(),
 });
 
 export const PlanDraftSchema = z.object({
@@ -91,6 +93,7 @@ export const PlanDraftSchema = z.object({
   analysis_summary: z.string().max(4000),
   assumptions: z.array(z.string().max(500)).max(20).default([]),
   warnings: z.array(z.string().max(500)).max(20).default([]),
+  planning: PlanPlanningSchema.nullable().optional(),
 });
 
 export const DailyEntrySchema = z.object({

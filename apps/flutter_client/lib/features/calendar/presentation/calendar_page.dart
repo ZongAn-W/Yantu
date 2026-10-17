@@ -10,6 +10,7 @@ import '../../planner/domain/planner_format.dart';
 import '../../planner/domain/study_day.dart' as day_ops;
 import '../../planner/presentation/planner_dialogs.dart';
 import '../../planner/presentation/planner_page_state.dart';
+import '../../planner/presentation/planning_details.dart';
 import '../../planner/presentation/task_study_timer.dart';
 
 /// Web `/calendar` — day/week plan, fixed events, capacity and conflict feedback.
@@ -66,6 +67,10 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
             ),
           ],
           children: [
+            if (data.planning != null) ...[
+              PlanningRouteView(planning: data.planning, compact: true),
+              const SizedBox(height: 12),
+            ],
             PlannerPanel(
               child: Wrap(
                 alignment: WrapAlignment.spaceBetween,
@@ -238,11 +243,19 @@ class _CalendarDayColumn extends ConsumerWidget {
             ],
             const SizedBox(height: 8),
             if (groups.isEmpty)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 12),
+              Padding(
+                padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Text(
-                  '尚未安排学习事项',
-                  style: TextStyle(color: PlannerColors.muted, fontSize: 12),
+                  day.capacity <= 0
+                      ? '休息或固定占用，未安排学习事项'
+                      : detailedUntil(data.planning) != null &&
+                            date.compareTo(detailedUntil(data.planning)!) > 0
+                      ? '路线待细化，尚未生成当日学习安排'
+                      : '尚未安排学习事项',
+                  style: const TextStyle(
+                    color: PlannerColors.muted,
+                    fontSize: 12,
+                  ),
                 ),
               ),
             for (final group in groups)

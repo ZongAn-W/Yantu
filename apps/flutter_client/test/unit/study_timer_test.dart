@@ -125,6 +125,71 @@ void main() {
   String taskId() => coordinator.data!.tasks.first.id;
 
   test(
+    'planned dependencies require actual content confirmation before timing',
+    () async {
+      final original = coordinator.data!.tasks.first;
+      final dependent = original.copyWith(
+        id: 'dependent',
+        planning: {
+          'dependencies': [
+            {'task_id': original.id, 'mode': 'planned'},
+          ],
+        },
+      );
+      await coordinator.edit(
+        (data) => data.copyWith(
+          tasks: [
+            original.copyWith(
+              completedMinutes: original.estimatedMinutes,
+              status: TaskStatus.inProgress,
+            ),
+            dependent,
+          ],
+        ),
+      );
+      await expectLater(timer.start(dependent.id, date), throwsStateError);
+      expect(timer.activeTaskId, isNull);
+      expect(coordinator.data!.logs, isEmpty);
+      await coordinator.edit(
+        (data) => data.copyWith(
+          tasks: [
+            data.tasks.first.copyWith(status: TaskStatus.completed),
+            dependent,
+          ],
+        ),
+      );
+      await timer.start(dependent.id, date);
+      expect(timer.activeTaskId, dependent.id);
+      await timer.pause();
+    },
+  );
+
+  test('paused recurring activity cannot start a new timer session', () async {
+    final id = taskId();
+    await coordinator.edit(
+      (data) => data.copyWith(
+        tasks: [
+          data.tasks.first.copyWith(
+            planning: {
+              'activity': {
+                'kind': 'recurring',
+                'state': 'paused',
+                'starts_on': date,
+                'ends_on': '2026-11-01',
+                'sessions_per_week': 2,
+                'session_minutes': 30,
+              },
+            },
+          ),
+        ],
+      ),
+    );
+    await expectLater(timer.start(id, date), throwsStateError);
+    expect(timer.activeTaskId, isNull);
+    expect(timer.lastSessionFor(id, date), isNull);
+  });
+
+  test(
     'real seconds survive pause, reload and resume without rounding up',
     () async {
       final id = taskId();

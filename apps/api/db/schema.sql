@@ -26,6 +26,7 @@ create table if not exists profiles (
   current_progress text not null default '',
   weekly_minutes jsonb not null default '{"1":0,"2":0,"3":0,"4":0,"5":0,"6":0,"0":0}',
   constraints_text text not null default '',
+  planning_metadata jsonb,
   updated_at timestamptz not null default now()
 );
 
@@ -53,6 +54,7 @@ create table if not exists items (
   priority smallint not null default 2 check (priority between 1 and 3),
   confirmed boolean not null default false,
   status text not null default 'not_started',
+  planning_metadata jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -74,6 +76,7 @@ create table if not exists daily_plan_items (
   actual_minutes integer not null default 0 check (actual_minutes >= 0),
   advice_text text not null default '',
   advice_topics jsonb not null default '[]',
+  activity_instance_id text,
   completion_status text not null default 'not_started' check (completion_status in ('not_started','partial','completed','skipped')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -128,3 +131,6 @@ create table if not exists ai_jobs (
 create index if not exists daily_plan_user_date on daily_plan_items(user_id, date);
 create index if not exists logs_user_date on study_logs(user_id, date);
 create index if not exists items_user_deadline on items(user_id, deadline);
+create index if not exists daily_plan_activity_instance
+  on daily_plan_items(user_id, item_id, activity_instance_id)
+  where activity_instance_id is not null;

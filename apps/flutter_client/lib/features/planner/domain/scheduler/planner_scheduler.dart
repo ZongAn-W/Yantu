@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import '../../../../shared/models/planner_models.dart';
+import 'strategy_scheduler.dart' as strategy;
 
 typedef IdGenerator = String Function();
 
@@ -138,7 +139,10 @@ int weekdayIndex(String date) {
 int dailyStudyBudget(Profile profile, String date) {
   final week = profile.weekMinutes;
   final raw = _finite(week['${weekdayIndex(date)}'] ?? 0);
-  return math.max(0, math.min(480, raw) - math.max(30, _finite(profile.bufferMinutes)));
+  return math.max(
+    0,
+    math.min(480, raw) - math.max(30, _finite(profile.bufferMinutes)),
+  );
 }
 
 _Limits _limits(Profile profile) => _Limits(
@@ -235,6 +239,35 @@ String? _placementError(
   }
   if (candidate.date.compareTo(task.deadline) > 0) {
     return '时间块不能晚于任务截止日期';
+  }
+  if ((input.profile.planStartDate.isNotEmpty &&
+          candidate.date.compareTo(input.profile.planStartDate) < 0) ||
+      (input.profile.planEndDate.isNotEmpty &&
+          candidate.date.compareTo(input.profile.planEndDate) > 0)) {
+    return '时间块不能超出本期规划区间';
+  }
+  final activity = strategy.activityOf(task);
+  if (activity?['state'] == 'paused' || activity?['state'] == 'ended') {
+    return '活动已暂停或结束';
+  }
+  if ((activity?['starts_on'] != null &&
+          candidate.date.compareTo(activity!['starts_on'] as String) < 0) ||
+      (activity?['ends_on'] != null &&
+          candidate.date.compareTo(activity!['ends_on'] as String) > 0)) {
+    return '时间块超出活动有效日期';
+  }
+  if (strategy
+      .dependenciesOf(task)
+      .any(
+        (dependency) =>
+            dependency['mode'] == 'confirmed' &&
+            input.tasks
+                    .where((prior) => prior.id == dependency['task_id'])
+                    .firstOrNull
+                    ?.status !=
+                TaskStatus.completed,
+      )) {
+    return '前置内容尚未确认完成';
   }
   final dayBlocks = blocks
       .where((block) => block.date == candidate.date)
@@ -564,11 +597,85 @@ ReplanPreview generateReplanPreview(
   bool immutable(ScheduleBlock block) =>
       block.isFixed ||
       block.status == BlockStatus.completed ||
+      (input.mode == ReplanMode.overcompleted &&
+          tasks[block.taskId] != null &&
+          strategy.activityOf(tasks[block.taskId]!)?['kind'] == 'recurring') ||
+      _blockActual(block, input.logs) > 0 ||
+      input.logs.any(
+        (log) =>
+            log.blockId == block.id ||
+            log.blockId == null &&
+                log.taskId == block.taskId &&
+                log.date == block.date,
+      ) ||
       (tasks[block.taskId]?.status == TaskStatus.archived &&
           _blockActual(block, input.logs) > 0) ||
       tasks[block.taskId]?.isFixed == true ||
       block.date.compareTo(input.today) < 0 ||
       block.date.compareTo(horizon) > 0;
+  if (input.mode == ReplanMode.unfinished &&
+      input.tasks.any(
+        (task) =>
+            strategy.activityOf(task) != null ||
+            strategy.dependenciesOf(task).isNotEmpty,
+      )) {
+    final end =
+        input.profile.planEndDate.isNotEmpty &&
+            input.profile.planEndDate.compareTo(horizon) < 0
+        ? input.profile.planEndDate
+        : horizon;
+    final from = addDays(input.today, 1);
+    final kept = input.blocks.where(immutable).toList();
+    final result = from.compareTo(end) <= 0
+        ? strategy.scheduleStrategy(
+            PlannerData(
+              version: 1,
+              profile: input.profile,
+              subjects: const [],
+              tasks: input.tasks,
+              blocks: kept,
+              logs: input.logs,
+              fixedEvents: input.fixedEvents,
+              replanRuns: const [],
+              phases: const [],
+            ),
+            from,
+            end,
+            runtime: runtime,
+          )
+        : strategy.StrategyResult(kept, 0, 0, 0, const []);
+    final after = result.blocks.map((block) {
+      if (block.activityInstanceId == null) return block;
+      final previous = input.blocks
+          .where((old) => old.activityInstanceId == block.activityInstanceId)
+          .firstOrNull;
+      return previous != null && !kept.any((old) => old.id == previous.id)
+          ? block.copyWith(id: previous.id, createdAt: previous.createdAt)
+          : block;
+    }).toList();
+    return _makePreview(
+      input,
+      after,
+      result.issues
+          .map(
+            (issue) => Conflict(
+              taskId: issue.taskId,
+              title: tasks[issue.taskId]?.title ?? '',
+              minutes: issue.code == 'RECURRENCE_SHORTFALL'
+                  ? (strategy.activityOf(
+                              tasks[issue.taskId]!,
+                            )?['session_minutes']
+                            as int? ??
+                        30)
+                  : math.max(0, issue.expected - issue.actual),
+              reason: issue.message,
+            ),
+          )
+          .toList(),
+      timestamp,
+      id,
+    );
+  }
   if (input.mode == ReplanMode.overcompleted) {
     final after = input.blocks
         .where((block) {
@@ -807,9 +914,7 @@ PlannerData confirmReplan(PlannerData data, ReplanPreview preview) {
       .map((task) => TaskStatusSnapshot(id: task.id, status: task.status))
       .toList();
   final tasks = data.tasks.map((task) {
-    final complete =
-        task.status == TaskStatus.completed ||
-        remainingTaskMinutes(task, data.logs) == 0;
+    final complete = task.status == TaskStatus.completed;
     final status = task.status == TaskStatus.archived
         ? TaskStatus.archived
         : complete

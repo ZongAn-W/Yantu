@@ -52,6 +52,7 @@ class OnboardingSession {
     this.planRevision,
     required this.stage,
     required this.question,
+    this.questionType,
     this.questionOptions = const [],
     this.questionMultiple = false,
     this.recommendations = const PlanningRecommendations(),
@@ -66,6 +67,10 @@ class OnboardingSession {
     this.endDate = '',
     this.learningContext = const {},
     this.research = const {},
+    this.planning,
+    this.preview,
+    this.constraintsConfirmed = false,
+    this.currentPlan,
   });
 
   factory OnboardingSession.fromJson(JsonMap json) => OnboardingSession(
@@ -75,8 +80,13 @@ class OnboardingSession {
     planRevision: json['plan_revision'] as int?,
     stage: json['stage'] as String,
     question: json['question'] as String,
+    questionType: json['question_type'] is String
+        ? json['question_type'] as String
+        : null,
     questionOptions: normalizeQuestionOptions(
-      (json['question_options'] as List? ?? const []).whereType<String>(),
+      json['question_options'] is List
+          ? (json['question_options'] as List).whereType<String>()
+          : const <String>[],
     ),
     questionMultiple: json['question_multiple'] as bool? ?? false,
     recommendations: PlanningRecommendations.fromJson(
@@ -104,6 +114,16 @@ class OnboardingSession {
     endDate: json['end_date'] as String? ?? '',
     learningContext: JsonMap.from(json['learning_context'] as Map? ?? const {}),
     research: JsonMap.from(json['research'] as Map? ?? const {}),
+    planning: json['planning'] is Map
+        ? JsonMap.from(json['planning'] as Map)
+        : null,
+    preview: json['preview'] is Map
+        ? JsonMap.from(json['preview'] as Map)
+        : null,
+    constraintsConfirmed: json['constraints_confirmed'] as bool? ?? false,
+    currentPlan: json['current_plan'] is Map
+        ? JsonMap.from(json['current_plan'] as Map)
+        : null,
   );
 
   final int revision;
@@ -112,8 +132,29 @@ class OnboardingSession {
   final int? planRevision;
   final String stage;
   final String question;
+  final String? questionType;
   final List<String> questionOptions;
   final bool questionMultiple;
+
+  String get effectiveQuestionType {
+    if (questionType == 'text' ||
+        normalizeQuestionOptions(questionOptions).isEmpty) {
+      return 'text';
+    }
+    return switch (questionType) {
+      'single_choice' => 'single_choice',
+      'multiple_choice' => 'multiple_choice',
+      _ => questionMultiple ? 'multiple_choice' : 'single_choice',
+    };
+  }
+
+  List<String> get effectiveQuestionOptions => effectiveQuestionType == 'text'
+      ? const []
+      : normalizeQuestionOptions(questionOptions);
+
+  bool get effectiveQuestionMultiple =>
+      effectiveQuestionType == 'multiple_choice';
+
   final PlanningRecommendations recommendations;
   final List<InterviewAnswer> answers;
   final OnboardingProfile profile;
@@ -128,6 +169,10 @@ class OnboardingSession {
   final String endDate;
   final JsonMap learningContext;
   final JsonMap research;
+  final JsonMap? planning;
+  final JsonMap? preview;
+  final bool constraintsConfirmed;
+  final JsonMap? currentPlan;
 
   OnboardingSession edit({
     List<CourseDraft>? courses,
@@ -140,6 +185,7 @@ class OnboardingSession {
     planRevision: planRevision,
     stage: stage,
     question: question,
+    questionType: questionType,
     questionOptions: questionOptions,
     questionMultiple: questionMultiple,
     recommendations: recommendations,
@@ -154,5 +200,9 @@ class OnboardingSession {
     endDate: endDate,
     learningContext: learningContext,
     research: research ?? this.research,
+    planning: planning,
+    preview: courses != null || items != null ? null : preview,
+    constraintsConfirmed: constraintsConfirmed,
+    currentPlan: currentPlan,
   );
 }

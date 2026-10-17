@@ -19,6 +19,29 @@ abstract interface class SyncApi {
   );
 }
 
+JsonMap plannerDocumentForSync(PlannerData data, PlannerData? base) {
+  final result = data.toJson();
+  if (data.planning == null && base?.planning != null) {
+    result['planning'] = null;
+  }
+  final tasks = {for (final task in base?.tasks ?? <Task>[]) task.id: task};
+  for (final row in result['tasks'] as List) {
+    if (!row.containsKey('planning') && tasks[row['id']]?.planning != null) {
+      row['planning'] = null;
+    }
+  }
+  final blocks = {
+    for (final block in base?.blocks ?? <ScheduleBlock>[]) block.id: block,
+  };
+  for (final row in result['blocks'] as List) {
+    if (!row.containsKey('activity_instance_id') &&
+        blocks[row['id']]?.activityInstanceId != null) {
+      row['activity_instance_id'] = null;
+    }
+  }
+  return result;
+}
+
 class HttpSyncApi implements SyncApi {
   HttpSyncApi(this.client);
   final ApiClient client;
@@ -57,9 +80,10 @@ class HttpSyncApi implements SyncApi {
         (await client.put(
           '/api/planner/sync',
           data: {
-            'data': data.toJson(),
+            'data': plannerDocumentForSync(data, base),
             'base': base?.toJson(),
             'expectedRevision': revision,
+            'writer_planning_version': 1,
           },
         )).data,
       );

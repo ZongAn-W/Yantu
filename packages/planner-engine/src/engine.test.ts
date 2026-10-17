@@ -152,7 +152,7 @@ describe("archived task history", () => {
 });
 
 describe("保守重排", () => {
-  it("120分钟完成60分钟后保留执行记录，将剩余60分钟拆成两个30分钟块", () => {
+  it("120分钟完成60分钟后保护整条计时安排，不改写或重复预留剩余量", () => {
     const source = input({
       tasks: [task("math", { completed_minutes: 60, status: "in_progress" })],
       blocks: [
@@ -161,16 +161,9 @@ describe("保守重排", () => {
       logs: [log(60)],
     });
     const preview = generateReplanPreview(source);
-    const pending = planned(preview.after);
-    expect(pending).toHaveLength(2);
-    expect(pending.map((item) => item.duration_minutes)).toEqual([30, 30]);
-    expect(pending.every((item) => item.date === "2026-10-14")).toBe(true);
-    expect(preview.after.find((item) => item.id === "today")).toMatchObject({
-      date: TODAY,
-      status: "completed",
-      actual_minutes: 60,
-    });
-    expect(preview.postponed).toContain("math");
+    expect(preview.after).toEqual(source.blocks);
+    expect(preview.changes).toEqual([]);
+    expect(preview.postponed).toEqual([]);
   });
 
   it("只改变未来14天窗口中的量，不将长期任务全部塞入窗口", () => {
@@ -383,7 +376,7 @@ describe("保守重排", () => {
     expect(preview.after.every((item) => item.date >= "2026-10-20")).toBe(true);
   });
 
-  it("最后不足30分钟的剩余量准确安排，不人为增加完成需求", () => {
+  it("不足30分钟且已有计时的剩余量保留在原安排，不新增重复预算", () => {
     const preview = generateReplanPreview(
       input({
         tasks: [task("math", { estimated_minutes: 75, completed_minutes: 60 })],
@@ -394,7 +387,7 @@ describe("保守重排", () => {
       }),
     );
     expect(planned(preview.after).map((item) => item.duration_minutes)).toEqual(
-      [15],
+      [75],
     );
   });
 
@@ -414,7 +407,9 @@ describe("保守重排", () => {
               : [log(180)],
         }),
       );
-      expect(planned(preview.after)).toHaveLength(0);
+      const protectedHistory = completedTask.status !== "completed" && completedTask.completed_minutes !== 120;
+      expect(planned(preview.after)).toHaveLength(protectedHistory ? 1 : 0);
+      if (protectedHistory) expect(preview.after[0].id).toBe("today");
       expect(preview.conflicts).toHaveLength(0);
     }
   });

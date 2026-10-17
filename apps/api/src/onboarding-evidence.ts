@@ -1,5 +1,5 @@
 import { type GoalType, type ProfileInput } from "./contracts.js";
-import { FIRST_QUESTION, FIRST_QUESTION_OPTIONS, normalizeQuestionOptions, type OnboardingSession } from "./onboarding-contracts.js";
+import { FIRST_QUESTION, FIRST_QUESTION_OPTIONS, normalizeQuestionOptions, normalizeQuestionPresentation, type OnboardingSession, type QuestionType } from "./onboarding-contracts.js";
 import { buildLearningContext, knownStudySubjects, missingLearnerFields, normalizeStudySubject, type LearnerField } from "./learning-context.js";
 
 /** 未确认具体考试时，统一使用的澄清问题和选项；客户端会再补充唯一的“其他”入口。 */
@@ -7,6 +7,11 @@ export const EXAM_CLARIFICATION_QUESTION = "你准备参加哪一类考试？";
 export const EXAM_CLARIFICATION_OPTIONS = ["硕士研究生招生考试（考研）", "公务员/事业单位", "语言考试", "职业资格", "升学/课程考试", "暂未确定"];
 /** 用户选择考试类别后，继续确认具体考试名称。 */
 export const EXAM_DETAIL_QUESTION = "你准备参加的具体考试是什么？";
+
+export function asksForExamIdentity(question: string) {
+  return /(?:哪(?:一)?(?:类|种|项|门|个)?|什么|具体).{0,10}考试|考试.{0,10}(?:名称|类型|类别)|考什么|参加(?:哪|什么)/.test(question)
+    && !/哪年|哪一年|哪天|哪一天|日期|时间|几点|几月|分数|目标分/.test(question);
+}
 
 const EXAM_CATEGORY_LABELS = ["研究生招生", "公务员/事业单位", "语言考试", "职业资格", "升学/课程考试"];
 const FIRST_OPTION_GOAL_TYPES: Record<string, GoalType> = {
@@ -65,6 +70,7 @@ export interface InterviewEvidence {
 
 export interface InterviewPrompt {
   question: string;
+  question_type?: QuestionType;
   question_options: string[];
   question_multiple: boolean;
   question_fields?: LearnerField[];
@@ -496,12 +502,12 @@ export function buildSafeInterview(session: OnboardingSession, evidence: Intervi
   if (field === "degree") return prompt(field, "你准备报考学硕还是专硕？", ["学硕", "专硕", "暂未确定"]);
   if (field === "college") return prompt(field, "官方目录中有不同科目要求，你打算报考哪个学院？尚未确定也可以先说明。");
   if (field === "baseline") return prompt(field, `${subjects.length ? `目前已知的学习内容是${subjects.join("、")}。` : ""}各科学到哪一步了？可以按“科目：已学内容、做题情况”简要填写。`);
-  if (field === "weakness") return prompt(field, "目前哪一科最薄弱？主要是还没学、理解困难、做不出题，还是速度慢？", subjects.length ? [...subjects.slice(0, 6), "暂时没有明显薄弱项"] : []);
-  if (field === "diagnostic") return prompt(field, `你提到${context.subjects.find(subject => subject.weakness)?.name ?? "有薄弱科目"}需要加强，最近做题具体是什么情况？没有测过也可以说明。`, ["知识点还没学", "看得懂但做不出题", "做题正确率低", "做得太慢", "还没做过测验"]);
-  if (field === "outcome") return prompt(field, "你希望达到什么结果？可以描述目标分数、学习成果，或先完成的阶段目标。", ["先补齐薄弱基础", "完成一轮系统学习", "提高做题正确率和速度", "达到目标院校或考试要求", "已有具体目标，自己填写"]);
-  if (field === "availability") return prompt(field, "你每周哪些天可以学习，每天大约能投入多久？", ["每天1小时", "每天2小时", "每天3小时", "工作日1小时，周末3小时", "工作日2小时，周末4小时"]);
+  if (field === "weakness") return prompt(field, "目前哪一科最薄弱？主要是还没学、理解困难、做不出题，还是速度慢？");
+  if (field === "diagnostic") return prompt(field, `你提到${context.subjects.find(subject => subject.weakness)?.name ?? "有薄弱科目"}需要加强，最近做题具体是什么情况？没有测过也可以说明。`);
+  if (field === "outcome") return prompt(field, "你希望达到什么结果？可以描述目标分数、学习成果，或先完成的阶段目标。");
+  if (field === "availability") return prompt(field, "你每周哪些天可以学习，每天大约能投入多久？");
   if (field === "materials") return prompt(field, "你正在用哪些资料？可以填写教材、网课或题库名称及已完成的部分。");
-  if (field === "constraints") return prompt(field, "有什么固定安排或学习习惯会影响本期学习？", ["工作日较忙", "周末休息不学习", "有固定课程或工作", "需要定期复习", "暂时没有额外限制"], true);
+  if (field === "constraints") return prompt(field, "有什么固定安排或学习习惯会影响本期学习？");
   return prompt("baseline", `${subjects[0] ? `接下来细化${subjects[0]}：` : "接下来细化学习内容："}近期最想先完成哪一部分，或者有哪些题目还做不出来？`);
 }
 
@@ -513,20 +519,22 @@ export function sanitizeInterviewSession(session: OnboardingSession): Onboarding
   if (session.stage === "complete") return session;
   // 旧版本的“信息已记录”暂停阶段已经取消：恢复时直接回到访谈，继续显示下一题和生成入口。
   const stage: OnboardingSession["stage"] = session.stage === "checkpoint" ? "interview" : session.stage;
-  const next: OnboardingSession = { ...session, stage, question_options: normalizeQuestionOptions(session.question_options), learning_context: buildLearningContext(session) };
+  const next: OnboardingSession = { ...session, stage, ...normalizeQuestionPresentation(session), learning_context: buildLearningContext(session) };
   if (!session.answers.length) return next;
   const evidence = analyzeInterview(session);
-  next.profile = deriveInterviewProfile(session, evidence);
+  next.profile = session.constraints_confirmed
+    ? structuredClone(session.profile)
+    : deriveInterviewProfile(session, evidence);
   if (stage === "interview") {
     const needsClarification = evidence.goalType === "exam" && !evidence.subtype && !evidence.examTypeUnsure;
     const needsDetail = evidence.goalType === "exam" && evidence.needsExamDetail;
-    const unsafe = needsClarification || needsDetail
+    const asksExam = asksForExamIdentity(session.question);
+    const unsafe = (needsClarification || needsDetail) && !asksExam
       || findUngroundedMentions([session.question, ...next.question_options], session, evidence).length > 0;
     if (unsafe) {
       const safe = buildSafeInterview(session, evidence);
       next.question = safe.question;
-      next.question_options = safe.question_options;
-      next.question_multiple = safe.question_multiple;
+      Object.assign(next, normalizeQuestionPresentation(safe));
       next.question_fields = safe.question_fields ?? [];
     }
   }

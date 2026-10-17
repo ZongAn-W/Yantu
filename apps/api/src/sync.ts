@@ -42,6 +42,30 @@ const same = (a: unknown, b: unknown) => stable(a) === stable(b);
 class ProjectionConflict extends Error {}
 export class PlannerRevisionConflict extends Error {}
 
+export function hasPlanningMetadata(document: PlannerDocument | null): boolean {
+  return Boolean(document && (document.planning || document.tasks.some(task => task.planning)
+    || document.blocks.some(block => block.activity_instance_id)));
+}
+
+/** Missing fields from a capable writer are not an implicit request to clear metadata. */
+export function preservePlanningMetadata(data: PlannerDocument, current: PlannerDocument | null): PlannerDocument {
+  if (!current) return data;
+  const result = clone(data);
+  if (result.planning === undefined && current.planning !== undefined) result.planning = clone(current.planning);
+  const priorTasks = new Map(current.tasks.map(task => [task.id, task]));
+  for (const task of result.tasks) {
+    const previous = priorTasks.get(task.id);
+    if (task.planning === undefined && previous?.planning !== undefined) task.planning = clone(previous.planning);
+  }
+  const priorBlocks = new Map(current.blocks.map(block => [block.id, block]));
+  for (const block of result.blocks) {
+    const previous = priorBlocks.get(block.id);
+    if (block.activity_instance_id === undefined && previous?.activity_instance_id !== undefined)
+      block.activity_instance_id = previous.activity_instance_id;
+  }
+  return result;
+}
+
 function mergeProjectedDay(
   blocks: PlannerDocument["blocks"],
   before: PlannerDocument["blocks"][number],
@@ -113,6 +137,8 @@ function mappedNative(
   );
   return {
     ...native,
+    ...(native.planning ? { planning: { ...native.planning, route: native.planning.route.map(stage => ({ ...stage,
+      item_ids: stage.item_ids.map(id => tasks.get(id) ?? id) })) } } : {}),
     subjects: native.subjects.map((row) => ({
       ...row,
       id: subjects.get(row.id) ?? row.id,
@@ -121,6 +147,8 @@ function mappedNative(
       ...row,
       id: tasks.get(row.id) ?? row.id,
       subject_id: subjects.get(row.subject_id) ?? row.subject_id,
+      ...(row.planning ? { planning: { ...row.planning,
+        ...(row.planning.dependencies ? { dependencies: row.planning.dependencies.map(dependency => ({ ...dependency, task_id: tasks.get(dependency.task_id) ?? dependency.task_id })) } : {}) } } : {}),
     })),
     blocks: native.blocks.map((row) => ({
       ...row,
@@ -167,6 +195,7 @@ function rebase(
   for (const key of Object.keys(remote.profile))
     if (!same(base.profile[key], remote.profile[key]))
       result.profile[key] = remote.profile[key];
+  if (!same(base.planning, remote.planning)) result.planning = clone(remote.planning);
   for (const key of ["subjects", "tasks"] as const)
     result[key] = applyRemoteRows(base[key], result[key], remote[key]) as any;
   const blockGroup = (row: Row) => `${row.task_id}:${row.date}`;
@@ -283,7 +312,8 @@ export async function readPlannerState(client: pg.PoolClient, owner: string) {
 export async function commitPlannerState(client: pg.PoolClient, owner: string, data: PlannerDocument, expectedRevision: number) {
   const row = await lockedState(client, owner);
   if (Number(row.revision) !== expectedRevision) throw new PlannerRevisionConflict("当前计划已更新，请重新读取当前计划后再确认");
-  const validated = PlannerDocumentSchema.parse(data);
+  const current = await currentState(client, owner, row);
+  const validated = PlannerDocumentSchema.parse(preservePlanningMetadata(data, current.data));
   await writeProjection(client, owner, validated);
   const projection = await snapshot(owner, client);
   const document = withProjectedProfile(validated, projection as PlannerDocument | null);
@@ -347,6 +377,9 @@ async function writeProjection(
     }
     day.duration_minutes += block.duration_minutes;
     day.actual_minutes += block.actual_minutes;
+    if (day.activity_instance_id && block.activity_instance_id && day.activity_instance_id !== block.activity_instance_id)
+      throw new ProjectionConflict("同一事项同一天含不同的活动实例，请先核对安排后重试同步");
+    if (block.activity_instance_id) day.activity_instance_id = block.activity_instance_id;
     blockToDay.set(block.id, day.id);
   }
   const days = [...groups.values()];
@@ -409,6 +442,9 @@ async function writeProjection(
       targetDate,
     ],
   );
+  const nativePlanning = data.planning ? { ...data.planning, route: data.planning.route.map(stage => ({ ...stage,
+    item_ids: stage.item_ids.map(value => id("items", value)) })) } : null;
+  await client.query("update profiles set planning_metadata=$2 where user_id=$1", [owner, nativePlanning ? JSON.stringify(nativePlanning) : null]);
   for (const subject of data.subjects)
     await upsert(
       client,
@@ -461,6 +497,9 @@ async function writeProjection(
         task.updated_at,
       ],
     );
+    const nativeItemPlanning = task.planning ? { ...task.planning,
+      ...(task.planning.dependencies ? { dependencies: task.planning.dependencies.map(dependency => ({ ...dependency, task_id: id("items", dependency.task_id) })) } : {}) } : null;
+    await client.query("update items set planning_metadata=$3 where id=$1 and user_id=$2", [id("items", task.id), owner, nativeItemPlanning ? JSON.stringify(nativeItemPlanning) : null]);
   }
   // Remove vanished children before parents. Foreign keys continue protecting old API rows.
   await client.query(
@@ -473,8 +512,8 @@ async function writeProjection(
   );
   for (const day of days)
     await client.query(
-      `insert into daily_plan_items(id,user_id,item_id,date,planned_minutes,actual_minutes,advice_text,advice_topics,completion_status) values($1,$2,$3,$4,$5,$6,$7,$8,$9)
-    on conflict(user_id,item_id,date) do update set planned_minutes=excluded.planned_minutes,actual_minutes=excluded.actual_minutes,advice_text=excluded.advice_text,advice_topics=excluded.advice_topics,completion_status=excluded.completion_status,updated_at=now()`,
+      `insert into daily_plan_items(id,user_id,item_id,date,planned_minutes,actual_minutes,advice_text,advice_topics,completion_status,activity_instance_id) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+    on conflict(user_id,item_id,date) do update set planned_minutes=excluded.planned_minutes,actual_minutes=excluded.actual_minutes,advice_text=excluded.advice_text,advice_topics=excluded.advice_topics,completion_status=excluded.completion_status,activity_instance_id=excluded.activity_instance_id,updated_at=now()`,
       [
         day.id,
         owner,
@@ -486,6 +525,7 @@ async function writeProjection(
         JSON.stringify(day.advice_topics ?? []),
         day.completion_status ??
           (day.status === "completed" ? "completed" : "not_started"),
+        day.activity_instance_id ?? null,
       ],
     );
   for (const log of data.logs)
@@ -518,6 +558,7 @@ const PutSchema = z.object({
   data: PlannerDocumentSchema,
   base: PlannerDocumentSchema.nullable(),
   expectedRevision: revision,
+  writer_planning_version: z.literal(1).optional(),
 });
 
 async function withSnapshot<T>(
@@ -564,7 +605,7 @@ export async function syncRoutes(app: FastifyInstance) {
         return reply
           .code(400)
           .send({ error: parsed.error.issues[0]?.message ?? "计划格式不正确" });
-      const { data, base, expectedRevision } = parsed.data;
+      const { data, base, expectedRevision, writer_planning_version } = parsed.data;
       if (
         data.profile.user_id !== user.id ||
         (base && base.profile.user_id !== user.id)
@@ -573,12 +614,15 @@ export async function syncRoutes(app: FastifyInstance) {
       const result = await withSnapshot(async (client) => {
         const state = await lockedState(client, user.id);
         const current = await currentState(client, user.id, state);
+        if (writer_planning_version !== 1 && [data, base, current.data].some(hasPlanningMetadata))
+          return { upgradeRequired: true as const, error: "当前计划包含新版学习策略，请升级客户端后再同步", code: "planning_writer_upgrade_required" };
         const comparableBase = base ? normalizeEmptyDates(base) : null;
         if (current.revision !== expectedRevision || !same(comparableBase, current.data))
           return { conflict: true as const, ...current };
-        await writeProjection(client, user.id, data);
+        const preserved = PlannerDocumentSchema.parse(preservePlanningMetadata(data, current.data));
+        await writeProjection(client, user.id, preserved);
         const projection = await snapshot(user.id, client);
-        const document = withProjectedProfile(data, projection as PlannerDocument | null);
+        const document = withProjectedProfile(preserved, projection as PlannerDocument | null);
         const updated = await client.query<{ revision: string }>(
           "update planner_sync_state set document=$2,projection=$3,revision=revision+1,updated_at=now() where user_id=$1 returning revision",
           [user.id, JSON.stringify(document), JSON.stringify(projection)],
@@ -586,6 +630,7 @@ export async function syncRoutes(app: FastifyInstance) {
         return { data: document, revision: Number(updated.rows[0].revision) };
       });
       if ("conflict" in result) reply.code(409);
+      if ("upgradeRequired" in result) reply.code(426);
       return result;
     },
   );

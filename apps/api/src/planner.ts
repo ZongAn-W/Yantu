@@ -4,6 +4,7 @@ import { adviceFor } from "./ai.js";
 import { query, transaction } from "./db.js";
 import type { OnboardingSession } from "./onboarding-contracts.js";
 import type { PlannerDocument } from "./sync-contracts.js";
+import type { ItemPlanning, PlanPlanning } from "./planning-contracts.js";
 
 export type ProfileRow = {
   goal_text: string;
@@ -18,12 +19,13 @@ export type ProfileRow = {
   current_progress: string;
   weekly_minutes: Record<string, number>;
   constraints_text: string;
+  planning_metadata?: PlanPlanning | null;
 };
-export type ItemRow = { id: string; course_id: string; course_name?: string; title: string; description: string; completion_criteria: string; estimated_minutes: number; earliest_date: string | null; deadline: string; deadline_kind: string; priority: number; status: string };
-type DailyRow = { id: string; item_id: string; date: string; planned_minutes: number; actual_minutes: number; advice_text: string; advice_topics: string[]; completion_status: string; item_title?: string; course_name?: string };
+export type ItemRow = { id: string; course_id: string; course_name?: string; title: string; description: string; completion_criteria: string; estimated_minutes: number; earliest_date: string | null; deadline: string; deadline_kind: string; priority: number; status: string; planning_metadata?: ItemPlanning | null };
+type DailyRow = { id: string; item_id: string; date: string; planned_minutes: number; actual_minutes: number; advice_text: string; advice_topics: string[]; completion_status: string; item_title?: string; course_name?: string; activity_instance_id?: string | null };
 
 export const PROFILE_COLUMNS = "goal_text,goal_type,goal_subtype,target_date::text,target_date_confirmed,plan_start_date::text,plan_end_date::text,target_school,target_program,current_progress,weekly_minutes,constraints_text";
-const ITEM_COLUMNS = "id,course_id,title,description,completion_criteria,estimated_minutes,earliest_date::text,deadline::text,deadline_kind,priority,status";
+const ITEM_COLUMNS = "id,course_id,title,description,completion_criteria,estimated_minutes,earliest_date::text,deadline::text,deadline_kind,priority,status,planning_metadata";
 
 export function dateAdd(date: string, days: number) {
   const value = new Date(`${date}T00:00:00Z`);
@@ -66,7 +68,7 @@ export async function saveProfile(userId: string, profile: ProfileRow, client?: 
 }
 
 export function itemToJson(row: ItemRow) {
-  return { id: row.id, course_id: row.course_id, title: row.title, description: row.description, completion_criteria: row.completion_criteria, estimated_minutes: row.estimated_minutes, earliest_date: row.earliest_date ?? undefined, deadline: row.deadline, deadline_kind: row.deadline_kind ?? "deadline", priority: row.priority, status: row.status };
+  return { id: row.id, course_id: row.course_id, title: row.title, description: row.description, completion_criteria: row.completion_criteria, estimated_minutes: row.estimated_minutes, earliest_date: row.earliest_date ?? undefined, deadline: row.deadline, deadline_kind: row.deadline_kind ?? "deadline", priority: row.priority, status: row.status, ...(row.planning_metadata ? { planning: row.planning_metadata } : {}) };
 }
 
 export async function listCourses(userId: string) {
@@ -88,11 +90,11 @@ export async function listDailyPlans(userId: string, from: string, to: string) {
 
 export async function snapshot(userId: string, client?: pg.PoolClient) {
   const read = <T extends pg.QueryResultRow>(sql: string, values: unknown[] = []) => client ? client.query<T>(sql, values) : query<T>(sql, values);
-  const profile = (await read<ProfileRow>(`select ${PROFILE_COLUMNS} from profiles where user_id=$1`, [userId])).rows[0];
+  const profile = (await read<ProfileRow>(`select ${PROFILE_COLUMNS},planning_metadata from profiles where user_id=$1`, [userId])).rows[0];
   if (!profile) return null;
   const courses = await read<{ id: string; name: string; priority: number }>("select id,name,priority from courses where user_id=$1 order by created_at", [userId]);
   const items = await read<ItemRow>(`select ${ITEM_COLUMNS} from items where user_id=$1 order by deadline,created_at`, [userId]);
-  const days = await read<DailyRow>("select d.id,d.item_id,d.date::text,d.planned_minutes,d.actual_minutes,d.advice_text,d.advice_topics,d.completion_status,i.title as item_title,c.name as course_name from daily_plan_items d join items i on i.id=d.item_id join courses c on c.id=i.course_id where d.user_id=$1 order by d.date,d.id", [userId]);
+  const days = await read<DailyRow>("select d.id,d.item_id,d.date::text,d.planned_minutes,d.actual_minutes,d.advice_text,d.advice_topics,d.completion_status,d.activity_instance_id,i.title as item_title,c.name as course_name from daily_plan_items d join items i on i.id=d.item_id join courses c on c.id=i.course_id where d.user_id=$1 order by d.date,d.id", [userId]);
   const logs = await read<{ id: string; item_id: string; daily_plan_item_id: string | null; date: string; minutes: number; created_at: string }>("select id,item_id,daily_plan_item_id,date::text,minutes,created_at from study_logs where user_id=$1 order by created_at", [userId]);
   const logged = new Map<string, number>();
   for (const log of logs.rows) logged.set(log.item_id, (logged.get(log.item_id) ?? 0) + log.minutes);
@@ -101,6 +103,7 @@ export async function snapshot(userId: string, client?: pg.PoolClient) {
   const boundary = profile.plan_end_date ?? profile.target_date ?? dateAdd(today, 27);
   return {
     version: 1 as const,
+    ...(profile.planning_metadata ? { planning: profile.planning_metadata } : {}),
     profile: {
       user_id: userId, planning_mode: "daily" as const,
       goal_text: profile.goal_text, goal_type: profile.goal_type, goal_subtype: profile.goal_subtype,
@@ -118,8 +121,8 @@ export async function snapshot(userId: string, client?: pg.PoolClient) {
       foundation: profile.current_progress,
     },
     subjects: courses.rows.map((course) => ({ id: course.id, user_id: userId, name: course.name, color: "#275e91", priority: course.priority as 1 | 2 | 3 })),
-    tasks: items.rows.map((item) => ({ id: item.id, user_id: userId, subject_id: item.course_id, title: item.title, description: [item.description, item.completion_criteria ? `完成标准：${item.completion_criteria}` : ""].filter(Boolean).join("\n"), estimated_minutes: item.estimated_minutes, completed_minutes: Math.min(item.estimated_minutes, logged.get(item.id) ?? 0), priority: item.priority as 1 | 2 | 3, deadline: item.deadline, deadline_kind: item.deadline_kind ?? "deadline", earliest_date: item.earliest_date ?? undefined, is_fixed: false, status: (item.status === "archived" ? "archived" : item.status === "completed" ? "completed" : (logged.get(item.id) ?? 0) > 0 ? "in_progress" : "not_started") as "not_started" | "in_progress" | "completed" | "archived", created_at: now, updated_at: now })),
-    blocks: days.rows.map((day) => ({ id: day.id, user_id: userId, task_id: day.item_id, date: day.date, start_minute: 0, duration_minutes: day.planned_minutes, actual_minutes: day.actual_minutes, is_fixed: false, status: (day.completion_status === "completed" ? "completed" : "planned") as "planned" | "completed", created_at: now, updated_at: now, advice_text: day.advice_text, advice_topics: day.advice_topics, completion_status: day.completion_status })),
+    tasks: items.rows.map((item) => ({ id: item.id, user_id: userId, subject_id: item.course_id, title: item.title, description: [item.description, item.completion_criteria ? `完成标准：${item.completion_criteria}` : ""].filter(Boolean).join("\n"), estimated_minutes: item.estimated_minutes, completed_minutes: logged.get(item.id) ?? 0, priority: item.priority as 1 | 2 | 3, deadline: item.deadline, deadline_kind: item.deadline_kind ?? "deadline", earliest_date: item.earliest_date ?? undefined, is_fixed: false, status: (item.status === "archived" ? "archived" : item.status === "completed" ? "completed" : (logged.get(item.id) ?? 0) > 0 ? "in_progress" : "not_started") as "not_started" | "in_progress" | "completed" | "archived", created_at: now, updated_at: now, ...(item.planning_metadata ? { planning: item.planning_metadata } : {}) })),
+    blocks: days.rows.map((day) => ({ id: day.id, user_id: userId, task_id: day.item_id, date: day.date, start_minute: 0, duration_minutes: day.planned_minutes, actual_minutes: day.actual_minutes, is_fixed: false, status: (day.completion_status === "completed" ? "completed" : "planned") as "planned" | "completed", created_at: now, updated_at: now, advice_text: day.advice_text, advice_topics: day.advice_topics, completion_status: day.completion_status, ...(day.activity_instance_id ? { activity_instance_id: day.activity_instance_id } : {}) })),
     logs: logs.rows.map((log) => ({ id: log.id, user_id: userId, task_id: log.item_id, block_id: log.daily_plan_item_id, date: log.date, minutes: log.minutes, started_at: log.created_at, ended_at: log.created_at, source: "manual" as const })),
     fixed_events: [], replan_runs: [], phases: [],
   };
@@ -340,8 +343,23 @@ async function generateRows(client: pg.PoolClient, userId: string, from: string,
   return rows;
 }
 
+async function requireLegacyPlan(client: pg.PoolClient, userId: string) {
+  const state = (await client.query<{ document: PlannerDocument | null }>(
+    "select document from planner_sync_state where user_id=$1 for update", [userId])).rows[0];
+  const stored = await client.query<{ present: boolean }>(`select exists(
+    select 1 from profiles where user_id=$1 and planning_metadata is not null
+    union all select 1 from items where user_id=$1 and planning_metadata is not null
+    union all select 1 from daily_plan_items where user_id=$1 and activity_instance_id is not null
+  ) as present`, [userId]);
+  const document = state?.document;
+  if (stored.rows[0].present || document?.planning || document?.tasks.some(task => task.planning)
+    || document?.blocks.some(block => block.activity_instance_id))
+    throw new Error("当前计划包含学习路线与活动策略，请使用新版检查和调整预览后确认；旧版直接写入已停止，当前计划已保留");
+}
+
 export async function generatePlan(userId: string, from = dateToday()) {
   return transaction(async (client) => {
+    await requireLegacyPlan(client, userId);
     const profile = (await client.query<ProfileRow>(`select ${PROFILE_COLUMNS} from profiles where user_id=$1`, [userId])).rows[0];
     if (!profile) throw new Error("请先完成学习目标设置");
     const itemResult = await client.query<ItemRow>(`select ${ITEM_COLUMNS} from items where user_id=$1 and confirmed=true and status not in ('completed','archived') order by deadline, priority desc`, [userId]);
@@ -353,6 +371,9 @@ export async function generatePlan(userId: string, from = dateToday()) {
 
 export async function confirmDraft(userId: string, draft: { courses: Array<{ id: string; name: string; description: string; priority: number }>; items: Array<{ id: string; course_id: string; title: string; description: string; completion_criteria: string; estimated_minutes: number; earliest_date?: string; deadline: string; deadline_kind?: string; priority: number }>; analysis_summary: string; assumptions: string[]; warnings: string[] }, options: { client?: pg.PoolClient; from?: string; advice?: boolean } = {}) {
   const persist = async (client: pg.PoolClient) => {
+    if ((draft as { planning?: unknown }).planning || draft.items.some(item => (item as { planning?: unknown }).planning))
+      throw new Error("新版学习策略需要先检查和预览，请从规划访谈确认；当前草案已保留");
+    await requireLegacyPlan(client, userId);
     const profile = (await client.query<ProfileRow>(`select ${PROFILE_COLUMNS} from profiles where user_id=$1`, [userId])).rows[0];
     if (!profile) throw new Error("请先保存学习目标设置");
     const from = options.from ?? dateToday();
@@ -392,6 +413,7 @@ export async function confirmDraft(userId: string, draft: { courses: Array<{ id:
 
 export async function settleDay(userId: string, date: string, entries: Array<{ item_id: string; actual_minutes: number; completion_status: string; feedback: string }>, feedback: string) {
   return transaction(async (client) => {
+    await requireLegacyPlan(client, userId);
     const before = (await client.query("select * from daily_plan_items where user_id=$1 and date >= $2 order by date, item_id", [userId, dateAdd(date, 1)])).rows;
     for (const entry of entries) {
       const daily = await client.query<{ id: string }>("select id from daily_plan_items where user_id=$1 and item_id=$2 and date=$3", [userId, entry.item_id, date]);
@@ -414,6 +436,7 @@ export async function settleDay(userId: string, date: string, entries: Array<{ i
 
 export async function undoRun(userId: string, runId: string) {
   return transaction(async (client) => {
+    await requireLegacyPlan(client, userId);
     const result = await client.query<{ before_payload: DailyRow[]; after_payload: DailyRow[]; date: string }>("select before_payload,after_payload,date::text from replan_runs where id=$1 and user_id=$2 and undone_at is null", [runId, userId]);
     const run = result.rows[0];
     if (!run) throw new Error("找不到可撤销的调整");

@@ -1,8 +1,7 @@
-import 'dart:math' as math;
-
 import '../../../shared/models/planner_models.dart';
 import 'planner_format.dart';
 import 'scheduler/planner_scheduler.dart' as scheduler;
+import 'scheduler/strategy_scheduler.dart' as strategy;
 
 /// 生成每日安排的结果，包含没有排入的剩余量，便于界面解释原因。
 class PlanGenerationResult {
@@ -37,135 +36,54 @@ PlanGenerationResult generatePlanBlocks(
   final stamp = timestamp ?? nowIso();
   final id = nextId ?? scheduler.newUuid;
   final start = from.compareTo(to) <= 0 ? from : to;
-  final end = from.compareTo(to) <= 0 ? to : from;
-  final blocks = [...data.blocks];
-  final active = data.tasks
-      .where(
-        (task) =>
-            task.status != TaskStatus.archived &&
-            task.status != TaskStatus.completed,
-      )
-      .toList();
-
-  int remainingOf(Task task) {
-    final planned = blocks
-        .where(
-          (block) =>
-              block.taskId == task.id &&
-              block.date.compareTo(start) >= 0 &&
-              block.status != BlockStatus.completed,
-        )
-        .fold<int>(
-          0,
-          (sum, block) =>
-              sum + math.max(0, block.durationMinutes - block.actualMinutes),
-        );
-    return math.max(0, task.estimatedMinutes - task.completedMinutes - planned);
+  var end = from.compareTo(to) <= 0 ? to : from;
+  if (data.planning?['rolling'] == true) {
+    final detailEnd = addDate(
+      start,
+      (data.planning?['detail_days'] as int? ?? 14) - 1,
+    );
+    if (detailEnd.compareTo(end) < 0) end = detailEnd;
   }
-
-  var created = 0;
-  var scheduled = 0;
+  final result = strategy.scheduleStrategy(
+    data,
+    start,
+    end,
+    runtime: scheduler.SchedulerRuntime(now: DateTime.parse(stamp), nextId: id),
+  );
   var restDays = 0;
   final gaps = <String>[];
-
-  for (var date = start; ; date = addDate(date, 1)) {
-    if (date.compareTo(end) > 0) break;
-    final budget = scheduler.dailyStudyBudget(data.profile, date);
-    if (budget <= 0) {
-      restDays++;
-      continue;
-    }
-    final dayBlocks = blocks.where((block) => block.date == date).toList();
-    var capacity =
-        budget -
-        scheduler.fixedEventMinutesForDate(
-          data.fixedEvents,
-          date,
-          includeRest: data.profile.planningMode != PlanningMode.timed,
-        ) -
-        dayBlocks.fold<int>(0, (sum, block) => sum + block.durationMinutes);
-    if (capacity <= 0) continue;
-    final perCourse = <String, int>{};
-    for (final block in dayBlocks) {
-      final subject = data.tasks
-          .where((task) => task.id == block.taskId)
-          .firstOrNull
-          ?.subjectId;
-      if (subject != null) {
-        perCourse[subject] = (perCourse[subject] ?? 0) + block.durationMinutes;
-      }
-    }
-    final candidates = active
-        .where(
-          (task) =>
-              remainingOf(task) > 0 &&
-              (task.earliestDate ?? date).compareTo(date) <= 0 &&
-              task.deadline.compareTo(date) >= 0,
-        )
-        .toList()
-      ..sort((a, b) {
-        final deadline = a.deadline.compareTo(b.deadline);
-        if (deadline != 0) return deadline;
-        final priority = b.priority.compareTo(a.priority);
-        return priority != 0 ? priority : a.title.compareTo(b.title);
-      });
-    for (final task in candidates) {
-      if (capacity <= 0) break;
-      final subjectLimit =
-          math.min(240, data.profile.subjectLimitMinutes) -
-          (perCourse[task.subjectId] ?? 0);
-      var amount = math.min(
-        remainingOf(task),
-        math.min(capacity, math.max(0, subjectLimit)),
-      );
-      while (amount > 0) {
-        final chunk = math.min(30, amount);
-        final block = ScheduleBlock(
-          id: id(),
-          userId: data.profile.userId,
-          taskId: task.id,
-          date: date,
-          startMinute: 0,
-          durationMinutes: chunk,
-          actualMinutes: 0,
-          isFixed: false,
-          status: BlockStatus.planned,
-          createdAt: stamp,
-          updatedAt: stamp,
-        );
-        if (scheduler.validateBlockPlacement(
-              data.copyWith(blocks: blocks),
-              block,
-            ) !=
-            null) {
-          break;
-        }
-        blocks.add(block);
-        created++;
-        scheduled += chunk;
-        amount -= chunk;
-        capacity -= chunk;
-        perCourse[task.subjectId] = (perCourse[task.subjectId] ?? 0) + chunk;
-      }
-    }
+  for (var date = start; date.compareTo(end) <= 0; date = addDate(date, 1)) {
+    if (scheduler.dailyStudyBudget(data.profile, date) <= 0) restDays++;
   }
-
-  final unscheduled = active.fold<int>(
-    0,
-    (sum, task) => sum + remainingOf(task),
-  );
   if (restDays > 0) {
     gaps.add('有 $restDays 天可用时间为 0，没有生成学习安排');
   }
-  if (unscheduled > 0) {
-    final left = duration(unscheduled);
+  if (result.unscheduledMinutes > 0) {
+    final left = duration(result.unscheduledMinutes);
     gaps.add('还有 $left 未能排入，请调整每日可用时间或事项日期');
   }
+  gaps.addAll(
+    result.issues
+        .where((issue) => issue.code != 'WORK_UNSCHEDULED')
+        .map((issue) => issue.message)
+        .toSet(),
+  );
   return PlanGenerationResult(
-    data: data.copyWith(blocks: blocks),
-    blocks: created,
-    scheduledMinutes: scheduled,
-    unscheduledMinutes: unscheduled,
+    data: data.copyWith(
+      blocks: result.blocks,
+      planning: data.planning == null
+          ? null
+          : {
+              ...data.planning!,
+              'detailed_until': end,
+              'needs_review': true,
+              'quality': null,
+              'forecast': null,
+            },
+    ),
+    blocks: result.added,
+    scheduledMinutes: result.scheduledMinutes,
+    unscheduledMinutes: result.unscheduledMinutes,
     gaps: gaps,
   );
 }
@@ -197,6 +115,7 @@ PlannerData extendPlanCycle(
     ],
   );
 }
+
 /// 一次“应用新排程约束”的调整结果。
 class ScheduleAdjustment {
   const ScheduleAdjustment({
@@ -314,8 +233,12 @@ ScheduleAdjustment reschedulePlan(
   final notes = <String>[];
   final restDays = <String>{};
   for (final block in kept) {
-    if (block.date.compareTo(from) < 0 || block.date.compareTo(end) > 0) continue;
-    if (scheduler.dailyStudyBudget(generated.data.profile, block.date) > 0) continue;
+    if (block.date.compareTo(from) < 0 || block.date.compareTo(end) > 0) {
+      continue;
+    }
+    if (scheduler.dailyStudyBudget(generated.data.profile, block.date) > 0) {
+      continue;
+    }
     restDays.add(block.date);
   }
   for (final date in restDays.toList()..sort()) {
@@ -325,7 +248,9 @@ ScheduleAdjustment reschedulePlan(
     );
   }
   if (releasedBlocks > 0) {
-    notes.add('已释放 $releasedBlocks 段未来安排（${duration(releasedMinutes)}）按新约束重新分配。');
+    notes.add(
+      '已释放 $releasedBlocks 段未来安排（${duration(releasedMinutes)}）按新约束重新分配。',
+    );
   }
   notes.addAll(generated.gaps);
 

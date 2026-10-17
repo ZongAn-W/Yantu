@@ -2,6 +2,9 @@ import { type OnboardingAction, type OnboardingSession, CalendarDateSchema, FIRS
 import { generateCourses, generateItems, nextInterview, recommendSchedule, shanghaiDate } from "./onboarding-ai.js";
 import { sanitizeInterviewSession } from "./onboarding-evidence.js";
 import { buildLearningContext, ResearchSchema } from "./learning-context.js";
+import { evaluatePlanning, frozenInputs, newPlanning, planningHash } from "./planning-service.js";
+import { checkAndRepair } from "./planning-repair.js";
+import type { PlannerDocument } from "./sync-contracts.js";
 
 /** 日期相差的自然日数。 */
 export function daySpan(from: string, to: string) {
@@ -39,8 +42,9 @@ export function prepareSchedule(session: OnboardingSession, action: Extract<Onbo
       ? (item.earliest_date && item.earliest_date > action.end_date ? item.earliest_date : action.end_date)
       : item.deadline;
     // 开始日期晚于本期结束日的事项保留为后续事项，不强行拉进本期。
-    const earliest = item.earliest_date && item.earliest_date > action.start_date ? item.earliest_date : action.start_date;
-    if (earliest > deadline) throw new Error(`事项「${item.title}」的开始日期晚于截止日期，请返回修改事项日期`);
+    const earliest = kind === "deadline" && deadline < action.start_date ? item.earliest_date
+      : item.earliest_date && item.earliest_date > action.start_date ? item.earliest_date : action.start_date;
+    if (earliest && earliest > deadline) throw new Error(`事项「${item.title}」的开始日期晚于截止日期，请返回修改事项日期`);
     CalendarDateSchema.parse(deadline);
     return { ...item, earliest_date: earliest, deadline, deadline_kind: kind };
   });
@@ -66,9 +70,11 @@ export function prepareSchedule(session: OnboardingSession, action: Extract<Onbo
   };
 }
 
-export async function advanceOnboarding(current: OnboardingSession, action: OnboardingAction): Promise<OnboardingSession> {
+export async function advanceOnboarding(current: OnboardingSession, action: OnboardingAction, currentDocument?: PlannerDocument | null): Promise<OnboardingSession> {
   // 旧草稿里可能残留 AI 无依据推断的考试信息；先按本轮回答修正再继续，revision 由原有协议推进。
   const session = sanitizeInterviewSession(structuredClone(current));
+  if (session.constraints_confirmed) session.profile = structuredClone(current.profile);
+  if (["refresh_plan", "set_exam_year", "answer", "resume_interview", "back"].includes(action.type)) session.preview = null;
   const requireStage = (...stages: OnboardingSession["stage"][]) => {
     if (!stages.includes(session.stage)) throw new Error("当前阶段不支持此操作，请刷新后重试");
   };
@@ -99,9 +105,11 @@ export async function advanceOnboarding(current: OnboardingSession, action: Onbo
       session.question = "";
       session.question_options = [];
       session.question_multiple = false;
+      session.question_type = "text";
     } else {
       const result = await nextInterview(session);
       session.question = result.question;
+      session.question_type = result.question_type;
       session.question_options = result.question_options;
       session.question_multiple = result.question_multiple;
       session.question_fields = result.question_fields ?? [];
@@ -125,12 +133,21 @@ export async function advanceOnboarding(current: OnboardingSession, action: Onbo
     validateReferences(action.courses, []);
     session.courses = action.courses;
     session.items = [];
+    session.preview = null;
     if (action.type === "revise_courses") Object.assign(session, await generateCourses(session, action.instruction));
     if (action.type === "confirm_courses") {
       session.recommendations = await ensureRecommendations(session);
       if (!session.end_date) session.end_date = session.recommendations.plan_end_date || cycleEnd(session.profile);
-      Object.assign(session, await generateItems(session), { stage: "items" });
+      session.stage = "constraints";
     }
+  } else if (action.type === "set_constraints") {
+    requireStage("constraints");
+    Object.assign(session, prepareSchedule(session, { ...action, type: "finish" }), { constraints_confirmed: true });
+    session.planning = { ...newPlanning(), detail_days: action.detail_days };
+    Object.assign(session, await generateItems(session), { stage: "items", preview: null });
+    session.planning = { ...session.planning!, detail_days: action.detail_days };
+    const checked = evaluatePlanning(session, currentDocument);
+    session.planning = checked.planning;
   } else if (action.type === "save_items" || action.type === "revise_items" || action.type === "confirm_items") {
     requireStage("items");
     validateReferences(session.courses, action.items);
@@ -138,6 +155,7 @@ export async function advanceOnboarding(current: OnboardingSession, action: Onbo
       if (item.earliest_date && item.earliest_date > item.deadline) throw new Error(`事项「${item.title}」的开始日期晚于截止日期`);
     }
     session.items = action.items;
+    session.preview = null;
     if (action.type === "revise_items") Object.assign(session, await generateItems(session, action.instruction));
     if (action.type === "confirm_items") {
       if (session.courses.some(course => !session.items.some(item => item.course_id === course.id))) throw new Error("每门课程至少需要一个学习事项");
@@ -145,17 +163,31 @@ export async function advanceOnboarding(current: OnboardingSession, action: Onbo
       session.stage = "schedule";
       if (!session.end_date) session.end_date = session.recommendations.plan_end_date || cycleEnd(session.profile);
     }
+  } else if (action.type === "preview_schedule") {
+    requireStage("schedule");
+    Object.assign(session, prepareSchedule(session, { ...action, type: "finish" }));
+    session.planning = { ...(session.planning ?? newPlanning()), detail_days: action.detail_days };
+    Object.assign(session, await checkAndRepair(session, currentDocument));
   } else if (action.type === "back") {
-    requireStage("courses", "items", "schedule");
+    requireStage("courses", "constraints", "items", "schedule");
     if (action.target === "interview") session.stage = "interview";
     else if (action.target === "courses") session.stage = "courses";
+    else if (action.target === "constraints") { session.stage = "constraints"; session.preview = null; }
     else {
       requireStage("schedule");
       session.stage = "items";
     }
   } else if (action.type === "finish") {
     requireStage("schedule");
-    return { ...prepareSchedule(session, action), revision: session.revision + 1, stage: "complete" };
+    const prepared = prepareSchedule(session, action);
+    if (session.planning || session.constraints_confirmed) {
+      if (!action.preview_token || action.preview_token !== session.preview?.token
+        || planningHash(frozenInputs(prepared)) !== session.preview?.fingerprint)
+        throw new Error("条件或草案已变化，请重新检查并预览每日安排");
+      const checked = evaluatePlanning(prepared, currentDocument);
+      if (checked.preview.status !== "ready") throw new Error("仍有必须解决的规划冲突，请返回预览修改");
+    }
+    return { ...prepared, revision: session.revision + 1, stage: "complete" };
   }
   return { ...session, revision: session.revision + 1 };
 }

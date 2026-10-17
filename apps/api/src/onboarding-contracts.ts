@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CalendarDateSchema, CourseDraftSchema, ItemDraftSchema, NullableDateSchema, ProfileSchema } from "./contracts.js";
 import { LearningContextSchema, ResearchSchema, LEARNER_FIELDS } from "./learning-context.js";
+import { PlanPlanningSchema } from "./planning-contracts.js";
 
 export const FIRST_QUESTION = "你接下来想学习什么，或者达成什么目标？";
 /** 首题只提供具体业务选项；“其他”自定义回答入口由客户端统一提供。 */
@@ -47,6 +48,19 @@ export const QuestionOptionsSchema = z
   .transform(options => normalizeQuestionOptions(options))
   .refine(options => options.length <= 8, "题目选项不能超过8项");
 
+export const QuestionTypeSchema = z.enum(["text", "single_choice", "multiple_choice"]);
+export type QuestionType = z.infer<typeof QuestionTypeSchema>;
+
+/** Old drafts infer their type once; explicit AI text answers never retain stale options. */
+export function normalizeQuestionPresentation(value: {
+  question_type?: QuestionType; question_options?: readonly string[]; question_multiple?: boolean;
+}) {
+  const options = normalizeQuestionOptions(value.question_options ?? []);
+  const type = value.question_type ?? (!options.length ? "text" : value.question_multiple ? "multiple_choice" : "single_choice");
+  if (type === "text" || !options.length) return { question_type: "text" as const, question_options: [], question_multiple: false };
+  return { question_type: type, question_options: options, question_multiple: type === "multiple_choice" };
+}
+
 export const RecommendedWeeklyMinutesSchema = z
   .record(z.enum(["0", "1", "2", "3", "4", "5", "6"]), z.number().int().min(0).max(480))
   .refine(value => Object.keys(value).length === 0 || Object.keys(value).length === 7, "推荐时间必须包含完整一周");
@@ -89,8 +103,9 @@ export const SessionSchema = z.object({
   replanning: z.boolean().default(false),
   plan_revision: z.number().int().nonnegative().nullable().default(null),
   current_plan: z.record(z.unknown()).nullable().default(null),
-  stage: z.enum(["interview", "checkpoint", "courses", "items", "schedule", "complete"]),
+  stage: z.enum(["interview", "checkpoint", "courses", "constraints", "items", "schedule", "complete"]),
   question: z.string().max(1000),
+  question_type: QuestionTypeSchema.optional(),
   question_options: QuestionOptionsSchema.default([]),
   question_multiple: z.boolean().default(false),
   question_fields: z.array(z.enum(LEARNER_FIELDS)).default([]),
@@ -107,6 +122,9 @@ export const SessionSchema = z.object({
   warnings: z.array(z.string().max(500)).max(20),
   start_date: z.string(),
   end_date: z.string().default(""),
+  constraints_confirmed: z.boolean().default(false),
+  planning: PlanPlanningSchema.nullable().default(null),
+  preview: z.record(z.unknown()).nullable().default(null),
 });
 export type OnboardingSession = z.infer<typeof SessionSchema>;
 
@@ -121,11 +139,17 @@ export const ActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("generate_courses") }),
   z.object({ type: z.literal("save_courses"), courses: CoursesSchema }),
   z.object({ type: z.literal("confirm_courses"), courses: CoursesSchema }),
+  z.object({ type: z.literal("set_constraints"), start_date: CalendarDateSchema, end_date: CalendarDateSchema,
+    target_date: NullableDateSchema.optional(), weekly_minutes: RecommendedWeeklyMinutesSchema.refine(value => Object.keys(value).length === 7, "请填写完整一周时间"),
+    detail_days: z.number().int().min(1).max(90).default(14) }),
+  z.object({ type: z.literal("preview_schedule"), start_date: CalendarDateSchema, end_date: CalendarDateSchema,
+    target_date: NullableDateSchema.optional(), weekly_minutes: RecommendedWeeklyMinutesSchema.refine(value => Object.keys(value).length === 7, "请填写完整一周时间"),
+    detail_days: z.number().int().min(1).max(90).default(14) }),
   z.object({ type: z.literal("revise_courses"), courses: CoursesSchema, instruction: z.string().trim().min(1).max(2000) }),
   z.object({ type: z.literal("save_items"), items: ItemsSchema }),
   z.object({ type: z.literal("confirm_items"), items: ItemsSchema }),
   z.object({ type: z.literal("revise_items"), items: ItemsSchema, instruction: z.string().trim().min(1).max(2000) }),
-  z.object({ type: z.literal("back"), target: z.enum(["interview", "courses", "items"]) }),
+  z.object({ type: z.literal("back"), target: z.enum(["interview", "courses", "constraints", "items"]) }),
   z.object({
     type: z.literal("finish"),
     start_date: CalendarDateSchema,
@@ -134,6 +158,7 @@ export const ActionSchema = z.discriminatedUnion("type", [
     /** 可选目标日期，null、"" 或省略都表示暂不设置。 */
     target_date: NullableDateSchema.optional(),
     weekly_minutes: z.record(z.enum(["0", "1", "2", "3", "4", "5", "6"]), z.number().int().min(0).max(480)),
+    preview_token: z.string().optional(),
   }),
 ]);
 export type OnboardingAction = z.infer<typeof ActionSchema>;
@@ -146,6 +171,7 @@ export function newSession(): OnboardingSession {
     question_fields: [], learning_context: LearningContextSchema.parse({}), research: ResearchSchema.parse({}), exam_year_override: null,
     profile: ProfileSchema.parse({}), recommendations: RecommendationsSchema.parse({}),
     courses: [], items: [], summary: "", assumptions: [], warnings: [], start_date: "", end_date: "",
+    constraints_confirmed: false, planning: null, preview: null,
   };
 }
 

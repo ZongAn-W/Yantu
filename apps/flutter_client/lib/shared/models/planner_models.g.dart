@@ -64,6 +64,7 @@ _PlannerData _$PlannerDataFromJson(Map<String, dynamic> json) => $checkedCreate(
           (k, e) => MapEntry(k, e as String),
         ),
       ),
+      planning: $checkedConvert('planning', (v) => v as Map<String, dynamic>?),
     );
     return val;
   },
@@ -86,6 +87,7 @@ Map<String, dynamic> _$PlannerDataToJson(_PlannerData instance) =>
       'replan_runs': instance.replanRuns.map((e) => e.toJson()).toList(),
       'phases': instance.phases.map((e) => e.toJson()).toList(),
       'daily_feedback': ?instance.dailyFeedback,
+      'planning': ?instance.planning,
     };
 
 _Profile _$ProfileFromJson(Map<String, dynamic> json) => $checkedCreate(
@@ -272,6 +274,7 @@ _Task _$TaskFromJson(Map<String, dynamic> json) => $checkedCreate(
       ),
       createdAt: $checkedConvert('created_at', (v) => v as String),
       updatedAt: $checkedConvert('updated_at', (v) => v as String),
+      planning: $checkedConvert('planning', (v) => v as Map<String, dynamic>?),
     );
     return val;
   },
@@ -304,6 +307,7 @@ Map<String, dynamic> _$TaskToJson(_Task instance) => <String, dynamic>{
   'status': _$TaskStatusEnumMap[instance.status]!,
   'created_at': instance.createdAt,
   'updated_at': instance.updatedAt,
+  'planning': ?instance.planning,
 };
 
 const _$ItemDateKindEnumMap = {
@@ -359,6 +363,10 @@ _ScheduleBlock _$ScheduleBlockFromJson(Map<String, dynamic> json) =>
             (v) => $enumDecodeNullable(_$CompletionStatusEnumMap, v),
           ),
           feedback: $checkedConvert('feedback', (v) => v as String?),
+          activityInstanceId: $checkedConvert(
+            'activity_instance_id',
+            (v) => v as String?,
+          ),
         );
         return val;
       },
@@ -374,6 +382,7 @@ _ScheduleBlock _$ScheduleBlockFromJson(Map<String, dynamic> json) =>
         'adviceText': 'advice_text',
         'adviceTopics': 'advice_topics',
         'completionStatus': 'completion_status',
+        'activityInstanceId': 'activity_instance_id',
       },
     );
 
@@ -395,6 +404,7 @@ Map<String, dynamic> _$ScheduleBlockToJson(
   'advice_topics': ?instance.adviceTopics,
   'completion_status': ?_$CompletionStatusEnumMap[instance.completionStatus],
   'feedback': ?instance.feedback,
+  'activity_instance_id': ?instance.activityInstanceId,
 };
 
 const _$BlockStatusEnumMap = {

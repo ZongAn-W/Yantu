@@ -56,7 +56,13 @@ class LocalReplanning {
     if (_stateKey(data.toJson()) != proposal._baseline) {
       throw StateError('计划已发生变化，请重新生成预览');
     }
-    final confirmed = scheduler.confirmReplan(data, proposal.preview);
+    final confirmed = scheduler
+        .confirmReplan(data, proposal.preview)
+        .copyWith(
+          planning: data.planning == null
+              ? null
+              : {...data.planning!, 'needs_review': true, 'quality': null},
+        );
     final runs = [...confirmed.replanRuns];
     runs[runs.length - 1] = runs.last.copyWith(
       localUndoGuard: _undoState(confirmed),

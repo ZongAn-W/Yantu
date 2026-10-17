@@ -73,13 +73,24 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)("persisted onboarding", () 
     await next({ type: "confirm_courses", courses: [
       { id: "math", name: "高数", priority: 3 }, { id: "english", name: "英语", priority: 2 },
     ] });
-    expect(session.items.every(item => item.deadline === session.recommendations.plan_end_date && item.deadline_kind === "plan_end")).toBe(true);
+    expect(session.stage).toBe("constraints");
+    expect(session.items).toEqual([]);
     const { shanghaiDate } = await import("./onboarding-ai.js");
     const { dateAdd } = await import("./planner.js");
     const start = dateAdd(shanghaiDate(), 5), end = dateAdd(start, 3);
-    await next({ type: "confirm_items", items: session.items.map(i => ({ ...i, estimated_minutes: 300, earliest_date: start, deadline: end })) });
+    const week = { "0": 480, "1": 480, "2": 480, "3": 480, "4": 480, "5": 480, "6": 480 };
+    await next({ type: "set_constraints", start_date: start, end_date: end, weekly_minutes: week });
+    expect(session.stage).toBe("items");
+    expect(session.constraints_confirmed).toBe(true);
+    expect(session.items.every(item => item.deadline === end && item.deadline_kind === "plan_end")).toBe(true);
+    await next({ type: "confirm_items", items: session.items.map(i => ({ ...i, estimated_minutes: 300, earliest_date: start, deadline: end,
+      planning: { workload: { components: [{ id: "practice", label: "练习", quantity: 1, unit: "份", minutes_per_unit: 300 }],
+        source: "测试确认范围", confidence: "medium", calibration: "完成后核对" }, activity: { kind: "finite", starts_on: start, ends_on: end } } })) });
+    expect((await act(user, session, { type: "finish", start_date: start, end_date: end, weekly_minutes: week })).statusCode).toBe(400);
+    await next({ type: "preview_schedule", start_date: start, end_date: end, weekly_minutes: week });
+    expect(session.preview?.status).toBe("ready");
     const before = session;
-    const finish = { type: "finish", start_date: start, end_date: end, weekly_minutes: { "0": 480, "1": 480, "2": 480, "3": 480, "4": 480, "5": 480, "6": 480 } };
+    const finish = { type: "finish", start_date: start, end_date: end, weekly_minutes: week, preview_token: session.preview?.token };
     await next(finish);
     expect(session.stage).toBe("complete");
     expect((await get(user, "/api/onboarding/profile")).json().profile.plan_end_date).toBe(end);
@@ -92,6 +103,16 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)("persisted onboarding", () 
     expect((await act(user, before, finish)).statusCode).toBe(200);
     expect((await db.query<{ count: number }>("select count(*)::int as count from courses where user_id=$1", [user.id])).rows[0].count).toBe(2);
     expect((await get(user, "/api/planner/sync")).json().data.blocks.length).toBeGreaterThan(0);
+    const live = (await get(user, "/api/planner/sync")).json();
+    expect(live.data.planning.version).toBe(1);
+    for (const url of ["/api/plans/generate", `/api/daily-reviews/${start}/settle`]) {
+      const rejected = await app.inject({ method: "POST", url, headers: user.headers, payload: {} });
+      expect(rejected.statusCode, rejected.body).toBe(400);
+      expect(rejected.json().error).toContain("预览");
+    }
+    const { confirmDraft } = await import("./planner.js");
+    await expect(confirmDraft(user.id, { courses: [], items: [], analysis_summary: "", assumptions: [], warnings: [] })).rejects.toThrow("预览");
+    expect((await get(user, "/api/planner/sync")).json()).toEqual(live);
   });
 
   async function existingPlan(user: Account) {

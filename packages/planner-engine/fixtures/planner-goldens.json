@@ -753,7 +753,7 @@
       },
       "expected": {
         "preview": {
-          "id": "gold-0005",
+          "id": "gold-0001",
           "user_id": "user-1",
           "created_at": "2026-10-16T08:09:10.123Z",
           "before": [
@@ -787,144 +787,22 @@
               "duration_minutes": 120,
               "actual_minutes": 60,
               "is_fixed": false,
-              "status": "completed",
+              "status": "planned",
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-10-16T08:09:10.123Z",
+              "updated_at": "2026-09-01T00:00:00Z",
               "advice_text": "保留建议",
               "advice_topics": [
                 "范围"
               ],
               "completion_status": "partial",
               "feedback": "卡点"
-            },
-            {
-              "id": "gold-0002",
-              "user_id": "user-1",
-              "task_id": "math",
-              "date": "2026-10-17",
-              "start_minute": 0,
-              "duration_minutes": 30,
-              "actual_minutes": 0,
-              "is_fixed": false,
-              "status": "planned",
-              "created_at": "2026-10-16T08:09:10.123Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
-            },
-            {
-              "id": "gold-0004",
-              "user_id": "user-1",
-              "task_id": "math",
-              "date": "2026-10-17",
-              "start_minute": 0,
-              "duration_minutes": 30,
-              "actual_minutes": 0,
-              "is_fixed": false,
-              "status": "planned",
-              "created_at": "2026-10-16T08:09:10.123Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
             }
           ],
-          "changes": [
-            {
-              "id": "gold-0006",
-              "user_id": "user-1",
-              "run_id": "gold-0005",
-              "type": "moved",
-              "block_id": "today",
-              "before": {
-                "id": "today",
-                "user_id": "user-1",
-                "task_id": "math",
-                "date": "2026-10-16",
-                "start_minute": 480,
-                "duration_minutes": 120,
-                "actual_minutes": 60,
-                "is_fixed": false,
-                "status": "planned",
-                "created_at": "2026-09-01T00:00:00Z",
-                "updated_at": "2026-09-01T00:00:00Z",
-                "advice_text": "保留建议",
-                "advice_topics": [
-                  "范围"
-                ],
-                "completion_status": "partial",
-                "feedback": "卡点"
-              },
-              "after": {
-                "id": "today",
-                "user_id": "user-1",
-                "task_id": "math",
-                "date": "2026-10-16",
-                "start_minute": 480,
-                "duration_minutes": 120,
-                "actual_minutes": 60,
-                "is_fixed": false,
-                "status": "completed",
-                "created_at": "2026-09-01T00:00:00Z",
-                "updated_at": "2026-10-16T08:09:10.123Z",
-                "advice_text": "保留建议",
-                "advice_topics": [
-                  "范围"
-                ],
-                "completion_status": "partial",
-                "feedback": "卡点"
-              }
-            },
-            {
-              "id": "gold-0007",
-              "user_id": "user-1",
-              "run_id": "gold-0005",
-              "type": "added",
-              "block_id": "gold-0002",
-              "before": null,
-              "after": {
-                "id": "gold-0002",
-                "user_id": "user-1",
-                "task_id": "math",
-                "date": "2026-10-17",
-                "start_minute": 0,
-                "duration_minutes": 30,
-                "actual_minutes": 0,
-                "is_fixed": false,
-                "status": "planned",
-                "created_at": "2026-10-16T08:09:10.123Z",
-                "updated_at": "2026-10-16T08:09:10.123Z"
-              }
-            },
-            {
-              "id": "gold-0008",
-              "user_id": "user-1",
-              "run_id": "gold-0005",
-              "type": "added",
-              "block_id": "gold-0004",
-              "before": null,
-              "after": {
-                "id": "gold-0004",
-                "user_id": "user-1",
-                "task_id": "math",
-                "date": "2026-10-17",
-                "start_minute": 0,
-                "duration_minutes": 30,
-                "actual_minutes": 0,
-                "is_fixed": false,
-                "status": "planned",
-                "created_at": "2026-10-16T08:09:10.123Z",
-                "updated_at": "2026-10-16T08:09:10.123Z"
-              }
-            }
-          ],
-          "postponed": [
-            "math"
-          ],
+          "changes": [],
+          "postponed": [],
           "advanced": [],
           "conflicts": [],
-          "daily_changes": [
-            {
-              "date": "2026-10-17",
-              "before_minutes": 0,
-              "after_minutes": 60
-            }
-          ]
+          "daily_changes": []
         },
         "confirmed": {
           "version": 1,
@@ -988,9 +866,9 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "delayed",
+              "status": "in_progress",
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
+              "updated_at": "2026-09-01T00:00:00Z"
             }
           ],
           "blocks": [
@@ -1003,41 +881,15 @@
               "duration_minutes": 120,
               "actual_minutes": 60,
               "is_fixed": false,
-              "status": "completed",
+              "status": "planned",
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-10-16T08:09:10.123Z",
+              "updated_at": "2026-09-01T00:00:00Z",
               "advice_text": "保留建议",
               "advice_topics": [
                 "范围"
               ],
               "completion_status": "partial",
               "feedback": "卡点"
-            },
-            {
-              "id": "gold-0002",
-              "user_id": "user-1",
-              "task_id": "math",
-              "date": "2026-10-17",
-              "start_minute": 0,
-              "duration_minutes": 30,
-              "actual_minutes": 0,
-              "is_fixed": false,
-              "status": "planned",
-              "created_at": "2026-10-16T08:09:10.123Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
-            },
-            {
-              "id": "gold-0004",
-              "user_id": "user-1",
-              "task_id": "math",
-              "date": "2026-10-17",
-              "start_minute": 0,
-              "duration_minutes": 30,
-              "actual_minutes": 0,
-              "is_fixed": false,
-              "status": "planned",
-              "created_at": "2026-10-16T08:09:10.123Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
             }
           ],
           "logs": [
@@ -1056,7 +908,7 @@
           "fixed_events": [],
           "replan_runs": [
             {
-              "id": "gold-0005",
+              "id": "gold-0001",
               "user_id": "user-1",
               "created_at": "2026-10-16T08:09:10.123Z",
               "before": [
@@ -1090,144 +942,22 @@
                   "duration_minutes": 120,
                   "actual_minutes": 60,
                   "is_fixed": false,
-                  "status": "completed",
+                  "status": "planned",
                   "created_at": "2026-09-01T00:00:00Z",
-                  "updated_at": "2026-10-16T08:09:10.123Z",
+                  "updated_at": "2026-09-01T00:00:00Z",
                   "advice_text": "保留建议",
                   "advice_topics": [
                     "范围"
                   ],
                   "completion_status": "partial",
                   "feedback": "卡点"
-                },
-                {
-                  "id": "gold-0002",
-                  "user_id": "user-1",
-                  "task_id": "math",
-                  "date": "2026-10-17",
-                  "start_minute": 0,
-                  "duration_minutes": 30,
-                  "actual_minutes": 0,
-                  "is_fixed": false,
-                  "status": "planned",
-                  "created_at": "2026-10-16T08:09:10.123Z",
-                  "updated_at": "2026-10-16T08:09:10.123Z"
-                },
-                {
-                  "id": "gold-0004",
-                  "user_id": "user-1",
-                  "task_id": "math",
-                  "date": "2026-10-17",
-                  "start_minute": 0,
-                  "duration_minutes": 30,
-                  "actual_minutes": 0,
-                  "is_fixed": false,
-                  "status": "planned",
-                  "created_at": "2026-10-16T08:09:10.123Z",
-                  "updated_at": "2026-10-16T08:09:10.123Z"
                 }
               ],
-              "changes": [
-                {
-                  "id": "gold-0006",
-                  "user_id": "user-1",
-                  "run_id": "gold-0005",
-                  "type": "moved",
-                  "block_id": "today",
-                  "before": {
-                    "id": "today",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-16",
-                    "start_minute": 480,
-                    "duration_minutes": 120,
-                    "actual_minutes": 60,
-                    "is_fixed": false,
-                    "status": "planned",
-                    "created_at": "2026-09-01T00:00:00Z",
-                    "updated_at": "2026-09-01T00:00:00Z",
-                    "advice_text": "保留建议",
-                    "advice_topics": [
-                      "范围"
-                    ],
-                    "completion_status": "partial",
-                    "feedback": "卡点"
-                  },
-                  "after": {
-                    "id": "today",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-16",
-                    "start_minute": 480,
-                    "duration_minutes": 120,
-                    "actual_minutes": 60,
-                    "is_fixed": false,
-                    "status": "completed",
-                    "created_at": "2026-09-01T00:00:00Z",
-                    "updated_at": "2026-10-16T08:09:10.123Z",
-                    "advice_text": "保留建议",
-                    "advice_topics": [
-                      "范围"
-                    ],
-                    "completion_status": "partial",
-                    "feedback": "卡点"
-                  }
-                },
-                {
-                  "id": "gold-0007",
-                  "user_id": "user-1",
-                  "run_id": "gold-0005",
-                  "type": "added",
-                  "block_id": "gold-0002",
-                  "before": null,
-                  "after": {
-                    "id": "gold-0002",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-17",
-                    "start_minute": 0,
-                    "duration_minutes": 30,
-                    "actual_minutes": 0,
-                    "is_fixed": false,
-                    "status": "planned",
-                    "created_at": "2026-10-16T08:09:10.123Z",
-                    "updated_at": "2026-10-16T08:09:10.123Z"
-                  }
-                },
-                {
-                  "id": "gold-0008",
-                  "user_id": "user-1",
-                  "run_id": "gold-0005",
-                  "type": "added",
-                  "block_id": "gold-0004",
-                  "before": null,
-                  "after": {
-                    "id": "gold-0004",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-17",
-                    "start_minute": 0,
-                    "duration_minutes": 30,
-                    "actual_minutes": 0,
-                    "is_fixed": false,
-                    "status": "planned",
-                    "created_at": "2026-10-16T08:09:10.123Z",
-                    "updated_at": "2026-10-16T08:09:10.123Z"
-                  }
-                }
-              ],
-              "postponed": [
-                "math"
-              ],
+              "changes": [],
+              "postponed": [],
               "advanced": [],
               "conflicts": [],
-              "daily_changes": [
-                {
-                  "date": "2026-10-17",
-                  "before_minutes": 0,
-                  "after_minutes": 60
-                }
-              ],
+              "daily_changes": [],
               "status": "confirmed",
               "task_status_before": [
                 {
@@ -1238,7 +968,7 @@
               "task_status_after": [
                 {
                   "id": "math",
-                  "status": "delayed"
+                  "status": "in_progress"
                 }
               ]
             }
@@ -1309,7 +1039,7 @@
               "is_fixed": false,
               "status": "in_progress",
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
+              "updated_at": "2026-09-01T00:00:00Z"
             }
           ],
           "blocks": [
@@ -1349,7 +1079,7 @@
           "fixed_events": [],
           "replan_runs": [
             {
-              "id": "gold-0005",
+              "id": "gold-0001",
               "user_id": "user-1",
               "created_at": "2026-10-16T08:09:10.123Z",
               "before": [
@@ -1383,144 +1113,22 @@
                   "duration_minutes": 120,
                   "actual_minutes": 60,
                   "is_fixed": false,
-                  "status": "completed",
+                  "status": "planned",
                   "created_at": "2026-09-01T00:00:00Z",
-                  "updated_at": "2026-10-16T08:09:10.123Z",
+                  "updated_at": "2026-09-01T00:00:00Z",
                   "advice_text": "保留建议",
                   "advice_topics": [
                     "范围"
                   ],
                   "completion_status": "partial",
                   "feedback": "卡点"
-                },
-                {
-                  "id": "gold-0002",
-                  "user_id": "user-1",
-                  "task_id": "math",
-                  "date": "2026-10-17",
-                  "start_minute": 0,
-                  "duration_minutes": 30,
-                  "actual_minutes": 0,
-                  "is_fixed": false,
-                  "status": "planned",
-                  "created_at": "2026-10-16T08:09:10.123Z",
-                  "updated_at": "2026-10-16T08:09:10.123Z"
-                },
-                {
-                  "id": "gold-0004",
-                  "user_id": "user-1",
-                  "task_id": "math",
-                  "date": "2026-10-17",
-                  "start_minute": 0,
-                  "duration_minutes": 30,
-                  "actual_minutes": 0,
-                  "is_fixed": false,
-                  "status": "planned",
-                  "created_at": "2026-10-16T08:09:10.123Z",
-                  "updated_at": "2026-10-16T08:09:10.123Z"
                 }
               ],
-              "changes": [
-                {
-                  "id": "gold-0006",
-                  "user_id": "user-1",
-                  "run_id": "gold-0005",
-                  "type": "moved",
-                  "block_id": "today",
-                  "before": {
-                    "id": "today",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-16",
-                    "start_minute": 480,
-                    "duration_minutes": 120,
-                    "actual_minutes": 60,
-                    "is_fixed": false,
-                    "status": "planned",
-                    "created_at": "2026-09-01T00:00:00Z",
-                    "updated_at": "2026-09-01T00:00:00Z",
-                    "advice_text": "保留建议",
-                    "advice_topics": [
-                      "范围"
-                    ],
-                    "completion_status": "partial",
-                    "feedback": "卡点"
-                  },
-                  "after": {
-                    "id": "today",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-16",
-                    "start_minute": 480,
-                    "duration_minutes": 120,
-                    "actual_minutes": 60,
-                    "is_fixed": false,
-                    "status": "completed",
-                    "created_at": "2026-09-01T00:00:00Z",
-                    "updated_at": "2026-10-16T08:09:10.123Z",
-                    "advice_text": "保留建议",
-                    "advice_topics": [
-                      "范围"
-                    ],
-                    "completion_status": "partial",
-                    "feedback": "卡点"
-                  }
-                },
-                {
-                  "id": "gold-0007",
-                  "user_id": "user-1",
-                  "run_id": "gold-0005",
-                  "type": "added",
-                  "block_id": "gold-0002",
-                  "before": null,
-                  "after": {
-                    "id": "gold-0002",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-17",
-                    "start_minute": 0,
-                    "duration_minutes": 30,
-                    "actual_minutes": 0,
-                    "is_fixed": false,
-                    "status": "planned",
-                    "created_at": "2026-10-16T08:09:10.123Z",
-                    "updated_at": "2026-10-16T08:09:10.123Z"
-                  }
-                },
-                {
-                  "id": "gold-0008",
-                  "user_id": "user-1",
-                  "run_id": "gold-0005",
-                  "type": "added",
-                  "block_id": "gold-0004",
-                  "before": null,
-                  "after": {
-                    "id": "gold-0004",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-17",
-                    "start_minute": 0,
-                    "duration_minutes": 30,
-                    "actual_minutes": 0,
-                    "is_fixed": false,
-                    "status": "planned",
-                    "created_at": "2026-10-16T08:09:10.123Z",
-                    "updated_at": "2026-10-16T08:09:10.123Z"
-                  }
-                }
-              ],
-              "postponed": [
-                "math"
-              ],
+              "changes": [],
+              "postponed": [],
               "advanced": [],
               "conflicts": [],
-              "daily_changes": [
-                {
-                  "date": "2026-10-17",
-                  "before_minutes": 0,
-                  "after_minutes": 60
-                }
-              ],
+              "daily_changes": [],
               "status": "undone",
               "task_status_before": [
                 {
@@ -1531,7 +1139,7 @@
               "task_status_after": [
                 {
                   "id": "math",
-                  "status": "delayed"
+                  "status": "in_progress"
                 }
               ]
             }
@@ -8635,7 +8243,7 @@
       },
       "expected": {
         "preview": {
-          "id": "gold-0006",
+          "id": "gold-0001",
           "user_id": "user-1",
           "created_at": "2026-10-16T08:09:10.123Z",
           "before": [
@@ -8669,144 +8277,22 @@
               "duration_minutes": 120,
               "actual_minutes": 60,
               "is_fixed": false,
-              "status": "completed",
+              "status": "planned",
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-10-16T08:09:10.123Z",
+              "updated_at": "2026-09-01T00:00:00Z",
               "advice_text": "保留建议",
               "advice_topics": [
                 "范围"
               ],
               "completion_status": "partial",
               "feedback": "卡点"
-            },
-            {
-              "id": "gold-0002",
-              "user_id": "user-1",
-              "task_id": "math",
-              "date": "2026-10-17",
-              "start_minute": 480,
-              "duration_minutes": 30,
-              "actual_minutes": 0,
-              "is_fixed": false,
-              "status": "planned",
-              "created_at": "2026-10-16T08:09:10.123Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
-            },
-            {
-              "id": "gold-0005",
-              "user_id": "user-1",
-              "task_id": "math",
-              "date": "2026-10-17",
-              "start_minute": 510,
-              "duration_minutes": 30,
-              "actual_minutes": 0,
-              "is_fixed": false,
-              "status": "planned",
-              "created_at": "2026-10-16T08:09:10.123Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
             }
           ],
-          "changes": [
-            {
-              "id": "gold-0007",
-              "user_id": "user-1",
-              "run_id": "gold-0006",
-              "type": "moved",
-              "block_id": "today",
-              "before": {
-                "id": "today",
-                "user_id": "user-1",
-                "task_id": "math",
-                "date": "2026-10-16",
-                "start_minute": 480,
-                "duration_minutes": 120,
-                "actual_minutes": 60,
-                "is_fixed": false,
-                "status": "planned",
-                "created_at": "2026-09-01T00:00:00Z",
-                "updated_at": "2026-09-01T00:00:00Z",
-                "advice_text": "保留建议",
-                "advice_topics": [
-                  "范围"
-                ],
-                "completion_status": "partial",
-                "feedback": "卡点"
-              },
-              "after": {
-                "id": "today",
-                "user_id": "user-1",
-                "task_id": "math",
-                "date": "2026-10-16",
-                "start_minute": 480,
-                "duration_minutes": 120,
-                "actual_minutes": 60,
-                "is_fixed": false,
-                "status": "completed",
-                "created_at": "2026-09-01T00:00:00Z",
-                "updated_at": "2026-10-16T08:09:10.123Z",
-                "advice_text": "保留建议",
-                "advice_topics": [
-                  "范围"
-                ],
-                "completion_status": "partial",
-                "feedback": "卡点"
-              }
-            },
-            {
-              "id": "gold-0008",
-              "user_id": "user-1",
-              "run_id": "gold-0006",
-              "type": "added",
-              "block_id": "gold-0002",
-              "before": null,
-              "after": {
-                "id": "gold-0002",
-                "user_id": "user-1",
-                "task_id": "math",
-                "date": "2026-10-17",
-                "start_minute": 480,
-                "duration_minutes": 30,
-                "actual_minutes": 0,
-                "is_fixed": false,
-                "status": "planned",
-                "created_at": "2026-10-16T08:09:10.123Z",
-                "updated_at": "2026-10-16T08:09:10.123Z"
-              }
-            },
-            {
-              "id": "gold-0009",
-              "user_id": "user-1",
-              "run_id": "gold-0006",
-              "type": "added",
-              "block_id": "gold-0005",
-              "before": null,
-              "after": {
-                "id": "gold-0005",
-                "user_id": "user-1",
-                "task_id": "math",
-                "date": "2026-10-17",
-                "start_minute": 510,
-                "duration_minutes": 30,
-                "actual_minutes": 0,
-                "is_fixed": false,
-                "status": "planned",
-                "created_at": "2026-10-16T08:09:10.123Z",
-                "updated_at": "2026-10-16T08:09:10.123Z"
-              }
-            }
-          ],
-          "postponed": [
-            "math"
-          ],
+          "changes": [],
+          "postponed": [],
           "advanced": [],
           "conflicts": [],
-          "daily_changes": [
-            {
-              "date": "2026-10-17",
-              "before_minutes": 0,
-              "after_minutes": 60
-            }
-          ]
+          "daily_changes": []
         },
         "confirmed": {
           "version": 1,
@@ -8870,9 +8356,9 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "delayed",
+              "status": "in_progress",
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
+              "updated_at": "2026-09-01T00:00:00Z"
             }
           ],
           "blocks": [
@@ -8885,41 +8371,15 @@
               "duration_minutes": 120,
               "actual_minutes": 60,
               "is_fixed": false,
-              "status": "completed",
+              "status": "planned",
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-10-16T08:09:10.123Z",
+              "updated_at": "2026-09-01T00:00:00Z",
               "advice_text": "保留建议",
               "advice_topics": [
                 "范围"
               ],
               "completion_status": "partial",
               "feedback": "卡点"
-            },
-            {
-              "id": "gold-0002",
-              "user_id": "user-1",
-              "task_id": "math",
-              "date": "2026-10-17",
-              "start_minute": 480,
-              "duration_minutes": 30,
-              "actual_minutes": 0,
-              "is_fixed": false,
-              "status": "planned",
-              "created_at": "2026-10-16T08:09:10.123Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
-            },
-            {
-              "id": "gold-0005",
-              "user_id": "user-1",
-              "task_id": "math",
-              "date": "2026-10-17",
-              "start_minute": 510,
-              "duration_minutes": 30,
-              "actual_minutes": 0,
-              "is_fixed": false,
-              "status": "planned",
-              "created_at": "2026-10-16T08:09:10.123Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
             }
           ],
           "logs": [
@@ -8938,7 +8398,7 @@
           "fixed_events": [],
           "replan_runs": [
             {
-              "id": "gold-0006",
+              "id": "gold-0001",
               "user_id": "user-1",
               "created_at": "2026-10-16T08:09:10.123Z",
               "before": [
@@ -8972,144 +8432,22 @@
                   "duration_minutes": 120,
                   "actual_minutes": 60,
                   "is_fixed": false,
-                  "status": "completed",
+                  "status": "planned",
                   "created_at": "2026-09-01T00:00:00Z",
-                  "updated_at": "2026-10-16T08:09:10.123Z",
+                  "updated_at": "2026-09-01T00:00:00Z",
                   "advice_text": "保留建议",
                   "advice_topics": [
                     "范围"
                   ],
                   "completion_status": "partial",
                   "feedback": "卡点"
-                },
-                {
-                  "id": "gold-0002",
-                  "user_id": "user-1",
-                  "task_id": "math",
-                  "date": "2026-10-17",
-                  "start_minute": 480,
-                  "duration_minutes": 30,
-                  "actual_minutes": 0,
-                  "is_fixed": false,
-                  "status": "planned",
-                  "created_at": "2026-10-16T08:09:10.123Z",
-                  "updated_at": "2026-10-16T08:09:10.123Z"
-                },
-                {
-                  "id": "gold-0005",
-                  "user_id": "user-1",
-                  "task_id": "math",
-                  "date": "2026-10-17",
-                  "start_minute": 510,
-                  "duration_minutes": 30,
-                  "actual_minutes": 0,
-                  "is_fixed": false,
-                  "status": "planned",
-                  "created_at": "2026-10-16T08:09:10.123Z",
-                  "updated_at": "2026-10-16T08:09:10.123Z"
                 }
               ],
-              "changes": [
-                {
-                  "id": "gold-0007",
-                  "user_id": "user-1",
-                  "run_id": "gold-0006",
-                  "type": "moved",
-                  "block_id": "today",
-                  "before": {
-                    "id": "today",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-16",
-                    "start_minute": 480,
-                    "duration_minutes": 120,
-                    "actual_minutes": 60,
-                    "is_fixed": false,
-                    "status": "planned",
-                    "created_at": "2026-09-01T00:00:00Z",
-                    "updated_at": "2026-09-01T00:00:00Z",
-                    "advice_text": "保留建议",
-                    "advice_topics": [
-                      "范围"
-                    ],
-                    "completion_status": "partial",
-                    "feedback": "卡点"
-                  },
-                  "after": {
-                    "id": "today",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-16",
-                    "start_minute": 480,
-                    "duration_minutes": 120,
-                    "actual_minutes": 60,
-                    "is_fixed": false,
-                    "status": "completed",
-                    "created_at": "2026-09-01T00:00:00Z",
-                    "updated_at": "2026-10-16T08:09:10.123Z",
-                    "advice_text": "保留建议",
-                    "advice_topics": [
-                      "范围"
-                    ],
-                    "completion_status": "partial",
-                    "feedback": "卡点"
-                  }
-                },
-                {
-                  "id": "gold-0008",
-                  "user_id": "user-1",
-                  "run_id": "gold-0006",
-                  "type": "added",
-                  "block_id": "gold-0002",
-                  "before": null,
-                  "after": {
-                    "id": "gold-0002",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-17",
-                    "start_minute": 480,
-                    "duration_minutes": 30,
-                    "actual_minutes": 0,
-                    "is_fixed": false,
-                    "status": "planned",
-                    "created_at": "2026-10-16T08:09:10.123Z",
-                    "updated_at": "2026-10-16T08:09:10.123Z"
-                  }
-                },
-                {
-                  "id": "gold-0009",
-                  "user_id": "user-1",
-                  "run_id": "gold-0006",
-                  "type": "added",
-                  "block_id": "gold-0005",
-                  "before": null,
-                  "after": {
-                    "id": "gold-0005",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-17",
-                    "start_minute": 510,
-                    "duration_minutes": 30,
-                    "actual_minutes": 0,
-                    "is_fixed": false,
-                    "status": "planned",
-                    "created_at": "2026-10-16T08:09:10.123Z",
-                    "updated_at": "2026-10-16T08:09:10.123Z"
-                  }
-                }
-              ],
-              "postponed": [
-                "math"
-              ],
+              "changes": [],
+              "postponed": [],
               "advanced": [],
               "conflicts": [],
-              "daily_changes": [
-                {
-                  "date": "2026-10-17",
-                  "before_minutes": 0,
-                  "after_minutes": 60
-                }
-              ],
+              "daily_changes": [],
               "status": "confirmed",
               "task_status_before": [
                 {
@@ -9120,7 +8458,7 @@
               "task_status_after": [
                 {
                   "id": "math",
-                  "status": "delayed"
+                  "status": "in_progress"
                 }
               ]
             }
@@ -9191,7 +8529,7 @@
               "is_fixed": false,
               "status": "in_progress",
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
+              "updated_at": "2026-09-01T00:00:00Z"
             }
           ],
           "blocks": [
@@ -9231,7 +8569,7 @@
           "fixed_events": [],
           "replan_runs": [
             {
-              "id": "gold-0006",
+              "id": "gold-0001",
               "user_id": "user-1",
               "created_at": "2026-10-16T08:09:10.123Z",
               "before": [
@@ -9265,144 +8603,22 @@
                   "duration_minutes": 120,
                   "actual_minutes": 60,
                   "is_fixed": false,
-                  "status": "completed",
+                  "status": "planned",
                   "created_at": "2026-09-01T00:00:00Z",
-                  "updated_at": "2026-10-16T08:09:10.123Z",
+                  "updated_at": "2026-09-01T00:00:00Z",
                   "advice_text": "保留建议",
                   "advice_topics": [
                     "范围"
                   ],
                   "completion_status": "partial",
                   "feedback": "卡点"
-                },
-                {
-                  "id": "gold-0002",
-                  "user_id": "user-1",
-                  "task_id": "math",
-                  "date": "2026-10-17",
-                  "start_minute": 480,
-                  "duration_minutes": 30,
-                  "actual_minutes": 0,
-                  "is_fixed": false,
-                  "status": "planned",
-                  "created_at": "2026-10-16T08:09:10.123Z",
-                  "updated_at": "2026-10-16T08:09:10.123Z"
-                },
-                {
-                  "id": "gold-0005",
-                  "user_id": "user-1",
-                  "task_id": "math",
-                  "date": "2026-10-17",
-                  "start_minute": 510,
-                  "duration_minutes": 30,
-                  "actual_minutes": 0,
-                  "is_fixed": false,
-                  "status": "planned",
-                  "created_at": "2026-10-16T08:09:10.123Z",
-                  "updated_at": "2026-10-16T08:09:10.123Z"
                 }
               ],
-              "changes": [
-                {
-                  "id": "gold-0007",
-                  "user_id": "user-1",
-                  "run_id": "gold-0006",
-                  "type": "moved",
-                  "block_id": "today",
-                  "before": {
-                    "id": "today",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-16",
-                    "start_minute": 480,
-                    "duration_minutes": 120,
-                    "actual_minutes": 60,
-                    "is_fixed": false,
-                    "status": "planned",
-                    "created_at": "2026-09-01T00:00:00Z",
-                    "updated_at": "2026-09-01T00:00:00Z",
-                    "advice_text": "保留建议",
-                    "advice_topics": [
-                      "范围"
-                    ],
-                    "completion_status": "partial",
-                    "feedback": "卡点"
-                  },
-                  "after": {
-                    "id": "today",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-16",
-                    "start_minute": 480,
-                    "duration_minutes": 120,
-                    "actual_minutes": 60,
-                    "is_fixed": false,
-                    "status": "completed",
-                    "created_at": "2026-09-01T00:00:00Z",
-                    "updated_at": "2026-10-16T08:09:10.123Z",
-                    "advice_text": "保留建议",
-                    "advice_topics": [
-                      "范围"
-                    ],
-                    "completion_status": "partial",
-                    "feedback": "卡点"
-                  }
-                },
-                {
-                  "id": "gold-0008",
-                  "user_id": "user-1",
-                  "run_id": "gold-0006",
-                  "type": "added",
-                  "block_id": "gold-0002",
-                  "before": null,
-                  "after": {
-                    "id": "gold-0002",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-17",
-                    "start_minute": 480,
-                    "duration_minutes": 30,
-                    "actual_minutes": 0,
-                    "is_fixed": false,
-                    "status": "planned",
-                    "created_at": "2026-10-16T08:09:10.123Z",
-                    "updated_at": "2026-10-16T08:09:10.123Z"
-                  }
-                },
-                {
-                  "id": "gold-0009",
-                  "user_id": "user-1",
-                  "run_id": "gold-0006",
-                  "type": "added",
-                  "block_id": "gold-0005",
-                  "before": null,
-                  "after": {
-                    "id": "gold-0005",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-17",
-                    "start_minute": 510,
-                    "duration_minutes": 30,
-                    "actual_minutes": 0,
-                    "is_fixed": false,
-                    "status": "planned",
-                    "created_at": "2026-10-16T08:09:10.123Z",
-                    "updated_at": "2026-10-16T08:09:10.123Z"
-                  }
-                }
-              ],
-              "postponed": [
-                "math"
-              ],
+              "changes": [],
+              "postponed": [],
               "advanced": [],
               "conflicts": [],
-              "daily_changes": [
-                {
-                  "date": "2026-10-17",
-                  "before_minutes": 0,
-                  "after_minutes": 60
-                }
-              ],
+              "daily_changes": [],
               "status": "undone",
               "task_status_before": [
                 {
@@ -9413,7 +8629,7 @@
               "task_status_after": [
                 {
                   "id": "math",
-                  "status": "delayed"
+                  "status": "in_progress"
                 }
               ]
             }
@@ -23441,7 +22657,7 @@
       },
       "expected": {
         "preview": {
-          "id": "gold-0003",
+          "id": "gold-0001",
           "user_id": "user-1",
           "created_at": "2026-10-16T08:09:10.123Z",
           "before": [
@@ -23469,92 +22685,16 @@
               "duration_minutes": 75,
               "actual_minutes": 60,
               "is_fixed": false,
-              "status": "completed",
-              "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
-            },
-            {
-              "id": "gold-0002",
-              "user_id": "user-1",
-              "task_id": "math",
-              "date": "2026-10-17",
-              "start_minute": 0,
-              "duration_minutes": 15,
-              "actual_minutes": 0,
-              "is_fixed": false,
               "status": "planned",
-              "created_at": "2026-10-16T08:09:10.123Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
+              "created_at": "2026-09-01T00:00:00Z",
+              "updated_at": "2026-09-01T00:00:00Z"
             }
           ],
-          "changes": [
-            {
-              "id": "gold-0004",
-              "user_id": "user-1",
-              "run_id": "gold-0003",
-              "type": "moved",
-              "block_id": "today",
-              "before": {
-                "id": "today",
-                "user_id": "user-1",
-                "task_id": "math",
-                "date": "2026-10-16",
-                "start_minute": 480,
-                "duration_minutes": 75,
-                "actual_minutes": 60,
-                "is_fixed": false,
-                "status": "planned",
-                "created_at": "2026-09-01T00:00:00Z",
-                "updated_at": "2026-09-01T00:00:00Z"
-              },
-              "after": {
-                "id": "today",
-                "user_id": "user-1",
-                "task_id": "math",
-                "date": "2026-10-16",
-                "start_minute": 480,
-                "duration_minutes": 75,
-                "actual_minutes": 60,
-                "is_fixed": false,
-                "status": "completed",
-                "created_at": "2026-09-01T00:00:00Z",
-                "updated_at": "2026-10-16T08:09:10.123Z"
-              }
-            },
-            {
-              "id": "gold-0005",
-              "user_id": "user-1",
-              "run_id": "gold-0003",
-              "type": "added",
-              "block_id": "gold-0002",
-              "before": null,
-              "after": {
-                "id": "gold-0002",
-                "user_id": "user-1",
-                "task_id": "math",
-                "date": "2026-10-17",
-                "start_minute": 0,
-                "duration_minutes": 15,
-                "actual_minutes": 0,
-                "is_fixed": false,
-                "status": "planned",
-                "created_at": "2026-10-16T08:09:10.123Z",
-                "updated_at": "2026-10-16T08:09:10.123Z"
-              }
-            }
-          ],
-          "postponed": [
-            "math"
-          ],
+          "changes": [],
+          "postponed": [],
           "advanced": [],
           "conflicts": [],
-          "daily_changes": [
-            {
-              "date": "2026-10-17",
-              "before_minutes": 0,
-              "after_minutes": 15
-            }
-          ]
+          "daily_changes": []
         },
         "confirmed": {
           "version": 1,
@@ -23618,9 +22758,9 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "delayed",
+              "status": "not_started",
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
+              "updated_at": "2026-09-01T00:00:00Z"
             }
           ],
           "blocks": [
@@ -23633,22 +22773,9 @@
               "duration_minutes": 75,
               "actual_minutes": 60,
               "is_fixed": false,
-              "status": "completed",
-              "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
-            },
-            {
-              "id": "gold-0002",
-              "user_id": "user-1",
-              "task_id": "math",
-              "date": "2026-10-17",
-              "start_minute": 0,
-              "duration_minutes": 15,
-              "actual_minutes": 0,
-              "is_fixed": false,
               "status": "planned",
-              "created_at": "2026-10-16T08:09:10.123Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
+              "created_at": "2026-09-01T00:00:00Z",
+              "updated_at": "2026-09-01T00:00:00Z"
             }
           ],
           "logs": [
@@ -23667,7 +22794,7 @@
           "fixed_events": [],
           "replan_runs": [
             {
-              "id": "gold-0003",
+              "id": "gold-0001",
               "user_id": "user-1",
               "created_at": "2026-10-16T08:09:10.123Z",
               "before": [
@@ -23695,92 +22822,16 @@
                   "duration_minutes": 75,
                   "actual_minutes": 60,
                   "is_fixed": false,
-                  "status": "completed",
-                  "created_at": "2026-09-01T00:00:00Z",
-                  "updated_at": "2026-10-16T08:09:10.123Z"
-                },
-                {
-                  "id": "gold-0002",
-                  "user_id": "user-1",
-                  "task_id": "math",
-                  "date": "2026-10-17",
-                  "start_minute": 0,
-                  "duration_minutes": 15,
-                  "actual_minutes": 0,
-                  "is_fixed": false,
                   "status": "planned",
-                  "created_at": "2026-10-16T08:09:10.123Z",
-                  "updated_at": "2026-10-16T08:09:10.123Z"
+                  "created_at": "2026-09-01T00:00:00Z",
+                  "updated_at": "2026-09-01T00:00:00Z"
                 }
               ],
-              "changes": [
-                {
-                  "id": "gold-0004",
-                  "user_id": "user-1",
-                  "run_id": "gold-0003",
-                  "type": "moved",
-                  "block_id": "today",
-                  "before": {
-                    "id": "today",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-16",
-                    "start_minute": 480,
-                    "duration_minutes": 75,
-                    "actual_minutes": 60,
-                    "is_fixed": false,
-                    "status": "planned",
-                    "created_at": "2026-09-01T00:00:00Z",
-                    "updated_at": "2026-09-01T00:00:00Z"
-                  },
-                  "after": {
-                    "id": "today",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-16",
-                    "start_minute": 480,
-                    "duration_minutes": 75,
-                    "actual_minutes": 60,
-                    "is_fixed": false,
-                    "status": "completed",
-                    "created_at": "2026-09-01T00:00:00Z",
-                    "updated_at": "2026-10-16T08:09:10.123Z"
-                  }
-                },
-                {
-                  "id": "gold-0005",
-                  "user_id": "user-1",
-                  "run_id": "gold-0003",
-                  "type": "added",
-                  "block_id": "gold-0002",
-                  "before": null,
-                  "after": {
-                    "id": "gold-0002",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-17",
-                    "start_minute": 0,
-                    "duration_minutes": 15,
-                    "actual_minutes": 0,
-                    "is_fixed": false,
-                    "status": "planned",
-                    "created_at": "2026-10-16T08:09:10.123Z",
-                    "updated_at": "2026-10-16T08:09:10.123Z"
-                  }
-                }
-              ],
-              "postponed": [
-                "math"
-              ],
+              "changes": [],
+              "postponed": [],
               "advanced": [],
               "conflicts": [],
-              "daily_changes": [
-                {
-                  "date": "2026-10-17",
-                  "before_minutes": 0,
-                  "after_minutes": 15
-                }
-              ],
+              "daily_changes": [],
               "status": "confirmed",
               "task_status_before": [
                 {
@@ -23791,7 +22842,7 @@
               "task_status_after": [
                 {
                   "id": "math",
-                  "status": "delayed"
+                  "status": "not_started"
                 }
               ]
             }
@@ -23862,7 +22913,7 @@
               "is_fixed": false,
               "status": "not_started",
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
+              "updated_at": "2026-09-01T00:00:00Z"
             }
           ],
           "blocks": [
@@ -23896,7 +22947,7 @@
           "fixed_events": [],
           "replan_runs": [
             {
-              "id": "gold-0003",
+              "id": "gold-0001",
               "user_id": "user-1",
               "created_at": "2026-10-16T08:09:10.123Z",
               "before": [
@@ -23924,92 +22975,16 @@
                   "duration_minutes": 75,
                   "actual_minutes": 60,
                   "is_fixed": false,
-                  "status": "completed",
-                  "created_at": "2026-09-01T00:00:00Z",
-                  "updated_at": "2026-10-16T08:09:10.123Z"
-                },
-                {
-                  "id": "gold-0002",
-                  "user_id": "user-1",
-                  "task_id": "math",
-                  "date": "2026-10-17",
-                  "start_minute": 0,
-                  "duration_minutes": 15,
-                  "actual_minutes": 0,
-                  "is_fixed": false,
                   "status": "planned",
-                  "created_at": "2026-10-16T08:09:10.123Z",
-                  "updated_at": "2026-10-16T08:09:10.123Z"
+                  "created_at": "2026-09-01T00:00:00Z",
+                  "updated_at": "2026-09-01T00:00:00Z"
                 }
               ],
-              "changes": [
-                {
-                  "id": "gold-0004",
-                  "user_id": "user-1",
-                  "run_id": "gold-0003",
-                  "type": "moved",
-                  "block_id": "today",
-                  "before": {
-                    "id": "today",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-16",
-                    "start_minute": 480,
-                    "duration_minutes": 75,
-                    "actual_minutes": 60,
-                    "is_fixed": false,
-                    "status": "planned",
-                    "created_at": "2026-09-01T00:00:00Z",
-                    "updated_at": "2026-09-01T00:00:00Z"
-                  },
-                  "after": {
-                    "id": "today",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-16",
-                    "start_minute": 480,
-                    "duration_minutes": 75,
-                    "actual_minutes": 60,
-                    "is_fixed": false,
-                    "status": "completed",
-                    "created_at": "2026-09-01T00:00:00Z",
-                    "updated_at": "2026-10-16T08:09:10.123Z"
-                  }
-                },
-                {
-                  "id": "gold-0005",
-                  "user_id": "user-1",
-                  "run_id": "gold-0003",
-                  "type": "added",
-                  "block_id": "gold-0002",
-                  "before": null,
-                  "after": {
-                    "id": "gold-0002",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-17",
-                    "start_minute": 0,
-                    "duration_minutes": 15,
-                    "actual_minutes": 0,
-                    "is_fixed": false,
-                    "status": "planned",
-                    "created_at": "2026-10-16T08:09:10.123Z",
-                    "updated_at": "2026-10-16T08:09:10.123Z"
-                  }
-                }
-              ],
-              "postponed": [
-                "math"
-              ],
+              "changes": [],
+              "postponed": [],
               "advanced": [],
               "conflicts": [],
-              "daily_changes": [
-                {
-                  "date": "2026-10-17",
-                  "before_minutes": 0,
-                  "after_minutes": 15
-                }
-              ],
+              "daily_changes": [],
               "status": "undone",
               "task_status_before": [
                 {
@@ -24020,7 +22995,7 @@
               "task_status_after": [
                 {
                   "id": "math",
-                  "status": "delayed"
+                  "status": "not_started"
                 }
               ]
             }
@@ -24171,48 +23146,14 @@
               "date": "2026-10-16",
               "start_minute": 480,
               "duration_minutes": 60,
-              "actual_minutes": 700,
+              "actual_minutes": 0,
               "is_fixed": false,
-              "status": "completed",
+              "status": "planned",
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
+              "updated_at": "2026-09-01T00:00:00Z"
             }
           ],
-          "changes": [
-            {
-              "id": "gold-0002",
-              "user_id": "user-1",
-              "run_id": "gold-0001",
-              "type": "moved",
-              "block_id": "today",
-              "before": {
-                "id": "today",
-                "user_id": "user-1",
-                "task_id": "math",
-                "date": "2026-10-16",
-                "start_minute": 480,
-                "duration_minutes": 60,
-                "actual_minutes": 0,
-                "is_fixed": false,
-                "status": "planned",
-                "created_at": "2026-09-01T00:00:00Z",
-                "updated_at": "2026-09-01T00:00:00Z"
-              },
-              "after": {
-                "id": "today",
-                "user_id": "user-1",
-                "task_id": "math",
-                "date": "2026-10-16",
-                "start_minute": 480,
-                "duration_minutes": 60,
-                "actual_minutes": 700,
-                "is_fixed": false,
-                "status": "completed",
-                "created_at": "2026-09-01T00:00:00Z",
-                "updated_at": "2026-10-16T08:09:10.123Z"
-              }
-            }
-          ],
+          "changes": [],
           "postponed": [],
           "advanced": [],
           "conflicts": [],
@@ -24280,9 +23221,9 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "completed",
+              "status": "not_started",
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
+              "updated_at": "2026-09-01T00:00:00Z"
             }
           ],
           "blocks": [
@@ -24293,11 +23234,11 @@
               "date": "2026-10-16",
               "start_minute": 480,
               "duration_minutes": 60,
-              "actual_minutes": 700,
+              "actual_minutes": 0,
               "is_fixed": false,
-              "status": "completed",
+              "status": "planned",
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
+              "updated_at": "2026-09-01T00:00:00Z"
             }
           ],
           "logs": [
@@ -24342,48 +23283,14 @@
                   "date": "2026-10-16",
                   "start_minute": 480,
                   "duration_minutes": 60,
-                  "actual_minutes": 700,
+                  "actual_minutes": 0,
                   "is_fixed": false,
-                  "status": "completed",
+                  "status": "planned",
                   "created_at": "2026-09-01T00:00:00Z",
-                  "updated_at": "2026-10-16T08:09:10.123Z"
+                  "updated_at": "2026-09-01T00:00:00Z"
                 }
               ],
-              "changes": [
-                {
-                  "id": "gold-0002",
-                  "user_id": "user-1",
-                  "run_id": "gold-0001",
-                  "type": "moved",
-                  "block_id": "today",
-                  "before": {
-                    "id": "today",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-16",
-                    "start_minute": 480,
-                    "duration_minutes": 60,
-                    "actual_minutes": 0,
-                    "is_fixed": false,
-                    "status": "planned",
-                    "created_at": "2026-09-01T00:00:00Z",
-                    "updated_at": "2026-09-01T00:00:00Z"
-                  },
-                  "after": {
-                    "id": "today",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-16",
-                    "start_minute": 480,
-                    "duration_minutes": 60,
-                    "actual_minutes": 700,
-                    "is_fixed": false,
-                    "status": "completed",
-                    "created_at": "2026-09-01T00:00:00Z",
-                    "updated_at": "2026-10-16T08:09:10.123Z"
-                  }
-                }
-              ],
+              "changes": [],
               "postponed": [],
               "advanced": [],
               "conflicts": [],
@@ -24398,7 +23305,7 @@
               "task_status_after": [
                 {
                   "id": "math",
-                  "status": "completed"
+                  "status": "not_started"
                 }
               ]
             }
@@ -24469,7 +23376,7 @@
               "is_fixed": false,
               "status": "not_started",
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
+              "updated_at": "2026-09-01T00:00:00Z"
             }
           ],
           "blocks": [
@@ -24529,48 +23436,14 @@
                   "date": "2026-10-16",
                   "start_minute": 480,
                   "duration_minutes": 60,
-                  "actual_minutes": 700,
+                  "actual_minutes": 0,
                   "is_fixed": false,
-                  "status": "completed",
+                  "status": "planned",
                   "created_at": "2026-09-01T00:00:00Z",
-                  "updated_at": "2026-10-16T08:09:10.123Z"
+                  "updated_at": "2026-09-01T00:00:00Z"
                 }
               ],
-              "changes": [
-                {
-                  "id": "gold-0002",
-                  "user_id": "user-1",
-                  "run_id": "gold-0001",
-                  "type": "moved",
-                  "block_id": "today",
-                  "before": {
-                    "id": "today",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-16",
-                    "start_minute": 480,
-                    "duration_minutes": 60,
-                    "actual_minutes": 0,
-                    "is_fixed": false,
-                    "status": "planned",
-                    "created_at": "2026-09-01T00:00:00Z",
-                    "updated_at": "2026-09-01T00:00:00Z"
-                  },
-                  "after": {
-                    "id": "today",
-                    "user_id": "user-1",
-                    "task_id": "math",
-                    "date": "2026-10-16",
-                    "start_minute": 480,
-                    "duration_minutes": 60,
-                    "actual_minutes": 700,
-                    "is_fixed": false,
-                    "status": "completed",
-                    "created_at": "2026-09-01T00:00:00Z",
-                    "updated_at": "2026-10-16T08:09:10.123Z"
-                  }
-                }
-              ],
+              "changes": [],
               "postponed": [],
               "advanced": [],
               "conflicts": [],
@@ -24585,7 +23458,7 @@
               "task_status_after": [
                 {
                   "id": "math",
-                  "status": "completed"
+                  "status": "not_started"
                 }
               ]
             }

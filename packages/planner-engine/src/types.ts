@@ -27,6 +27,7 @@ export interface Task {
   status: TaskStatus;
   created_at: string;
   updated_at: string;
+  planning?: import("../../../apps/api/src/planning-scheduler").StrategyTask["planning"];
 }
 export interface ScheduleBlock {
   id: string;
@@ -46,6 +47,7 @@ export interface ScheduleBlock {
   advice_topics?: string[];
   completion_status?: "not_started" | "partial" | "completed" | "skipped";
   feedback?: string;
+  activity_instance_id?: string | null;
 }
 export interface TimeLog {
   id: string;
@@ -149,6 +151,7 @@ export interface PlannerData {
   fixed_events: FixedEvent[];
   replan_runs: ReplanRun[];
   phases: Phase[];
+  planning?: Record<string, unknown> | null;
 }
 export interface ReplanInput {
   tasks: Task[];

@@ -169,6 +169,50 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       expect((await db.query<{ weekly_minutes: any }>("select weekly_minutes from profiles where user_id=$1", [user.id])).rows[0].weekly_minutes).toEqual(week);
     });
 
+    it("persists strategy projections and refuses older writers without losing metadata", async () => {
+      const user = await account(), data = await fixture(user.id);
+      data.planning = { version: 1, prompt_version: "planning-1", rules_version: "rules-1", detail_days: 14,
+        rolling: true, route: [{ id: "route", title: "Project", item_ids: [data.tasks[0].id], outcome: "Working result", check: "Run it" }],
+        milestones: [], assumptions: ["estimated"], risks: [], uncovered: [] };
+      data.tasks[0].planning = { workload: { components: [{ id: "papers", label: "Past papers", quantity: 21, unit: "paper", minutes_per_unit: 180 }],
+        source: "confirmed scope", confidence: "medium", calibration: "Review after 3 attempts" } };
+      data.tasks[0].estimated_minutes = 3780;
+      data.blocks[0].activity_instance_id = "task:2026-10-12:1";
+      const put = (value: unknown, base: unknown, expectedRevision: number, writer?: number) => app.inject({
+        method: "PUT", url: "/api/planner/sync", headers: user.headers,
+        payload: { data: value, base, expectedRevision, ...(writer ? { writer_planning_version: writer } : {}) },
+      });
+      const first = await put(data, null, 0, 1);
+      expect(first.statusCode, first.body).toBe(200);
+      const saved = first.json();
+      const native = (await app.inject({ url: "/api/planner/snapshot", headers: user.headers })).json().data;
+      expect(native.planning.route[0].item_ids).toContain(native.tasks[0].id);
+      expect(native.tasks[0].planning.workload.components[0].quantity).toBe(21);
+      expect(native.blocks[0].activity_instance_id).toBe("task:2026-10-12:1");
+      const stripped = structuredClone(saved.data);
+      delete stripped.planning;
+      delete stripped.tasks[0].planning;
+      delete stripped.blocks[0].activity_instance_id;
+      const rejected = await put(stripped, saved.data, saved.revision);
+      expect(rejected.statusCode, rejected.body).toBe(426);
+      const unchanged = (await app.inject({ url: "/api/planner/sync", headers: user.headers })).json();
+      expect(unchanged.data.planning).toEqual(data.planning);
+      expect(unchanged.revision).toBe(saved.revision);
+      const renamed = structuredClone(stripped);
+      renamed.tasks[0].title = "An ordinary edit";
+      const preserved = await put(renamed, saved.data, saved.revision, 1);
+      expect(preserved.statusCode, preserved.body).toBe(200);
+      expect(preserved.json().data.tasks[0].planning).toEqual(data.tasks[0].planning);
+      const clear = structuredClone(preserved.json().data);
+      clear.planning = null;
+      clear.tasks[0].planning = null;
+      clear.blocks[0].activity_instance_id = null;
+      const cleared = await put(clear, preserved.json().data, preserved.json().revision, 1);
+      expect(cleared.statusCode, cleared.body).toBe(200);
+      expect(cleared.json().data.planning).toBeNull();
+      expect((await db.query("select planning_metadata from profiles where user_id=$1", [user.id])).rows[0].planning_metadata).toBeNull();
+    });
+
     it("clears the target date instead of reviving the legacy exam date", async () => {
       const user = await account();
       const data = await fixture(user.id);
@@ -234,6 +278,12 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
           ? Object.fromEntries(Object.entries(value).map(([key, child]) => [key, key === "user_id" ? user.id : retag(child)]))
           : value;
       const data = retag(sample.expected.confirmed);
+      // Keep this projection regression independent of how the engine releases a
+      // partially used day: the sync document deliberately contains two slots.
+      data.tasks[0].estimated_minutes = 180;
+      for (let index = 0; index < 2; index++) data.blocks.push({ ...data.blocks[0],
+        id: `split-${index}`, date: "2026-10-17", start_minute: 480 + index * 60,
+        duration_minutes: 30, actual_minutes: 0, completion_status: "not_started", status: "planned" });
       // 文档用空字符串表示“没有目标日期”；数据库的日期列保存 NULL。
       data.profile.target_date = "";
       const { replan_runs: _history, ...guard } = structuredClone(data);

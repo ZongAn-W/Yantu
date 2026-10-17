@@ -15,6 +15,12 @@ async function fiveAnswers() {
   return session;
 }
 const week = { "0": 120, "1": 120, "2": 120, "3": 120, "4": 120, "5": 120, "6": 120 };
+const confirmConstraints = (session: OnboardingSession) => advanceOnboarding(session, { type: "set_constraints",
+  start_date: "2026-10-17", end_date: "2026-11-13", weekly_minutes: week, detail_days: 14 });
+async function finishPreview(session: OnboardingSession, fields: {start_date: string; end_date: string; target_date?: string; weekly_minutes: Record<string, number>}) {
+  const preview = await advanceOnboarding(session, { type: "preview_schedule", ...fields, detail_days: 14 });
+  return advanceOnboarding(preview, { type: "finish", ...fields, preview_token: preview.preview?.token as string });
+}
 /** 生成课程要求至少 5 个有效回答；补齐测试用回答，不改变既有目标资料。 */
 const withMinimumAnswers = (session: OnboardingSession) => ({
   ...session,
@@ -127,12 +133,12 @@ describe("guided onboarding", () => {
     const skillSession = withMinimumAnswers(await answer(newSession(), "从零学习 Python，能独立处理 CSV 并完成简单的数据分析练习"));
     const skill = await advanceOnboarding(skillSession, { type: "generate_courses" });
     expect(skill.profile.goal_type).toBe("skill");
-    expect(skill.courses.map(course => course.name)).toEqual(["数据分析基础", "数据分析练习", "数据分析实践"]);
+    expect(skill.courses.map(course => course.name)).toEqual(["Python"]);
     expect(skill.courses.some(course => /政治|数学/.test(course.name))).toBe(false);
     const readingSession = withMinimumAnswers(await answer(newSession(), "每天读一点历史，没有固定截止日期"));
     const reading = await advanceOnboarding(readingSession, { type: "generate_courses" });
     expect(reading.profile.goal_type).toBe("self_study");
-    expect(reading.courses.map(course => course.name)).toEqual(["历史阅读与记录", "历史专题整理"]);
+    expect(reading.courses.map(course => course.name)).toEqual(["历史"]);
   });
 
   it("reads legacy saved recommendations and maps the old date field", () => {
@@ -196,15 +202,18 @@ describe("guided onboarding", () => {
     expect(courses.stage).toBe("courses");
     expect(courses.items).toEqual([]);
     const custom = [{ id: "custom", name: "计算机组成原理", description: "408", priority: 3 }];
-    const items = await advanceOnboarding(courses, { type: "confirm_courses", courses: custom });
+    const constraints = await advanceOnboarding(courses, { type: "confirm_courses", courses: custom });
+    expect(constraints.stage).toBe("constraints");
+    expect(constraints.items).toEqual([]);
+    const items = await confirmConstraints(constraints);
     expect(items.stage).toBe("items");
     expect(items.courses).toEqual(custom);
     expect(items.items.every(i => i.course_id === "custom")).toBe(true);
     expect(items.end_date).toBe("2026-11-13");
     const schedule = await advanceOnboarding(items, { type: "confirm_items", items: items.items });
     expect(schedule.stage).toBe("schedule");
-    const done = await advanceOnboarding(schedule, { type: "finish", start_date: "2026-11-01", end_date: "2027-12-25",
-      target_date: "2027-12-25", weekly_minutes: { "0": 120 } });
+    const done = await finishPreview(schedule, { start_date: "2026-11-01", end_date: "2027-12-25",
+      target_date: "2027-12-25", weekly_minutes: week });
     expect(done.stage).toBe("complete");
     expect(done.profile.plan_start_date).toBe("2026-11-01");
     expect(done.profile.plan_end_date).toBe("2027-12-25");
@@ -216,9 +225,9 @@ describe("guided onboarding", () => {
   it("allows finishing without any target date", async () => {
     const readingSession = withMinimumAnswers(await answer(newSession(), "每天读一点历史，没有固定截止日期"));
     const session = await advanceOnboarding(readingSession, { type: "generate_courses" });
-    const items = await advanceOnboarding(session, { type: "confirm_courses", courses: session.courses });
+    const items = await confirmConstraints(await advanceOnboarding(session, { type: "confirm_courses", courses: session.courses }));
     const schedule = await advanceOnboarding(items, { type: "confirm_items", items: items.items });
-    const done = await advanceOnboarding(schedule, { type: "finish", start_date: "2026-10-17", end_date: "2026-11-13",
+    const done = await finishPreview(schedule, { start_date: "2026-10-17", end_date: "2026-11-13",
       weekly_minutes: week });
     expect(done.stage).toBe("complete");
     expect(done.profile.target_date).toBeNull();
@@ -230,7 +239,7 @@ describe("guided onboarding", () => {
     await expect(advanceOnboarding(newSession(), { type: "generate_courses" })).rejects.toThrow("至少5个");
     const session = await advanceOnboarding(await fiveAnswers(), { type: "generate_courses" });
     await expect(advanceOnboarding(session, { type: "confirm_courses", courses: [session.courses[0], session.courses[0]] })).rejects.toThrow("重复");
-    const items = await advanceOnboarding(session, { type: "confirm_courses", courses: session.courses });
+    const items = await confirmConstraints(await advanceOnboarding(session, { type: "confirm_courses", courses: session.courses }));
     await expect(advanceOnboarding(items, { type: "confirm_items", items: [{ ...items.items[0], course_id: "missing" }] })).rejects.toThrow("已确认的课程");
     await expect(advanceOnboarding(items, { type: "confirm_items", items: [items.items[0]] })).rejects.toThrow("每门课程");
   });
@@ -241,6 +250,14 @@ describe("guided onboarding", () => {
         estimated_minutes: 60, deadline: "2026-12-31", deadline_kind: "deadline" as const, priority: 2 }] };
     const done = await advanceOnboarding(session, { type: "finish", start_date: "2026-11-01", end_date: "2027-12-25", weekly_minutes: { "1": 120 } });
     expect(done.items[0].deadline).toBe("2026-12-31");
+  });
+  it("retains a past real deadline outside the new cycle without inventing a contradictory start", async () => {
+    const session = { ...newSession(), stage: "schedule" as const,
+      items: [{ id: "old", course_id: "course", title: "已过截止但仍保留的事项", description: "", completion_criteria: "",
+        estimated_minutes: 60, earliest_date: "2026-10-01", deadline: "2026-10-10", deadline_kind: "deadline" as const, priority: 2 }] };
+    const done = await advanceOnboarding(session, { type: "finish", start_date: "2026-10-17", end_date: "2026-11-13", weekly_minutes: week });
+    expect(done.items[0].deadline).toBe("2026-10-10");
+    expect(done.items[0].earliest_date).toBe("2026-10-01");
   });
 
   it("extends plan-end items into the next cycle but keeps real deadlines", async () => {

@@ -112,7 +112,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('确认课程，生成事项'), findsOneWidget);
+    expect(find.text('确认课程，设置时间条件'), findsOneWidget);
     expect(find.text('确认学习事项'), findsNothing);
     await tester.tap(find.byTooltip('编辑 高数'));
     await tester.pumpAndSettle();

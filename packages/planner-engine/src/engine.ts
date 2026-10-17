@@ -12,6 +12,7 @@ import type {
   TimeLog,
 } from "./types";
 import { defaultPlannerRuntime, type PlannerRuntime } from "./runtime";
+import { scheduleStrategy } from "../../../apps/api/src/planning-scheduler";
 
 const DAY = 86_400_000;
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
@@ -210,6 +211,14 @@ function placementError(
   if (candidate.date < (task.earliest_date ?? "0000-01-01"))
     return "任务尚未到开始日期";
   if (candidate.date > task.deadline) return "时间块不能晚于任务截止日期";
+  if ((input.profile.plan_start_date && candidate.date < input.profile.plan_start_date)
+    || (input.profile.plan_end_date && candidate.date > input.profile.plan_end_date)) return "时间块不能超出本期规划区间";
+  const activity = task.planning?.activity;
+  if (activity?.state === "paused" || activity?.state === "ended") return "活动已暂停或结束";
+  if ((activity?.starts_on && candidate.date < activity.starts_on)
+    || (activity?.ends_on && candidate.date > activity.ends_on)) return "时间块超出活动有效日期";
+  if (task.planning?.dependencies?.some(dependency => dependency.mode === "confirmed"
+    && input.tasks.find(prior => prior.id === dependency.task_id)?.status !== "completed")) return "前置内容尚未确认完成";
   const dayBlocks = blocks.filter((block) => block.date === candidate.date);
   if (
     timed &&
@@ -495,11 +504,30 @@ export function generateReplanPreview(input: ReplanInput, runtime: PlannerRuntim
   const immutable = (block: ScheduleBlock) =>
     block.is_fixed ||
     block.status === "completed" ||
+    input.mode === "overcompleted" && tasks.get(block.task_id)?.planning?.activity?.kind === "recurring" ||
+    blockActual(block, input.logs) > 0 ||
+    input.logs.some(log => log.block_id === block.id || !log.block_id && log.task_id === block.task_id && log.date === block.date) ||
     (tasks.get(block.task_id)?.status === "archived" &&
       blockActual(block, input.logs) > 0) ||
     tasks.get(block.task_id)?.is_fixed ||
     block.date < input.today ||
     block.date > horizon;
+  if (input.mode === "unfinished" && input.tasks.some(task => task.planning?.activity || task.planning?.dependencies?.length)) {
+    const end = input.profile.plan_end_date && input.profile.plan_end_date < horizon ? input.profile.plan_end_date : horizon;
+    const from = addDays(input.today, 1);
+    const kept = input.blocks.filter(block => immutable(block));
+    const result = from <= end ? scheduleStrategy({ ...input, blocks: kept }, from, end, runtime)
+      : { blocks: kept, issues: [] };
+    const after = result.blocks.map(block => {
+      if (!block.activity_instance_id) return block;
+      const previous = input.blocks.find(old => old.activity_instance_id === block.activity_instance_id);
+      return previous && !kept.some(old => old.id === previous.id) ? { ...block, id: previous.id, created_at: previous.created_at } : block;
+    });
+    return makePreview(input, after, result.issues.map(issue => ({ task_id: issue.task_id,
+      title: tasks.get(issue.task_id)?.title ?? "", minutes: issue.code === "RECURRENCE_SHORTFALL"
+        ? tasks.get(issue.task_id)?.planning?.activity?.session_minutes ?? 30 : Math.max(0, issue.expected - issue.actual),
+      reason: issue.message })), timestamp, runtime);
+  }
   if (input.mode === "overcompleted") {
     const after = copy(
       input.blocks.filter((block) => {
@@ -756,8 +784,7 @@ export function confirmReplan(
     status:
       task.status === "archived"
         ? "archived"
-        : task.status === "completed" ||
-      remainingTaskMinutes(task, result.logs) === 0
+        : task.status === "completed"
         ? "completed"
         : preview.conflicts.some((conflict) => conflict.task_id === task.id)
           ? "conflict"

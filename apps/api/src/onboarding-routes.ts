@@ -11,6 +11,7 @@ import { attachExamResearch, expireExamResearch } from "./exam-research.js";
 import { PROFILE_COLUMNS, confirmDraft, itemToJson, replanDocument, saveProfile, snapshot } from "./planner.js";
 import { commitPlannerState, PlannerRevisionConflict, readPlannerState } from "./sync.js";
 import type { PlannerDocument } from "./sync-contracts.js";
+import { buildPlanningDocument } from "./planning-service.js";
 
 class SessionConflict extends Error {}
 
@@ -30,7 +31,19 @@ async function writeSession<T>(operation: (client: pg.PoolClient) => Promise<T>)
 function planContext(document: PlannerDocument) {
   const fixed = new Set(document.blocks.filter(block => block.is_fixed).map(block => block.task_id));
   return { profile: document.profile, courses: document.subjects, items: document.tasks.map(task => ({ ...task, is_fixed: task.is_fixed || fixed.has(task.id) })),
-    fixed_events: document.fixed_events, recent_blocks: document.blocks.filter(block => block.actual_minutes > 0 || block.is_fixed).slice(-100) };
+    fixed_events: document.fixed_events, planning: document.planning,
+    feedback_signals: document.tasks.flatMap(task => {
+      const feedback = task.planning?.feedback;
+      if (!feedback) return [];
+      const samples = document.logs.filter(log => log.task_id === task.id && log.source === "timer" && log.minutes > 0
+        && Date.parse(log.ended_at) > Date.parse(log.started_at) && log.ended_at <= feedback.sampled_at);
+      const elapsed = samples.reduce((sum, log) => sum + log.minutes, 0);
+      return [{ item_id: task.id, content_units: feedback.content_units, content_completed: feedback.content_completed,
+        difficulty: feedback.difficulty, valid_samples: samples.length, actual_minutes: elapsed,
+        observed_minutes_per_unit: samples.length >= 3 && feedback.content_units > 0 ? elapsed / feedback.content_units : null,
+        estimated: samples.length < 3 }];
+    }),
+    recent_blocks: document.blocks.filter(block => block.actual_minutes > 0 || block.is_fixed).slice(-100) };
 }
 
 function seedDraft(session: OnboardingSession, document: PlannerDocument) {
@@ -42,7 +55,8 @@ function seedDraft(session: OnboardingSession, document: PlannerDocument) {
   session.items = tasks.map(task => ({ id: task.id, course_id: task.subject_id, title: task.title,
     description: task.description ?? "", completion_criteria: "", estimated_minutes: task.estimated_minutes,
     earliest_date: task.earliest_date, deadline: task.deadline,
-    deadline_kind: (task.deadline_kind ?? "deadline") as "deadline" | "plan_end", priority: task.priority }));
+    deadline_kind: (task.deadline_kind ?? "deadline") as "deadline" | "plan_end", priority: task.priority, planning: task.planning }));
+  session.planning = document.planning ?? null;
 }
 
 async function loadSession(client: pg.PoolClient, userId: string) {
@@ -88,7 +102,7 @@ export async function onboardingRoutes(app: FastifyInstance) {
         current.current_plan = planContext(plan.data);
         if (parsed.data.action.type === "resume_interview" && current.stage === "complete") seedDraft(current, plan.data);
       }
-      const candidate = SessionSchema.parse(await advanceOnboarding(current, parsed.data.action));
+      const candidate = SessionSchema.parse(await advanceOnboarding(current, parsed.data.action, plan.data));
       const next = await writeSession(async client => {
         const next = structuredClone(candidate);
         const latestPlan = await readPlannerState(client, user.id);
@@ -101,7 +115,14 @@ export async function onboardingRoutes(app: FastifyInstance) {
             throw new PlannerRevisionConflict("当前计划已更新，请重新读取当前计划后再确认，访谈草案已保留");
           await saveProfile(user.id, next.profile, client);
           let document: PlannerDocument, unscheduled: number;
-          if (hasPlan && latestPlan.data) {
+          if (next.planning) {
+            const result = buildPlanningDocument(next, latestPlan.data, user.id);
+            document = result.document;
+            unscheduled = result.forecast.unscheduled_minutes;
+            await client.query("insert into plan_versions(user_id,kind,payload) values($1,$2,$3)", [user.id, hasPlan ? "replan" : "confirmed",
+              JSON.stringify({ summary: next.summary, start_date: next.start_date, previous_revision: latestPlan.revision,
+                previous_document: latestPlan.data, previous_session: current, planning: document.planning })]);
+          } else if (hasPlan && latestPlan.data) {
             const result = replanDocument(latestPlan.data, next);
             if (!result.generatedCount && result.unscheduledMinutes && result.unfinishedMinutes)
               throw new Error("所选日期内没有可安排的学习时间，请检查每周可用时间和事项日期");

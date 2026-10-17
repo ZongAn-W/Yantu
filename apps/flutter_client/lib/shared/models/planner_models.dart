@@ -100,6 +100,7 @@ abstract class PlannerData with _$PlannerData {
     required List<ReplanRun> replanRuns,
     required List<Phase> phases,
     Map<String, String>? dailyFeedback,
+    JsonMap? planning,
   }) = _PlannerData;
   factory PlannerData.fromJson(JsonMap json) => _$PlannerDataFromJson(json);
   String toJsonString() => jsonEncode(toJson());
@@ -138,9 +139,7 @@ abstract class Profile with _$Profile {
   Map<String, int> get weekMinutes {
     final stored = weeklyMinutes;
     if (isReliableWeek(stored)) return Map<String, int>.from(stored!);
-    return {
-      for (var day = 0; day < 7; day++) '$day': dailyLimitMinutes,
-    };
+    return {for (var day = 0; day < 7; day++) '$day': dailyLimitMinutes};
   }
 
   const factory Profile({
@@ -167,7 +166,8 @@ abstract class Profile with _$Profile {
     required int studyEndMinute,
     required String foundation,
   }) = _Profile;
-  factory Profile.fromJson(JsonMap json) => _$ProfileFromJson(normalizeProfileJson(json));
+  factory Profile.fromJson(JsonMap json) =>
+      _$ProfileFromJson(normalizeProfileJson(json));
 }
 
 /// 反序列化边界的历史字段归一化。
@@ -185,7 +185,9 @@ JsonMap normalizeProfileJson(JsonMap json) {
     final legacy = map['exam_end_date'] ?? map['exam_date'];
     map['plan_end_date'] = legacy is String ? legacy : '';
   }
-  if (!map.containsKey('target_date_confirmed')) map['target_date_confirmed'] = false;
+  if (!map.containsKey('target_date_confirmed')) {
+    map['target_date_confirmed'] = false;
+  }
   return map;
 }
 
@@ -221,6 +223,7 @@ abstract class Task with _$Task {
     required TaskStatus status,
     required String createdAt,
     required String updatedAt,
+    JsonMap? planning,
   }) = _Task;
   factory Task.fromJson(JsonMap json) => _$TaskFromJson(json);
 }
@@ -245,6 +248,7 @@ abstract class ScheduleBlock with _$ScheduleBlock {
     List<String>? adviceTopics,
     CompletionStatus? completionStatus,
     String? feedback,
+    String? activityInstanceId,
   }) = _ScheduleBlock;
   factory ScheduleBlock.fromJson(JsonMap json) => _$ScheduleBlockFromJson(json);
 }

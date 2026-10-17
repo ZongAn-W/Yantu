@@ -14,6 +14,8 @@ import '../../planner/domain/study_day.dart' show DayStats;
 import '../../planner/presentation/cycle_dialog.dart';
 import '../../planner/presentation/planner_dialogs.dart';
 import '../../planner/presentation/planner_page_state.dart';
+import '../../planner/presentation/planning_details.dart';
+import '../../planner/presentation/planning_feedback_view.dart';
 import '../../planner/presentation/task_study_timer.dart';
 import 'task_time_pie.dart';
 
@@ -65,6 +67,22 @@ class DashboardPage extends ConsumerWidget {
             ),
           ],
           children: [
+            if (data.planning != null) ...[
+              PlanningRouteView(planning: data.planning, compact: true),
+              if (data.planning?['rolling'] == true &&
+                  cycle != PlanCycleState.ended)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: snapshot.editable
+                        ? () => ContinueCycleDialog.showRolling(context)
+                        : null,
+                    icon: const Icon(Icons.event_note_outlined, size: 18),
+                    label: const Text('细化近期安排'),
+                  ),
+                ),
+              const SizedBox(height: 12),
+            ],
             if (emptyPlan) ...[
               const PlannerNotice(
                 '还没有学习计划：先完成学习目标访谈，确认课程和学习事项。',
@@ -413,6 +431,12 @@ class _TaskDayRowState extends ConsumerState<_TaskDayRow> {
                         fontSize: 12,
                       ),
                     ),
+                  WorkloadDetails(planning: task.planning),
+                  PlanningFeedbackView(
+                    task: task,
+                    data: data,
+                    editable: editable,
+                  ),
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
                     child: Text(

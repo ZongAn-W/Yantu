@@ -82,8 +82,14 @@ class OnboardingFlow extends AutoDisposeNotifier<OnboardingFlowState> {
     final generation = ++_generation;
     _researchTimer?.cancel();
     final api = OnboardingApi(ref.read(apiClientProvider));
-    final waitsForAi =
-        action['type'] == 'answer' || action['type'] == 'generate_courses';
+    final waitsForAi = const [
+      'answer',
+      'generate_courses',
+      'set_constraints',
+      'revise_courses',
+      'revise_items',
+      'preview_schedule',
+    ].contains(action['type']);
     state = OnboardingFlowState(
       session: session,
       loading: true,
@@ -95,6 +101,7 @@ class OnboardingFlow extends AutoDisposeNotifier<OnboardingFlowState> {
             'resume_interview',
             'restart_interview',
             'refresh_plan',
+            'preview_schedule',
             'finish',
           ].contains(action['type'])) {
         await ref.read(plannerSessionProvider).sync();

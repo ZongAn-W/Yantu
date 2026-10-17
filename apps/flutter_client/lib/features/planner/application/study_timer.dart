@@ -10,6 +10,7 @@ import '../../../core/sync/planner_coordinator.dart';
 import '../../../shared/models/planner_models.dart';
 import '../domain/planner_format.dart';
 import '../domain/scheduler/planner_scheduler.dart' as scheduler;
+import '../domain/scheduler/strategy_scheduler.dart' as strategy;
 import '../domain/study_day.dart' as day_ops;
 import 'planner_sync.dart';
 
@@ -177,6 +178,12 @@ class StudyTimer extends ChangeNotifier {
     }
     if (date != shanghaiToday(_now())) {
       throw StateError('只能为今天的学习开始计时');
+    }
+    final plan = coordinator.data;
+    final task = plan?.tasks.where((task) => task.id == taskId).firstOrNull;
+    if (plan != null && task != null) {
+      final reason = strategy.strategyExecutionError(plan, task, date);
+      if (reason != null) throw StateError(reason);
     }
     if (!_canTime(taskId)) throw StateError('当前事项不可计时');
     if (activeTaskId == taskId) return;
@@ -461,7 +468,13 @@ class StudyTimer extends ChangeNotifier {
             (task) =>
                 task.id == taskId &&
                 task.status != TaskStatus.archived &&
-                task.status != TaskStatus.completed,
+                task.status != TaskStatus.completed &&
+                strategy.strategyExecutionError(
+                      coordinator.data!,
+                      task,
+                      shanghaiToday(_now()),
+                    ) ==
+                    null,
           ) ??
           false);
 

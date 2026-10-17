@@ -63,6 +63,7 @@ abstract class ItemDraft with _$ItemDraft {
     required String deadline,
     @Default(ItemDateKind.deadline) ItemDateKind deadlineKind,
     @Default(2) int priority,
+    JsonMap? planning,
   }) = _ItemDraft;
   factory ItemDraft.fromJson(JsonMap json) => _$ItemDraftFromJson(json);
 }
@@ -75,6 +76,7 @@ abstract class PlanDraft with _$PlanDraft {
     required String analysisSummary,
     @Default([]) List<String> assumptions,
     @Default([]) List<String> warnings,
+    JsonMap? planning,
   }) = _PlanDraft;
   factory PlanDraft.fromJson(JsonMap json) => _$PlanDraftFromJson(json);
 }

@@ -81,7 +81,25 @@ void main() {
                 return jsonResponse({'error': '当前计划已更新，请重新读取当前计划后再确认'}, 409);
               }
               if (action['type'] == 'refresh_plan') {
-                session = {...session, 'revision': 6, 'plan_revision': 9};
+                session = {
+                  ...session,
+                  'revision': 6,
+                  'plan_revision': 9,
+                  'preview': null,
+                };
+              }
+              if (action['type'] == 'preview_schedule') {
+                session = {
+                  ...session,
+                  'preview': {
+                    'token': 'reviewed',
+                    'status': 'ready',
+                    'days': [],
+                    'issues': [],
+                    'scheduled_minutes': 120,
+                    'unscheduled_minutes': 0,
+                  },
+                };
               }
             }
             return jsonResponse({'session': session});
@@ -102,16 +120,25 @@ void main() {
       );
       await tester.pumpAndSettle();
       await tester.enterText(find.byKey(const ValueKey('weekly-1-1')), '150');
+      await tester.ensureVisible(find.text('试排并检查'));
+      await tester.tap(find.text('试排并检查'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('确认并更新每日计划'));
       await tester.tap(find.text('确认并更新每日计划'));
       await tester.pumpAndSettle();
       expect(find.text('更新当前计划进度，保留草稿'), findsOneWidget);
       await tester.tap(find.text('更新当前计划进度，保留草稿'));
       await tester.pumpAndSettle();
       expect(actions.map((action) => action['type']), [
+        'preview_schedule',
         'finish',
         'refresh_plan',
       ]);
       expect(find.text('150'), findsOneWidget);
+      await tester.ensureVisible(find.text('试排并检查'));
+      await tester.tap(find.text('试排并检查'));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('确认并更新每日计划'));
       await tester.tap(find.text('确认并更新每日计划'));
       await tester.pumpAndSettle();
       expect((actions.last['weekly_minutes'] as Map)['1'], 150);

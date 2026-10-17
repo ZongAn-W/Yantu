@@ -7,7 +7,8 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/server.js",
-    "test": "vitest run"
+    "test": "vitest run",
+    "planning:eval": "tsx src/planning-eval.ts"
   },
   "dependencies": {
     "@fastify/cookie": "^11.0.2",

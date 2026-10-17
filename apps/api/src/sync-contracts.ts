@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ItemPlanningSchema, PlanPlanningSchema } from "./planning-contracts.js";
 
 const id = z.string().min(1).max(200);
 const date = z
@@ -40,6 +41,7 @@ const block = z
       .enum(["not_started", "partial", "completed", "skipped"])
       .optional(),
     feedback: z.string().max(4000).optional(),
+    activity_instance_id: id.nullable().optional(),
   })
   .passthrough();
 /**
@@ -59,6 +61,7 @@ const nullableDate = z.preprocess(
 export const PlannerDocumentSchema = z
   .object({
     version: z.literal(1),
+    planning: PlanPlanningSchema.nullable().optional(),
     profile: z
       .object({
         user_id: id,
@@ -118,6 +121,7 @@ export const PlannerDocumentSchema = z
             earliest_date: date.optional(),
             is_fixed: z.boolean(),
             status,
+            planning: ItemPlanningSchema.nullable().optional(),
           })
           .passthrough(),
       )
@@ -242,6 +246,14 @@ export const PlannerDocumentSchema = z
     const tasks = new Set(data.tasks.map((row) => row.id));
     const blocks = new Map(data.blocks.map((row) => [row.id, row]));
     for (const task of data.tasks) {
+      const workload = task.planning?.workload;
+      if (data.planning && workload) {
+        const calculated = Math.ceil(workload.components.filter(component => component.selected !== false)
+          .reduce((sum, component) => sum + component.quantity * component.minutes_per_unit, 0));
+        const expected = task.planning?.activity?.kind === "recurring" ? task.planning.activity.session_minutes : task.estimated_minutes;
+        if (calculated !== expected)
+          ctx.addIssue({ code: "custom", path: ["tasks", task.id, "planning", "workload"], message: "事项预算与结构化工作量不一致，请先修改工作量或重新评估" });
+      }
       if (
         !subjects.has(task.subject_id) ||
         (task.earliest_date && task.earliest_date > task.deadline)
@@ -251,6 +263,33 @@ export const PlannerDocumentSchema = z
           path: ["tasks"],
           message: "事项引用或起止日期无效",
         });
+      if (task.planning?.dependencies?.some(dependency => !tasks.has(dependency.task_id) || dependency.task_id === task.id))
+        ctx.addIssue({ code: "custom", path: ["tasks", task.id, "planning", "dependencies"], message: "前置事项引用无效" });
+    }
+    const tasksById = new Map(data.tasks.map(task => [task.id, task]));
+    const visiting = new Set<string>(), visited = new Set<string>();
+    function hasCycle(id: string): boolean {
+      if (visiting.has(id)) return true;
+      if (visited.has(id)) return false;
+      visiting.add(id);
+      if (tasksById.get(id)?.planning?.dependencies?.some(dependency => hasCycle(dependency.task_id))) return true;
+      visiting.delete(id);
+      visited.add(id);
+      return false;
+    }
+    if (data.tasks.some(task => hasCycle(task.id)))
+      ctx.addIssue({ code: "custom", path: ["tasks"], message: "前置事项存在循环依赖" });
+    for (const stage of data.planning?.route ?? []) {
+      if (stage.item_ids.some(id => !tasks.has(id)) || (stage.start_date && stage.end_date && stage.start_date > stage.end_date))
+        ctx.addIssue({ code: "custom", path: ["planning", "route", stage.id], message: "学习路线引用或日期无效" });
+    }
+    const instances = new Map<string, string>();
+    for (const block of data.blocks) {
+      if (!block.activity_instance_id) continue;
+      const identity = `${block.task_id}:${block.activity_instance_id}`;
+      if (instances.has(identity) && instances.get(identity) !== block.date)
+        ctx.addIssue({ code: "custom", path: ["blocks", block.id], message: "同一活动实例不能重复安排到不同日期" });
+      instances.set(identity, block.date);
     }
     for (const block of data.blocks)
       if (!tasks.has(block.task_id))

@@ -4,9 +4,11 @@ import { attachExamResearch } from "./exam-research.js";
 import { buildLearningContext, knownStudySubjects, LEARNER_FIELDS, LearnerUpdateSchema, SubjectUpdateSchema, missingLearnerFields, questionFields } from "./learning-context.js";
 import { config } from "./config.js";
 import { ProfileSchema, type GoalType } from "./contracts.js";
-import { CoursesSchema, FIRST_QUESTION, ItemsSchema, QuestionOptionsSchema, RecommendationsSchema, normalizeQuestionOptions, type OnboardingRecommendations, type OnboardingSession, validateReferences } from "./onboarding-contracts.js";
+import { PlanPlanningSchema } from "./planning-contracts.js";
+import { newPlanning, PLANNING_PROMPT_VERSION, PLANNING_RULES_VERSION } from "./planning-service.js";
+import { CoursesSchema, FIRST_QUESTION, ItemsSchema, QuestionOptionsSchema, QuestionTypeSchema, RecommendationsSchema, normalizeQuestionOptions, normalizeQuestionPresentation, type OnboardingRecommendations, type OnboardingSession, validateReferences } from "./onboarding-contracts.js";
 import {
-  analyzeInterview, buildSafeInterview, deriveInterviewProfile, findUngroundedMentions,
+  analyzeInterview, asksForExamIdentity, buildSafeInterview, deriveInterviewProfile, findUngroundedMentions,
   hasExplicitTime, interviewText, latestDateIntent,
 } from "./onboarding-evidence.js";
 
@@ -146,18 +148,20 @@ export async function nextInterview(session: OnboardingSession) {
   const evidence = analyzeInterview(session);
   const fallbackProfile = deriveInterviewProfile(session, evidence);
   session = await attachExamResearch({ ...session, profile: fallbackProfile });
-  const fallback = buildSafeInterview(session, evidence);
+  const safeFallback = buildSafeInterview(session, evidence);
+  const fallback = { ...safeFallback, ...normalizeQuestionPresentation(safeFallback) };
   const contextResult = { learning_context: session.learning_context, research: session.research };
   // 没有本轮回答时（例如从已有计划恢复访谈），先确认是否沿用原目标，不调用 AI。
   if (!session.answers.length) {
     return { ...fallback, ...contextResult, profile: fallbackProfile, recommendations: fallbackRecommendations({ ...session, profile: fallbackProfile }) };
   }
-  if (evidence.goalType === "exam" && !evidence.subtype && !evidence.examTypeUnsure) {
+  if (!config.aiApiKey && evidence.goalType === "exam" && !evidence.subtype && !evidence.examTypeUnsure) {
     return { ...fallback, ...contextResult, profile: fallbackProfile, recommendations: fallbackRecommendations({ ...session, profile: fallbackProfile }) };
   }
   if (config.aiApiKey) {
     const schema = z.object({
       question: z.string().trim().min(1).max(1000), profile: ProfileSchema,
+      question_type: QuestionTypeSchema.optional(),
       question_options: QuestionOptionsSchema.default([]), question_multiple: z.boolean().default(false),
       recommendations: RecommendationsSchema.optional(),
       question_fields: z.array(z.enum(LEARNER_FIELDS)).max(4).default([]),
@@ -165,18 +169,19 @@ export async function nextInterview(session: OnboardingSession) {
       subject_updates: z.array(SubjectUpdateSchema).max(30).default([]),
     });
     const result = await model(schema, [
-      '返回 {"question":"下一道问题","question_options":["选项"],"question_multiple":false,"profile":完整资料对象,"recommendations":完整推荐对象}。一次只提一道问题。读取全部历史，根据学习目标和最新回答选择最值得补充的信息，不重复已明确的信息。',
+      '返回 {"question":"下一道问题","question_type":"text或single_choice或multiple_choice","question_options":[],"question_multiple":false,"profile":完整资料对象,"recommendations":完整推荐对象}。一次只提一道问题。读取全部历史，根据学习目标和最新回答选择最值得补充的信息，不重复已明确的信息。',
       'answers 是本轮用户唯一明确提供的信息；current_plan 只是历史计划背景、进度和已有事项，不能把其中的旧目标、考试类型、院校、专业或科目当作本轮已确认信息。',
       '先更新学习者情况，再决定最值得问的问题。返回learner_updates:[{field,value,answer_index,quote}]，answer_index从0计，quote必须逐字引用对应用户回答；一段回答可补全多个field。field仅限identity,school,college,program,degree,exam_year,baseline,weakness,diagnostic,outcome,availability,materials,constraints。diagnostic是薄弱项的实际做题表现或测评依据。模型记忆、旧计划或网页内容不能放入learner_updates。',
       '同时返回subject_updates:[{name,progress,weakness,answer_index,quote}]记录每门学科的情况，支持任意学科名称。name、progress、weakness、quote都必须来自同一用户回答的原文，没有的信息用空字符串。不要把目标分数当作当前水平，不要把官方考试要求当作用户自述。',
       'question_fields标记这一问获取的字段。从missing_fields选择对课程或安排最有影响的一项；已知、已推算、已暂缓的信息跳过，避免同义重复提问。研究生招生/研究生考试/考研归一理解，不层层重复确认名称。',
       '公开事实交给research查询，用户只提供定位目标所需的院校/专业/学位。不要让用户解释408包含什么、官网考试要求或自行查英语几。research中reference_only=false的事实经后台核对原文，可以用于提问和课程依据；往年或待核实资料不能作为当年定论。',
       '重点了解年级或在职情况、各科实际进度、薄弱项及具体表现、目标、时间约束。年级已推算年份后不重复问考试时间。“学了一部分”应结合具体科目与做题表现追问，不逐字段盘问。408是科目代码，不是报考专业。',
-      '如果用户只说“考试备考”而没有说出具体考试，profile.goal_type 填 exam，goal_subtype 必须留空；下一题必须先问“你准备参加哪一类考试？”，选项用研究生招生、公务员/事业单位、语言考试、职业资格、升学/课程考试、暂未确定，不要询问科目、分数、院校或日期。',
+      '如果用户只说“考试备考”而没有说出具体考试，profile.goal_type 填 exam，goal_subtype 必须留空；下一题先询问考试名称或类别，可让用户直接填写具体考试，也可以用类别选项，不要提前询问科目、分数、院校或日期。',
       '只有用户本轮明确说出具体考试名称时才填写 goal_subtype；用户明确说“沿用原目标”并确认后，才可以沿用 current_plan 里的目标。用户最新表达优先，如“不是考研，我准备雅思”应更新为雅思，中途改变目标时清空不再有效的旧信息。',
       '已确认考研时不能编造数学一、英语一、408、政治或固定分数。科目可使用用户提供或research已核实的依据。询问待选可能与断言已确定事实要区分。用户目标来自用户，公开考试要求来自有出处的资料。',
       '第一问之后的重点顺序：具体考试与考试目标/范围 → 当前基础与进度 → 目标日期是否存在及其明确程度 → 一周可用时间与不能学习的日期 → 必学内容、资料、练习方式和其它约束。',
-      '尽可能给3到6个有意义的简短选项，最多8项，每项不超过200字。适合多选时才设置question_multiple=true。界面自动提供“其他”文字输入，不要在选项里重复添加“其他”。',
+      '由你逐题决定最方便用户表达的回答方式，不默认把问题做成选择题，也不固定按字段决定形式。question_type=text时question_options必须为空且question_multiple=false，界面直接显示文本框；适合描述个人进度、具体卡点、材料名称、学习成果、院校专业、数字或不规则时间安排时优先文字填写，不让用户先点“其他”才能描述。',
+      '答案是少量明确、易理解的互斥类别时可用single_choice；确实需要同时选择多项时用multiple_choice并设置question_multiple=true。有意义的选项通常2到6项，最多8项，每项不超过200字；信息不适合穷举或选项不能表达关键细节时选择text。界面自动提供“其他”文字输入，不要在选项里重复添加“其他”。不要为了提供选项而替用户概括、遗漏或猜测个人情况。',
       '资料字段：goal_text 是用户实际描述的学习目标；goal_type 只能是 exam(考试备考)、course(课程学习)、skill(技能提升)、self_study(自主学习)、other 之一；goal_subtype 是具体考试或领域名称，可为空；target_date 只能填用户明确提供的完整日期 YYYY-MM-DD，未知或主动不设为 null，禁止把推荐日期写入资料；target_date_confirmed 表示用户是否明确确认该日期；target_school、target_program、current_progress、constraints_text 为字符串；weekly_minutes 为0(周日)到6(周六)的每日分钟数字典，只保存用户明确的可用时间。推荐内容只能作为建议，target_date_estimated=true，不能写成用户已确认的信息。',
       '院校、专业、考试科目、目标分数只在考试场景且相关时询问；课程学习、技能提升和自主学习不得要求院校或初试安排。没有目标日期是合法回答，后续问题不能反复要求考试时间。',
       '如果用户只说“提升英语”，继续了解具体学习目的，不要直接推断成雅思或托福。',
@@ -184,7 +189,8 @@ export async function nextInterview(session: OnboardingSession) {
       '如果有current_plan，只结合现有课程、事项、完成进度和固定安排了解历史背景，询问变化或尚未明确的信息；不要复述旧目标为已确认信息。',
       recommendationInstructions,
     ].join("\n"), { current_date: shanghaiDate(), answers: session.answers, profile: session.profile, learning_context: session.learning_context, missing_fields: missingLearnerFields(session), research: session.research, recommendations: session.recommendations, current_plan: session.current_plan });
-    const options = normalizeQuestionOptions(result.question_options);
+    const presentation = normalizeQuestionPresentation(result);
+    const options = presentation.question_options;
     session = { ...session, learning_context: buildLearningContext(session, result.learner_updates, new Date(), result.subject_updates) };
     const profile = deriveInterviewProfile(session, analyzeInterview(session), result.profile);
     session = await attachExamResearch({ ...session, profile });
@@ -192,28 +198,32 @@ export async function nextInterview(session: OnboardingSession) {
     else if (/每天|每日|工作日|周末|(?:周|星期)[一二三四五六日天]/.test(session.answers.at(-1)?.answer ?? "")) profile.weekly_minutes = fallbackProfile.weekly_minutes;
     const recommendations = normalizeRecommendations({ ...session, profile }, result.recommendations);
     const needsExamClarification = evidence.goalType === "exam" && !evidence.subtype && !evidence.examTypeUnsure;
-    if (needsExamClarification || evidence.needsExamDetail) {
-      return { ...buildSafeInterview(session, analyzeInterview(session)), learning_context: session.learning_context, research: session.research, profile, recommendations };
+    const asksExam = asksForExamIdentity(result.question);
+    if ((needsExamClarification || evidence.needsExamDetail) && !asksExam) {
+      const safe = buildSafeInterview(session, analyzeInterview(session));
+      return { ...safe, ...normalizeQuestionPresentation(safe), learning_context: session.learning_context, research: session.research, profile, recommendations };
     }
     // 无依据的考试类型、科目、分数、日期或旧计划信息不能直接落库，退回安全模板继续澄清。
     if (findUngroundedMentions([result.question, ...options], session, evidence).length) {
-      return { ...buildSafeInterview(session, analyzeInterview(session)), learning_context: session.learning_context, research: session.research, profile, recommendations };
+      const safe = buildSafeInterview(session, analyzeInterview(session));
+      return { ...safe, ...normalizeQuestionPresentation(safe), learning_context: session.learning_context, research: session.research, profile, recommendations };
     }
     const fields = result.question_fields.length ? result.question_fields : questionFields(result.question);
     const available = missingLearnerFields(session);
     const repeatsExam = Boolean(evidence.subtype) && /哪(?:一)?类.*考试|具体.*考试(?:是|叫)|考试(?:名称|类型|类别)|参加什么考试/.test(result.question);
     if (repeatsExam || fields.length && !fields.some(field => available.includes(field)) || /408.*(?:包含|包括|组成|有什么)|你.*(?:查阅|查询|查一下).*(?:官网|招生|科目)/.test(result.question)) {
-      return { ...buildSafeInterview(session, analyzeInterview(session)), learning_context: session.learning_context, research: session.research, profile, recommendations };
+      const safe = buildSafeInterview(session, analyzeInterview(session));
+      return { ...safe, ...normalizeQuestionPresentation(safe), learning_context: session.learning_context, research: session.research, profile, recommendations };
     }
     const { learner_updates: _updates, subject_updates: _subjects, ...response } = result;
-    return { ...response, learning_context: session.learning_context, research: session.research, question_fields: fields, question_options: options, profile, recommendations };
+    return { ...response, ...presentation, learning_context: session.learning_context, research: session.research, question_fields: fields, profile, recommendations };
   }
   return { ...fallback, ...contextResult, profile: fallbackProfile, recommendations: fallbackRecommendations({ ...session, profile: fallbackProfile }) };
 }
 
 const notes = { summary: z.string().max(4000), assumptions: z.array(z.string().max(500)).max(20), warnings: z.array(z.string().max(500)).max(20) };
 const courseSchema = z.object({ courses: CoursesSchema, ...notes });
-const itemSchema = z.object({ items: ItemsSchema, ...notes });
+const itemSchema = z.object({ items: ItemsSchema, planning: PlanPlanningSchema.optional(), ...notes });
 
 function recognizedSubjects(text: string) {
   return [...new Set(SUBJECT_VOCAB.filter(name => text.includes(name)))].slice(0, 8);
@@ -221,30 +231,20 @@ function recognizedSubjects(text: string) {
 
 function fallbackCourseNames(session: OnboardingSession) {
   const subjects = knownStudySubjects(session);
-  if (session.profile.goal_type === "exam" && subjects.length) return subjects;
+  if (subjects.length) return subjects;
   const text = interviewText(session) || session.profile.goal_text;
   // 优先按学习目标本身确定领域，避免被后续补充信息里的偶然名词带偏。
   const goalText =
     session.answers.filter(answer => answer.question === FIRST_QUESTION).at(-1)?.answer ?? session.profile.goal_text;
   const fromGoal = recognizedSubjects(goalText);
   const known = fromGoal.length ? fromGoal : recognizedSubjects(text);
-  // 技能类目标保留基础、练习、实践的结构，不停留在单个名词上。
-  if (known.length && session.profile.goal_type === "skill") {
-    const domain = known[0];
-    return [`${domain}基础`, `${domain}练习`, `${domain}实践`];
-  }
-  // 自主学习按主题组织，不使用空泛的“提高”类命名。
-  if (known.length && session.profile.goal_type === "self_study") {
-    const topic = known[0];
-    return [`${topic}阅读与记录`, `${topic}专题整理`];
-  }
   if (known.length) return known;
   const goal = session.profile.goal_text.trim();
   switch (session.profile.goal_type) {
     case "exam": return [session.profile.goal_subtype ? `${session.profile.goal_subtype}备考` : (goal.slice(0, 20) || "考试科目")];
     case "course": return [goal.slice(0, 40) || "课程内容"];
-    case "skill": return ["基础入门", "动手练习", "综合实践"];
-    case "self_study": return ["阅读材料", "专题整理"];
+    case "skill": return [goal.slice(0, 40) || "技能学习"];
+    case "self_study": return [goal.slice(0, 40) || "自主阅读"];
     default: return [goal.slice(0, 40) || "学习内容"];
   }
 }
@@ -258,6 +258,7 @@ export async function generateCourses(session: OnboardingSession, instruction = 
       "priority 为整数1到3，id唯一；最多100门课程。name最长100字，description最长1000字。课程数量和优先级要与用户可用时间和实际目标相称。",
       "有修改要求时以当前手动编辑后的课程为基础，只做用户要求的修改，保留未修改课程的id。不要臆造考试科目，未明确的科目在assumptions中说明。",
       "有current_plan时参考现有课程和进度；继续同一内容应复用原id，保留固定事项所属课程。",
+      "同一领域的基础、练习、强化、冲刺或实践属于事项和路线阶段，不将它们拆成多门同名领域课程；例如Python课程下包含基础练习和项目成果事项。",
       '依据learning_context中的年级、各科学情、薄弱项和目标设置课程与优先级。research中reference_only=false的事实可确定公开课程范围；待核实或往年资料列入assumptions。408已核实为四门内容时可分别生成课程，仍保持课程→事项两层，不擅自确定尚未核实的英语一/二等要求。',
     ].join("\n"), { answers: session.answers, profile: session.profile, learning_context: session.learning_context, research: session.research, courses: session.courses, current_plan: session.current_plan, instruction });
     validateReferences(result.courses, []);
@@ -290,7 +291,7 @@ function fallbackItemTitles(goalType: GoalType) {
   }
 }
 
-export async function generateItems(session: OnboardingSession, instruction = "") {
+export async function generateItems(session: OnboardingSession, instruction = "", timeout = 65_000) {
   if (config.aiApiKey) {
     const result = await model(itemSchema, [
       '只为已确认的课程生成事项，不得增加或改变课程。返回 {"items":[{"id":"item-1","course_id":"已确认课程id","title":"可执行标题","description":"学习范围","completion_criteria":"可验证标准","estimated_minutes":600,"earliest_date":"YYYY-MM-DD","deadline":"YYYY-MM-DD","deadline_kind":"deadline","priority":2}],"summary":"依据","assumptions":[],"warnings":[]}。',
@@ -300,15 +301,22 @@ export async function generateItems(session: OnboardingSession, instruction = ""
       "日期不得早于今天且开始不得晚于截止。本次规划周期为 plan_start_date 到 plan_end_date；目标日期是 target_date，可以为空，且不等于规划结束日期。真实截止日期可以晚于 plan_end_date，不要为了塞进本期而缩短它。",
       "有修改要求时以当前手动编辑后的事项为基础，只做用户要求的修改，保留未修改事项的id。",
       "有current_plan时，继续同一学习事项应复用原id，estimated_minutes为包含已完成用时的总预算；固定事项必须原样保留。不要恢复status为archived的事项，除非用户明确要求。",
+      `规划版本为 ${PLANNING_PROMPT_VERSION} / ${PLANNING_RULES_VERSION}。必须返回 planning:{version:1,prompt_version:"${PLANNING_PROMPT_VERSION}",rules_version:"${PLANNING_RULES_VERSION}",detail_days:14,rolling:true,route:[{id,title,start_date?,end_date?,item_ids,outcome,check}],milestones:[],assumptions:[],risks:[],uncovered:[]}。阶段根据目标选择，技能围绕成果、课程围绕章节、自学允许低强度，不套用考研阶段。`,
+      '每个事项返回 planning:{workload:{components:[{id,label,quantity,unit,minutes_per_unit,selected:true}],source,confidence:"low"|"medium"|"high",calibration},activity:{kind:"finite"|"recurring",starts_on,ends_on,sessions_per_week?,session_minutes?,state:"active"},dependencies:[{task_id,mode:"planned"|"confirmed"}]}。数量和单价不可只写在自然语言里。组成分量相加，未选择的备选 selected:false 不计入预算；复盘与作答分开，区间可加range_min/range_max，说明所采用值是估计。',
+      '有限内容 estimated_minutes 必须等于选中组成项 quantity*minutes_per_unit 向上取整的和。例如15套真题+6套模拟每套180分钟，作答就3780分钟，复盘额外计算。持续活动 workload 描述单次组成且等于session_minutes，estimated_minutes由程序按本期需求计算；不能把全年预算再按周重复计入。',
+      '持续练习使用有限有效窗口、每周次数1至7、单次时长，不能先排完全部预算后消失。无真实日期不编造准确官方日期。仅引用输入中实际存在的资料，未知材料安排少量校准并声明未知；source不能声称未提供的资料已核实。',
+      'workload.evidence_refs 可引用 answer:0 等实际回答下标或 research.sources 中的原网址，缺少依据则保持空数组。milestones 每项包含 title、source_kind(user|verified|suggested|unknown)、date_precision(year|month|day|unknown)、date_value、source_ref；verified必须对应非参考原文，未公布日不使用day精度。',
+      '只把知识领域作为课程，阶段写在路线里。保留用户可用时间和所有真实日期，容量不足明确取舍与未覆盖内容，禁止为了填满日历编任务或压缩单价。修订必须保留全部已确认事项ID，范围变化写入risks。',
+      'current_plan.feedback_signals 分别提供实际用时、用户确认内容进度和困难。有效计时少于3次不能推断稳定速度；遇到困难应调整练习方式、范围或复习，不只是移动分钟。达到预算不表示内容完成，后续依赖需要实际内容确认。',
     ].join("\n"), {
       current_date: shanghaiDate(), answers: session.answers, profile: session.profile, learning_context: session.learning_context, research: session.research, recommendations: session.recommendations,
       plan_start_date: session.start_date || shanghaiDate(),
       plan_end_date: session.end_date || session.recommendations.plan_end_date || session.profile.plan_end_date || "",
       target_date: session.profile.target_date ?? "",
       courses: session.courses, items: session.items, current_plan: session.current_plan, instruction,
-    });
+    }, timeout);
     validateReferences(session.courses, result.items);
-    return result;
+    return { ...result, planning: result.planning ?? newPlanning() };
   }
   if (instruction) throw new Error("服务器尚未配置 AI，暂时无法对话修改，请手动编辑事项");
   const today = shanghaiDate();
@@ -319,12 +327,22 @@ export async function generateItems(session: OnboardingSession, instruction = ""
       id: `item-${i}-${index + 1}`, course_id: course.id, title,
       description: `${course.name}：${title}，记录具体范围与卡点`,
       completion_criteria: index === 0 ? "完成所选材料并整理要点" : "完成练习并记录错因或改进点",
-      estimated_minutes: index === 0 ? 3600 : 2400,
+      estimated_minutes: index === 0 ? 120 : 60,
+      planning: {
+        workload: { components: [{ id: "calibrate", label: index === 0 ? "少量材料诊断" : "练习与复盘", quantity: 1,
+          unit: "次", minutes_per_unit: index === 0 ? 120 : 60, selected: true }],
+          source: "材料和速度未知，采用可调整的初始估计", confidence: "low" as const, calibration: "完成一次后记录实际内容进度和困难，再评估范围" },
+        activity: { kind: "finite" as const, starts_on: session.start_date || today, ends_on: boundary, state: "active" as const },
+        dependencies: [] },
       earliest_date: today, deadline: boundary, deadline_kind: "plan_end" as const,
       priority: course.priority,
     }))),
     summary: "按已确认课程整理的学习事项",
     assumptions: session.profile.target_date ? [] : ["暂未设置目标日期，事项按本期安排边界推进"],
     warnings: ["服务器未配置 AI，当前为基础模板，请核对学习预算和范围"],
+    planning: { ...newPlanning(), route: session.courses.map(course => ({ id: `route-${course.id}`, title: course.name,
+      item_ids: titles.map((_, index) => `item-${session.courses.indexOf(course)}-${index + 1}`),
+      outcome: "确认材料与当前基础，完成小范围学习", check: "记录内容进展后重新评估" })),
+      assumptions: ["材料和学习速度尚待校准"], uncovered: ["基础模板仅安排小范围校准，尚未覆盖完整长期目标"] },
   };
 }

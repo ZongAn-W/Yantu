@@ -127,6 +127,7 @@ _ItemDraft _$ItemDraftFromJson(Map<String, dynamic> json) => $checkedCreate(
             ItemDateKind.deadline,
       ),
       priority: $checkedConvert('priority', (v) => (v as num?)?.toInt() ?? 2),
+      planning: $checkedConvert('planning', (v) => v as Map<String, dynamic>?),
     );
     return val;
   },
@@ -151,6 +152,7 @@ Map<String, dynamic> _$ItemDraftToJson(_ItemDraft instance) =>
       'deadline': instance.deadline,
       'deadline_kind': _$ItemDateKindEnumMap[instance.deadlineKind]!,
       'priority': instance.priority,
+      'planning': ?instance.planning,
     };
 
 const _$ItemDateKindEnumMap = {
@@ -186,6 +188,7 @@ _PlanDraft _$PlanDraftFromJson(Map<String, dynamic> json) => $checkedCreate(
         (v) =>
             (v as List<dynamic>?)?.map((e) => e as String).toList() ?? const [],
       ),
+      planning: $checkedConvert('planning', (v) => v as Map<String, dynamic>?),
     );
     return val;
   },
@@ -199,6 +202,7 @@ Map<String, dynamic> _$PlanDraftToJson(_PlanDraft instance) =>
       'analysis_summary': instance.analysisSummary,
       'assumptions': instance.assumptions,
       'warnings': instance.warnings,
+      'planning': ?instance.planning,
     };
 
 _DraftResponse _$DraftResponseFromJson(Map<String, dynamic> json) =>

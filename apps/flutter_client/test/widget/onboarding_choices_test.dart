@@ -9,6 +9,7 @@ import 'package:sjtu_study_planner_client/core/config/app_config.dart';
 import 'package:sjtu_study_planner_client/core/http/api_client.dart';
 import 'package:sjtu_study_planner_client/core/providers.dart';
 import 'package:sjtu_study_planner_client/core/theme.dart';
+import 'package:sjtu_study_planner_client/features/onboarding/application/onboarding_flow.dart';
 import 'package:sjtu_study_planner_client/features/onboarding/domain/onboarding_options.dart';
 import 'package:sjtu_study_planner_client/features/onboarding/domain/onboarding_session.dart';
 import 'package:sjtu_study_planner_client/features/onboarding/presentation/onboarding_page.dart';
@@ -20,6 +21,7 @@ void main() {
     WidgetTester tester,
     Map<String, dynamic> session, {
     Respond? respond,
+    bool settle = true,
   }) async {
     final client = ApiClient(
       config: const AppConfig(apiBaseUrl: 'http://api.test'),
@@ -36,7 +38,13 @@ void main() {
         child: MaterialApp(theme: plannerTheme(), home: const OnboardingPage()),
       ),
     );
-    await tester.pumpAndSettle();
+    if (settle) {
+      await tester.pumpAndSettle();
+    } else {
+      for (var frame = 0; frame < 10; frame++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+    }
   }
 
   test('legacy sessions keep free text and default recommendation fields', () {
@@ -45,6 +53,293 @@ void main() {
     expect(session.questionMultiple, isFalse);
     expect(session.recommendations.targetDate, isEmpty);
     expect(session.recommendations.weeklyMinutes, isEmpty);
+  });
+
+  test('explicit question types override stale legacy presentation fields', () {
+    OnboardingSession read(String type, bool multiple, List<dynamic> options) =>
+        OnboardingSession.fromJson({
+          ...onboardingFixture(),
+          'question_type': type,
+          'question_multiple': multiple,
+          'question_options': options,
+        });
+
+    final text = read('text', true, ['考研', '考公']);
+    expect(text.questionType, 'text');
+    expect(text.effectiveQuestionType, 'text');
+    expect(text.effectiveQuestionOptions, isEmpty);
+    expect(text.effectiveQuestionMultiple, isFalse);
+    expect(text.edit(research: {'status': 'verified'}).questionType, 'text');
+
+    final single = read('single_choice', true, ['考研', '考公']);
+    expect(single.effectiveQuestionType, 'single_choice');
+    expect(single.effectiveQuestionMultiple, isFalse);
+    final multiple = read('multiple_choice', false, ['考研', '考公']);
+    expect(multiple.effectiveQuestionType, 'multiple_choice');
+    expect(multiple.effectiveQuestionMultiple, isTrue);
+
+    for (final type in ['single_choice', 'multiple_choice']) {
+      final invalid = read(type, true, ['', 'Other', '其他', 12, null]);
+      expect(invalid.effectiveQuestionType, 'text');
+      expect(invalid.effectiveQuestionOptions, isEmpty);
+      expect(invalid.effectiveQuestionMultiple, isFalse);
+    }
+    final legacy = OnboardingSession.fromJson({
+      ...onboardingFixture(),
+      'question_multiple': true,
+      'question_options': ['考研', '考公'],
+    });
+    expect(legacy.questionType, isNull);
+    expect(legacy.effectiveQuestionType, 'multiple_choice');
+    for (final invalid in [
+      null,
+      'bad options',
+      {'bad': true},
+    ]) {
+      final session = OnboardingSession.fromJson({
+        ...onboardingFixture(),
+        'question_type': 'single_choice',
+        'question_options': invalid,
+      });
+      expect(session.effectiveQuestionType, 'text');
+    }
+  });
+
+  testWidgets('AI text question hides stale options and submits free text', (
+    tester,
+  ) async {
+    final session = onboardingFixture(answers: 1)
+      ..['question_type'] = 'text'
+      ..['question_multiple'] = true
+      ..['question_options'] = ['基础较弱', '已学完一轮'];
+    Map? action;
+    await mount(
+      tester,
+      session,
+      respond: (request) async {
+        if (request.method == 'POST') {
+          action = (request.data as Map)['action'] as Map;
+          return jsonResponse({'error': '稍后再试'}, 502);
+        }
+        return jsonResponse({'session': session});
+      },
+    );
+    expect(find.text('基础较弱'), findsNothing);
+    expect(find.text('其他'), findsNothing);
+    expect(find.text('直接填写'), findsNothing);
+    expect(find.text('第 2 问'), findsOneWidget);
+    await tester.enterText(find.byType(TextFormField), '英语阅读完成十篇，长难句仍比较困难');
+    await tester.ensureVisible(find.text('提交回答，继续'));
+    await tester.tap(find.text('提交回答，继续'));
+    await tester.pumpAndSettle();
+    expect(action!['answer'], '英语阅读完成十篇，长难句仍比较困难');
+    expect(find.text('英语阅读完成十篇，长难句仍比较困难'), findsOneWidget);
+    expect(find.text('稍后再试'), findsOneWidget);
+  });
+
+  for (final multiple in [false, true]) {
+    testWidgets('explicit ${multiple ? 'multiple' : 'single'} choice wins', (
+      tester,
+    ) async {
+      final session = onboardingFixture(answers: 1)
+        ..['question_type'] = multiple ? 'multiple_choice' : 'single_choice'
+        ..['question_multiple'] = !multiple
+        ..['question_options'] = ['数学', '英语'];
+      await mount(tester, session);
+      expect(
+        find.byType(CheckboxListTile),
+        multiple ? findsNWidgets(3) : findsNothing,
+      );
+      expect(
+        find.byType(RadioListTile<String>),
+        multiple ? findsNothing : findsNWidgets(3),
+      );
+      expect(find.text('第 2 问${multiple ? ' · 可多选' : ''}'), findsOneWidget);
+    });
+  }
+
+  testWidgets('empty AI choice options fall back to free text', (tester) async {
+    final session = onboardingFixture(answers: 1)
+      ..['question_type'] = 'multiple_choice'
+      ..['question_options'] = ['', 'Other', null, 7];
+    await mount(tester, session);
+    expect(find.byType(TextFormField), findsOneWidget);
+    expect(find.text('其他'), findsNothing);
+    expect(find.text('直接填写'), findsNothing);
+    expect(find.text('第 2 问'), findsOneWidget);
+  });
+
+  testWidgets(
+    'direct text override retains draft and submits only visible mode',
+    (tester) async {
+      final session = onboardingFixture(answers: 1)
+        ..['question_type'] = 'multiple_choice'
+        ..['question_options'] = ['数学', '英语'];
+      final actions = <Map>[];
+      await mount(
+        tester,
+        session,
+        respond: (request) async {
+          if (request.method == 'POST') {
+            actions.add((request.data as Map)['action'] as Map);
+            return jsonResponse({'error': '保留草稿后重试'}, 502);
+          }
+          return jsonResponse({'session': session});
+        },
+      );
+      await tester.tap(find.text('数学'));
+      await tester.tap(find.text('直接填写'));
+      await tester.pumpAndSettle();
+      expect(find.byType(CheckboxListTile), findsNothing);
+      expect(find.text('第 2 问'), findsOneWidget);
+      await tester.enterText(find.byType(TextFormField), '专业课需要从数据库开始');
+      await tester.ensureVisible(find.text('提交回答，继续'));
+      await tester.tap(find.text('提交回答，继续'));
+      await tester.pumpAndSettle();
+      expect(actions.single['answer'], '专业课需要从数据库开始');
+      expect(find.text('专业课需要从数据库开始'), findsOneWidget);
+
+      await tester.ensureVisible(find.text('改用选项'));
+      await tester.tap(find.text('改用选项'));
+      await tester.pumpAndSettle();
+      expect(find.byType(TextFormField), findsNothing);
+      await tester.ensureVisible(find.text('提交回答，继续'));
+      await tester.tap(find.text('提交回答，继续'));
+      await tester.pumpAndSettle();
+      expect(actions.last['answer'], '数学');
+
+      await tester.ensureVisible(find.text('直接填写'));
+      await tester.tap(find.text('直接填写'));
+      await tester.pumpAndSettle();
+      expect(find.text('专业课需要从数据库开始'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'changing answer modes clears selection and text validation errors',
+    (tester) async {
+      final session = onboardingFixture(answers: 1)
+        ..['question_type'] = 'single_choice'
+        ..['question_options'] = ['数学', '英语'];
+      await mount(tester, session);
+      await tester.tap(find.text('提交回答，继续'));
+      await tester.pumpAndSettle();
+      expect(find.text('请选择一个选项或填写其他回答'), findsOneWidget);
+      await tester.tap(find.text('直接填写'));
+      await tester.pumpAndSettle();
+      expect(find.text('请选择一个选项或填写其他回答'), findsNothing);
+      await tester.ensureVisible(find.text('提交回答，继续'));
+      await tester.tap(find.text('提交回答，继续'));
+      await tester.pumpAndSettle();
+      expect(find.text('请先填写回答'), findsOneWidget);
+      await tester.ensureVisible(find.text('改用选项'));
+      await tester.tap(find.text('改用选项'));
+      await tester.pumpAndSettle();
+      expect(find.text('请先填写回答'), findsNothing);
+      await tester.tap(find.text('直接填写'));
+      await tester.pumpAndSettle();
+      expect(find.text('请先填写回答'), findsNothing);
+    },
+  );
+
+  testWidgets(
+    'question type and option changes reset choices and text override',
+    (tester) async {
+      var session = onboardingFixture(answers: 1)
+        ..['question_type'] = 'single_choice'
+        ..['question_options'] = ['数学', '英语'];
+      await mount(
+        tester,
+        session,
+        respond: (_) async => jsonResponse({'session': session}),
+      );
+      final flow = ProviderScope.containerOf(
+        tester.element(find.byType(OnboardingPage)),
+      ).read(onboardingFlowProvider.notifier);
+      await tester.tap(find.text('数学'));
+      await tester.tap(find.text('直接填写'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextFormField), '上一个题型的草稿');
+
+      session = {...session, 'question_type': 'multiple_choice'};
+      unawaited(flow.reload());
+      await tester.pumpAndSettle();
+      expect(find.byType(TextFormField), findsNothing);
+      expect(find.text('直接填写'), findsOneWidget);
+      expect(
+        tester
+            .widgetList<CheckboxListTile>(find.byType(CheckboxListTile))
+            .every((tile) => tile.value == false),
+        isTrue,
+      );
+      await tester.tap(find.text('数学'));
+
+      session = {
+        ...session,
+        'question_options': ['数学', '专业课'],
+      };
+      unawaited(flow.reload());
+      await tester.pumpAndSettle();
+      expect(find.text('专业课'), findsOneWidget);
+      expect(
+        tester
+            .widgetList<CheckboxListTile>(find.byType(CheckboxListTile))
+            .every((tile) => tile.value == false),
+        isTrue,
+      );
+      await tester.tap(find.text('直接填写'));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<TextFormField>(find.byType(TextFormField))
+            .controller!
+            .text,
+        isEmpty,
+      );
+    },
+  );
+
+  testWidgets('research polling preserves direct text mode and its draft', (
+    tester,
+  ) async {
+    final session = onboardingFixture(answers: 1)
+      ..['question_type'] = 'single_choice'
+      ..['question_options'] = ['数学', '英语']
+      ..['research'] = {
+        'status': 'pending',
+        'key': 'research-1',
+        'message': '核实中',
+      };
+    var reads = 0;
+    await mount(
+      tester,
+      session,
+      settle: false,
+      respond: (_) async {
+        reads++;
+        return jsonResponse({
+          'session': reads == 1
+              ? session
+              : {
+                  ...session,
+                  'research': {
+                    'status': 'verified',
+                    'key': 'research-1',
+                    'message': '核实完成',
+                  },
+                },
+        });
+      },
+    );
+    await tester.tap(find.text('直接填写'));
+    await tester.pump();
+    await tester.enterText(find.byType(TextFormField), '正在输入的个人情况');
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pumpAndSettle();
+    expect(reads, 2);
+    expect(find.text('核实完成'), findsOneWidget);
+    expect(find.text('改用选项'), findsOneWidget);
+    expect(find.text('正在输入的个人情况'), findsOneWidget);
   });
 
   test(
@@ -582,9 +877,10 @@ void main() {
       final restored = find.byKey(const ValueKey('weekly-2-1'));
       expect(tester.widget<TextFormField>(restored).initialValue, '120');
       await tester.enterText(restored, '150');
-      await tester.tap(find.text('确认并生成每日计划'));
+      await tester.tap(find.text('试排并检查'));
       await tester.pumpAndSettle();
       expect(action!['end_date'], '2026-11-13');
+      expect(action!['type'], 'preview_schedule');
       expect(action!['target_date'], '2027-12-18');
       expect((action!['weekly_minutes'] as Map)['1'], 150);
       expect((action!['weekly_minutes'] as Map)['0'], 240);

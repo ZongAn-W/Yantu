@@ -88,6 +88,14 @@ MergeResult mergePlans(
     ),
     'phases': merge(before['phases'], here['phases'], there['phases'], '学习阶段'),
   };
+  if ([before, here, there].any((json) => json.containsKey('planning'))) {
+    result['planning'] = merge(
+      before['planning'],
+      here['planning'],
+      there['planning'],
+      '学习路线与策略',
+    );
+  }
   if ([before, here, there].any((json) => json['daily_feedback'] != null)) {
     result['daily_feedback'] = merge(
       before['daily_feedback'] ?? {},
@@ -208,9 +216,7 @@ MergeResult mergePlans(
         0,
         (sum, log) => sum + (log['minutes'] as int),
       );
-      task['completed_minutes'] = total > (task['estimated_minutes'] as int)
-          ? task['estimated_minutes']
-          : total;
+      task['completed_minutes'] = total;
     }
   }
   for (final block in result['blocks'] as List) {

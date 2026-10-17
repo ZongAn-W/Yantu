@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -8,6 +10,7 @@ import '../../../shared/models/api_models.dart';
 import '../../../shared/models/planner_models.dart';
 import '../../planner/domain/planner_format.dart';
 import '../../planner/presentation/planner_dialogs.dart' show DateField;
+import '../../planner/presentation/planning_details.dart';
 import '../application/onboarding_flow.dart';
 import '../domain/onboarding_options.dart';
 import '../domain/onboarding_session.dart';
@@ -46,8 +49,11 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
   String? _seededQuestion;
   final _selectedAnswers = <String>{};
   bool _otherSelected = false;
+  bool _freeText = false;
   String? _answerError;
   int _weeklyVersion = 0;
+  String? _previewConstraints;
+  int _detailDays = 14;
 
   @override
   void dispose() {
@@ -64,7 +70,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     final stage = session?.stage ?? 'interview';
     if (_seededStage != stage) {
       _revision.clear();
-      if (stage == 'schedule' && session != null) {
+      if ((stage == 'schedule' || stage == 'constraints') && session != null) {
         final today = shanghaiToday();
         _start = session.startDate.isNotEmpty
             ? session.startDate
@@ -75,32 +81,46 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
             ? session.recommendations.planEndDate
             : session.profile.resolvedPlanEnd(today);
         final target = session.profile.resolvedTargetDate;
-        _target = target.isNotEmpty
+        _target = session.constraintsConfirmed
+            ? target
+            : target.isNotEmpty
             ? target
             : session.recommendations.targetDate;
         _weekly = {
-          ...(session.recommendations.weeklyMinutes.isNotEmpty
+          ...(session.constraintsConfirmed
+              ? session.profile.weeklyMinutes
+              : session.recommendations.weeklyMinutes.isNotEmpty
               ? session.recommendations.weeklyMinutes
               : session.profile.weeklyMinutes),
         };
+        _detailDays = (session.planning?['detail_days'] as num? ?? 14).toInt();
+        _previewConstraints = session.preview == null ? null : _constraintsKey;
         _weeklyVersion++;
       }
       _seededStage = stage;
     }
     if (session != null) {
-      final questionKey = '${session.answers.length}:${session.question}';
+      final questionKey = jsonEncode([
+        session.answers.length,
+        session.question,
+        session.questionType,
+        session.effectiveQuestionType,
+        session.effectiveQuestionOptions,
+      ]);
       if (_seededQuestion != questionKey) {
         _seededQuestion = questionKey;
         _selectedAnswers.clear();
         _otherSelected = false;
+        _freeText = false;
         _answerError = null;
         _answer.clear();
       }
     }
     final index = switch (stage) {
       'courses' => 1,
-      'items' => 2,
-      'schedule' || 'complete' => 3,
+      'constraints' => 2,
+      'items' => 3,
+      'schedule' || 'complete' => 4,
       _ => 0,
     };
     // 访谈阶段的 AI 等待改用页面内固定高度的“AI 正在思考中…”提示；
@@ -158,6 +178,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                         for (final (i, title) in [
                           '目标访谈',
                           '确认课程',
+                          '确认条件',
                           '确认事项',
                           '每日计划',
                         ].indexed)
@@ -207,7 +228,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                       ),
                     if (stage == 'courses' || stage == 'items')
                       _draft(session, flow, state.loading),
-                    if (stage == 'schedule')
+                    if (stage == 'schedule' || stage == 'constraints')
                       _schedule(session, flow, state.loading),
                     if (stage == 'complete')
                       _planningHome(session, flow, state.loading),
@@ -359,228 +380,246 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     OnboardingFlow flow,
     bool busy,
     bool thinking,
-  ) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      if (session.answers.isNotEmpty)
-        ExpansionTile(
-          tilePadding: EdgeInsets.zero,
-          title: Text('已回答 ${session.answers.length} 个问题'),
-          children: [
-            for (final (i, answer) in session.answers.indexed)
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text('${i + 1}. ${answer.question}'),
-                subtitle: Padding(
-                  padding: const EdgeInsets.only(top: 6, bottom: 12),
-                  child: SelectableText(answer.answer),
+  ) {
+    final options = session.effectiveQuestionOptions;
+    final multiple = session.effectiveQuestionMultiple;
+    final usingChoices = options.isNotEmpty && !_freeText;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (session.answers.isNotEmpty)
+          ExpansionTile(
+            tilePadding: EdgeInsets.zero,
+            title: Text('已回答 ${session.answers.length} 个问题'),
+            children: [
+              for (final (i, answer) in session.answers.indexed)
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: Text('${i + 1}. ${answer.question}'),
+                  subtitle: Padding(
+                    padding: const EdgeInsets.only(top: 6, bottom: 12),
+                    child: SelectableText(answer.answer),
+                  ),
                 ),
+            ],
+          ),
+        const SizedBox(height: 16),
+        if (session.answers.length >= _maxInterviewAnswers) ...[
+          Text(
+            '已达到 $_maxInterviewAnswers 题上限',
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '请根据当前回答生成科目，或重新访谈后再继续补充。',
+            style: TextStyle(color: PlannerColors.muted),
+          ),
+          const SizedBox(height: 20),
+        ] else ...[
+          Text(
+            '第 ${session.answers.length + 1} 问${usingChoices && multiple ? ' · 可多选' : ''}',
+            style: const TextStyle(color: PlannerColors.muted),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            session.question,
+            style: Theme.of(context).textTheme.headlineSmall,
+          ),
+          const SizedBox(height: 20),
+          if (options.isNotEmpty)
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton.icon(
+                onPressed: busy
+                    ? null
+                    : () => setState(() {
+                        _freeText = !_freeText;
+                        _answerError = null;
+                      }),
+                icon: Icon(_freeText ? Icons.list_alt : Icons.edit_outlined),
+                label: Text(_freeText ? '改用选项' : '直接填写'),
               ),
-          ],
-        ),
-      const SizedBox(height: 16),
-      if (session.answers.length >= _maxInterviewAnswers) ...[
-        Text(
-          '已达到 $_maxInterviewAnswers 题上限',
-          style: Theme.of(context).textTheme.headlineSmall,
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          '请根据当前回答生成科目，或重新访谈后再继续补充。',
-          style: TextStyle(color: PlannerColors.muted),
-        ),
-        const SizedBox(height: 20),
-      ] else ...[
-        Text(
-          '第 ${session.answers.length + 1} 问${session.questionMultiple ? ' · 可多选' : ''}',
-          style: const TextStyle(color: PlannerColors.muted),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          session.question,
-          style: Theme.of(context).textTheme.headlineSmall,
-        ),
-        const SizedBox(height: 20),
-        if (session.questionOptions.isNotEmpty) ...[
-          if (session.questionMultiple)
-            Column(
-              children: [
-                for (final option in session.questionOptions)
+            ),
+          if (usingChoices) ...[
+            if (multiple)
+              Column(
+                children: [
+                  for (final option in options)
+                    CheckboxListTile(
+                      contentPadding: EdgeInsets.zero,
+                      controlAffinity: ListTileControlAffinity.leading,
+                      title: Text(option),
+                      value: _selectedAnswers.contains(option),
+                      onChanged: busy
+                          ? null
+                          : (checked) => setState(() {
+                              if (checked == true) {
+                                _selectedAnswers.add(option);
+                              } else {
+                                _selectedAnswers.remove(option);
+                              }
+                              _answerError = null;
+                            }),
+                    ),
                   CheckboxListTile(
                     contentPadding: EdgeInsets.zero,
                     controlAffinity: ListTileControlAffinity.leading,
-                    title: Text(option),
-                    value: _selectedAnswers.contains(option),
+                    title: const Text(otherOptionLabel),
+                    value: _otherSelected,
                     onChanged: busy
                         ? null
                         : (checked) => setState(() {
-                            if (checked == true) {
-                              _selectedAnswers.add(option);
-                            } else {
-                              _selectedAnswers.remove(option);
-                            }
+                            _otherSelected = checked == true;
                             _answerError = null;
                           }),
                   ),
-                CheckboxListTile(
-                  contentPadding: EdgeInsets.zero,
-                  controlAffinity: ListTileControlAffinity.leading,
-                  title: const Text(otherOptionLabel),
-                  value: _otherSelected,
-                  onChanged: busy
-                      ? null
-                      : (checked) => setState(() {
-                          _otherSelected = checked == true;
-                          _answerError = null;
-                        }),
-                ),
-              ],
-            )
-          else
-            RadioGroup<String>(
-              groupValue: _otherSelected
-                  ? otherOptionKey
-                  : _selectedAnswers.firstOrNull,
-              onChanged: (value) {
-                if (busy || value == null) return;
-                setState(() {
-                  _otherSelected = value == otherOptionKey;
-                  _selectedAnswers.clear();
-                  if (!_otherSelected) _selectedAnswers.add(value);
-                  _answerError = null;
-                });
-              },
-              child: Column(
-                children: [
-                  for (final option in session.questionOptions)
+                ],
+              )
+            else
+              RadioGroup<String>(
+                groupValue: _otherSelected
+                    ? otherOptionKey
+                    : _selectedAnswers.firstOrNull,
+                onChanged: (value) {
+                  if (busy || value == null) return;
+                  setState(() {
+                    _otherSelected = value == otherOptionKey;
+                    _selectedAnswers.clear();
+                    if (!_otherSelected) _selectedAnswers.add(value);
+                    _answerError = null;
+                  });
+                },
+                child: Column(
+                  children: [
+                    for (final option in options)
+                      RadioListTile<String>(
+                        contentPadding: EdgeInsets.zero,
+                        title: Text(option),
+                        value: option,
+                        enabled: !busy,
+                      ),
                     RadioListTile<String>(
                       contentPadding: EdgeInsets.zero,
-                      title: Text(option),
-                      value: option,
+                      title: const Text(otherOptionLabel),
+                      value: otherOptionKey,
                       enabled: !busy,
-                    ),
-                  RadioListTile<String>(
-                    contentPadding: EdgeInsets.zero,
-                    title: const Text(otherOptionLabel),
-                    value: otherOptionKey,
-                    enabled: !busy,
-                  ),
-                ],
-              ),
-            ),
-          if (_answerError != null)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                _answerError!,
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-            ),
-          const SizedBox(height: 12),
-        ],
-        if (session.questionOptions.isEmpty || _otherSelected)
-          TextFormField(
-            key: ValueKey('answer-${session.answers.length}'),
-            controller: _answer,
-            enabled: !busy,
-            autofocus: session.questionOptions.isEmpty,
-            minLines: 3,
-            maxLines: 8,
-            maxLength: 4000,
-            decoration: InputDecoration(
-              labelText: session.questionOptions.isEmpty ? '你的回答' : '其他回答',
-              hintText: session.answers.isEmpty
-                  ? '例如：从零学习 Python，能独立做简单的数据分析'
-                  : null,
-            ),
-            validator: (value) =>
-                value == null || value.trim().isEmpty ? '请先填写回答' : null,
-          ),
-        const SizedBox(height: 8),
-      ],
-      // 固定高度的等待提示，避免 AI 处理期间页面跳动或按钮错位。
-      SizedBox(
-        height: 28,
-        child: thinking
-            ? Semantics(
-                liveRegion: true,
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.end,
-                  children: [
-                    const SizedBox(
-                      width: 16,
-                      height: 16,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                    const SizedBox(width: 8),
-                    const Text(
-                      'AI 正在思考中…',
-                      style: TextStyle(color: PlannerColors.muted),
                     ),
                   ],
                 ),
-              )
-            : null,
-      ),
-      Wrap(
-        alignment: WrapAlignment.end,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: 12,
-        runSpacing: 10,
-        children: [
-          if (session.answers.length >= _minAnswersToGenerate)
-            OutlinedButton.icon(
-              onPressed: busy
-                  ? null
-                  : () async {
-                      // 生成只使用服务端已保存的回答；当前未提交的输入不参与生成，也不触发必填校验。
-                      if (await flow.act({'type': 'generate_courses'})) {
-                        _answer.clear();
-                        _selectedAnswers.clear();
-                        _otherSelected = false;
-                        _answerError = null;
-                      }
-                    },
-              icon: const Icon(Icons.checklist_rtl),
-              label: const Text('根据当前回答生成科目'),
+              ),
+            if (_answerError != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: Text(
+                  _answerError!,
+                  style: TextStyle(color: Theme.of(context).colorScheme.error),
+                ),
+              ),
+            const SizedBox(height: 12),
+          ],
+          if (!usingChoices || _otherSelected)
+            TextFormField(
+              key: ValueKey('answer-$_seededQuestion-$usingChoices'),
+              controller: _answer,
+              enabled: !busy,
+              autofocus: !usingChoices,
+              minLines: 3,
+              maxLines: 8,
+              maxLength: 4000,
+              decoration: InputDecoration(
+                labelText: usingChoices ? '其他回答' : '你的回答',
+                hintText: session.answers.isEmpty
+                    ? '例如：从零学习 Python，能独立做简单的数据分析'
+                    : null,
+              ),
+              validator: (value) =>
+                  value == null || value.trim().isEmpty ? '请先填写回答' : null,
             ),
-          if (session.answers.length < _maxInterviewAnswers)
-            FilledButton.icon(
-              onPressed: busy
-                  ? null
-                  : () async {
-                      // 选项在解析会话时已归一化；“其他”入口由客户端统一提供。
-                      // 只有“其他”入口可见时才提交输入框内容，切换回普通选项后隐藏的旧内容不会提交。
-                      if (!_form.currentState!.validate()) return;
-                      final selected = session.questionOptions
-                          .where(_selectedAnswers.contains)
-                          .toList();
-                      final customText =
-                          session.questionOptions.isEmpty || _otherSelected
-                          ? _answer.text.trim()
-                          : '';
-                      final answer = [
-                        ...selected,
-                        if (customText.isNotEmpty) customText,
-                      ].join('；');
-                      if (answer.isEmpty) {
-                        setState(() => _answerError = '请选择一个选项或填写其他回答');
-                        return;
-                      }
-                      if (await flow.act({
-                        'type': 'answer',
-                        'answer': answer,
-                      })) {
-                        _answer.clear();
-                      }
-                    },
-              icon: const Icon(Icons.arrow_forward),
-              label: Text(session.answers.length < 4 ? '提交回答，继续' : '提交回答'),
-            ),
+          const SizedBox(height: 8),
         ],
-      ),
-    ],
-  );
+        // 固定高度的等待提示，避免 AI 处理期间页面跳动或按钮错位。
+        SizedBox(
+          height: 28,
+          child: thinking
+              ? Semantics(
+                  liveRegion: true,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                      const SizedBox(width: 8),
+                      const Text(
+                        'AI 正在思考中…',
+                        style: TextStyle(color: PlannerColors.muted),
+                      ),
+                    ],
+                  ),
+                )
+              : null,
+        ),
+        Wrap(
+          alignment: WrapAlignment.end,
+          crossAxisAlignment: WrapCrossAlignment.center,
+          spacing: 12,
+          runSpacing: 10,
+          children: [
+            if (session.answers.length >= _minAnswersToGenerate)
+              OutlinedButton.icon(
+                onPressed: busy
+                    ? null
+                    : () async {
+                        // 生成只使用服务端已保存的回答；当前未提交的输入不参与生成，也不触发必填校验。
+                        if (await flow.act({'type': 'generate_courses'})) {
+                          _answer.clear();
+                          _selectedAnswers.clear();
+                          _otherSelected = false;
+                          _answerError = null;
+                        }
+                      },
+                icon: const Icon(Icons.checklist_rtl),
+                label: const Text('根据当前回答生成科目'),
+              ),
+            if (session.answers.length < _maxInterviewAnswers)
+              FilledButton.icon(
+                onPressed: busy
+                    ? null
+                    : () async {
+                        // 选项在解析会话时已归一化；“其他”入口由客户端统一提供。
+                        // 只提交当前回答方式中的内容，保留的隐藏草稿不参与提交。
+                        if (!_form.currentState!.validate()) return;
+                        final selected = usingChoices
+                            ? options.where(_selectedAnswers.contains).toList()
+                            : const <String>[];
+                        final customText = !usingChoices || _otherSelected
+                            ? _answer.text.trim()
+                            : '';
+                        final answer = [
+                          ...selected,
+                          if (customText.isNotEmpty) customText,
+                        ].join('；');
+                        if (answer.isEmpty) {
+                          setState(() => _answerError = '请选择一个选项或填写其他回答');
+                          return;
+                        }
+                        if (await flow.act({
+                          'type': 'answer',
+                          'answer': answer,
+                        })) {
+                          _answer.clear();
+                        }
+                      },
+                icon: const Icon(Icons.arrow_forward),
+                label: Text(session.answers.length < 4 ? '提交回答，继续' : '提交回答'),
+              ),
+          ],
+        ),
+      ],
+    );
+  }
 
   Widget _draft(OnboardingSession session, OnboardingFlow flow, bool busy) {
     final courses = session.stage == 'courses';
@@ -660,8 +699,14 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 title: Text(item.title),
-                subtitle: Text(
-                  '${(item.estimatedMinutes / 60).toStringAsFixed(1)} 小时 · ${item.earliestDate ?? '待定'} 至 ${item.deadline}\n${item.description}${item.completionCriteria.isEmpty ? '' : '\n完成标准：${item.completionCriteria}'}',
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      '${(item.estimatedMinutes / 60).toStringAsFixed(1)} 小时 · ${item.earliestDate ?? '待定'} 至 ${item.deadline}\n${item.description}${item.completionCriteria.isEmpty ? '' : '\n完成标准：${item.completionCriteria}'}',
+                    ),
+                    WorkloadDetails(planning: item.planning),
+                  ],
                 ),
                 trailing: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -800,10 +845,10 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                   ? null
                   : () => flow.act({
                       'type': 'back',
-                      'target': courses ? 'interview' : 'courses',
+                      'target': courses ? 'interview' : 'constraints',
                     }),
               icon: const Icon(Icons.arrow_back),
-              label: Text(courses ? '返回访谈' : '返回课程'),
+              label: Text(courses ? '返回访谈' : '返回时间条件'),
             ),
             OutlinedButton.icon(
               onPressed: busy
@@ -830,7 +875,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                       ..._draftPayload(session),
                     }),
               icon: const Icon(Icons.check),
-              label: Text(courses ? '确认课程，生成事项' : '确认事项，设置日期'),
+              label: Text(courses ? '确认课程，设置时间条件' : '确认事项，预览安排'),
             ),
           ],
         ),
@@ -843,7 +888,20 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       ? {'courses': session.courses.map((c) => c.toJson()).toList()}
       : {'items': session.items.map((i) => i.toJson()).toList()};
 
+  Map<String, dynamic> get _constraintsPayload => {
+    'start_date': _start,
+    'end_date': _end,
+    'target_date': (_target ?? '').isEmpty ? null : _target,
+    'weekly_minutes': {
+      for (var day = 0; day < 7; day++) '$day': _weekly?['$day'] ?? 0,
+    },
+    'detail_days': _detailDays,
+  };
+
+  String get _constraintsKey => jsonEncode(_constraintsPayload);
+
   Widget _schedule(OnboardingSession session, OnboardingFlow flow, bool busy) {
+    final constraints = session.stage == 'constraints';
     final today = shanghaiToday();
     _start ??= session.startDate.isNotEmpty
         ? session.startDate
@@ -865,6 +923,11 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       0,
       (sum, item) => sum + item.estimatedMinutes,
     );
+    final previewValid =
+        session.preview != null && _previewConstraints == _constraintsKey;
+    final hasHardErrors = planningEntries(
+      session.preview?['issues'],
+    ).any((issue) => issue['severity'] == 'error');
     var capacity = 0;
     if (_end!.isNotEmpty && _end!.compareTo(_start!) >= 0) {
       for (
@@ -878,11 +941,22 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('确认计划日期', style: Theme.of(context).textTheme.headlineSmall),
-        const SizedBox(height: 8),
         Text(
-          '${session.courses.length} 门课程 · ${session.items.length} 个事项 · 总预算 ${(budget / 60).toStringAsFixed(1)} 小时',
+          constraints ? '确认本次规划条件' : '预览并确认每日安排',
+          style: Theme.of(context).textTheme.headlineSmall,
         ),
+        const SizedBox(height: 8),
+        if (!constraints)
+          Text(
+            '${session.courses.length} 门课程 · ${session.items.length} 个事项 · 总预算 ${(budget / 60).toStringAsFixed(1)} 小时',
+          ),
+        if (constraints)
+          Text(
+            session.profile.goalText.isNotEmpty
+                ? session.profile.goalText
+                : '本次课程：${session.courses.map((c) => c.name).join('、')}',
+          ),
+        if (!constraints) PlanningRouteView(planning: session.planning),
         const SizedBox(height: 20),
         AbsorbPointer(
           absorbing: busy,
@@ -1055,13 +1129,82 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
           '每日预留30分钟机动，单门课程每天最多4小时。',
           style: TextStyle(color: PlannerColors.muted),
         ),
-        if (_end!.isNotEmpty && budget > capacity) ...[
+        const SizedBox(height: 16),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: SizedBox(
+            width: 240,
+            child: TextFormField(
+              key: ValueKey('detail-days-${session.stage}'),
+              initialValue: '$_detailDays',
+              enabled: !busy,
+              keyboardType: TextInputType.number,
+              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+              decoration: const InputDecoration(
+                labelText: '近期每日安排',
+                suffixText: '天',
+              ),
+              validator: (value) {
+                final days = int.tryParse(value ?? '');
+                return days == null || days < 1 || days > 90
+                    ? '填写 1 至 90 天'
+                    : null;
+              },
+              onChanged: (value) =>
+                  setState(() => _detailDays = int.tryParse(value) ?? 0),
+            ),
+          ),
+        ),
+        if (constraints) ...[
+          const SizedBox(height: 16),
+          if (planningEntries(session.currentPlan?['fixed_events']).isEmpty)
+            const Text(
+              '当前没有固定课程、考试或休息占用。',
+              style: TextStyle(color: PlannerColors.muted),
+            )
+          else
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: Text(
+                '现有固定占用 ${planningEntries(session.currentPlan?['fixed_events']).length} 项',
+              ),
+              children: [
+                for (final event in planningEntries(
+                  session.currentPlan?['fixed_events'],
+                ))
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    dense: true,
+                    title: Text(planningText(event['title'])),
+                    subtitle: Text(
+                      '${event['date']} · ${clockTime((event['start_minute'] as num? ?? 0).toInt())} · '
+                      '${duration((event['duration_minutes'] as num? ?? 0).toInt())} · '
+                      '${switch (event['repeat']) {
+                        'daily' => '每天',
+                        'weekly' => '每周',
+                        _ => '单次',
+                      }}',
+                    ),
+                  ),
+              ],
+            ),
+        ],
+        if (!constraints && _end!.isNotEmpty && budget > capacity) ...[
           const SizedBox(height: 12),
           PlannerNotice(
             '事项预算超出可用时间约 ${((budget - capacity) / 60).toStringAsFixed(1)} 小时，部分内容可能无法排入。',
             tone: PlannerNoticeTone.warning,
           ),
         ],
+        if (!constraints && session.preview != null && !previewValid) ...[
+          const SizedBox(height: 12),
+          const PlannerNotice(
+            '时间条件已修改，请重新试排后确认。',
+            tone: PlannerNoticeTone.warning,
+          ),
+        ],
+        if (!constraints && previewValid)
+          PlanningPreviewView(preview: session.preview!),
         const SizedBox(height: 24),
         Wrap(
           alignment: WrapAlignment.end,
@@ -1071,26 +1214,55 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
             TextButton.icon(
               onPressed: busy
                   ? null
-                  : () => flow.act({'type': 'back', 'target': 'items'}),
+                  : () => flow.act({
+                      'type': 'back',
+                      'target': constraints ? 'courses' : 'items',
+                    }),
               icon: const Icon(Icons.arrow_back),
-              label: const Text('返回修改事项'),
+              label: Text(constraints ? '返回修改课程' : '返回修改事项'),
             ),
+            if (!constraints)
+              OutlinedButton.icon(
+                onPressed: busy
+                    ? null
+                    : () async {
+                        if (!_form.currentState!.validate()) return;
+                        final key = _constraintsKey;
+                        if (await flow.act({
+                              'type': 'preview_schedule',
+                              ..._constraintsPayload,
+                            }) &&
+                            mounted) {
+                          setState(() => _previewConstraints = key);
+                        }
+                      },
+                icon: const Icon(Icons.preview_outlined),
+                label: Text(previewValid ? '重新试排' : '试排并检查'),
+              ),
             FilledButton.icon(
-              onPressed: busy
+              onPressed:
+                  busy || (!constraints && (!previewValid || hasHardErrors))
                   ? null
                   : () async {
                       if (!_form.currentState!.validate()) return;
                       final ok = await flow.act({
-                        'type': 'finish',
-                        'start_date': _start,
-                        'end_date': _end,
-                        'target_date': (_target ?? '').isEmpty ? null : _target,
-                        'weekly_minutes': _weekly,
+                        'type': constraints ? 'set_constraints' : 'finish',
+                        ..._constraintsPayload,
+                        if (!constraints)
+                          'preview_token': session.preview!['token'],
                       });
-                      if (ok && mounted && widget.embedded) context.go('/');
+                      if (ok && !constraints && mounted && widget.embedded) {
+                        context.go('/');
+                      }
                     },
               icon: const Icon(Icons.calendar_month_outlined),
-              label: Text(session.replanning ? '确认并更新每日计划' : '确认并生成每日计划'),
+              label: Text(
+                constraints
+                    ? '确认条件，生成事项'
+                    : session.replanning
+                    ? '确认并更新每日计划'
+                    : '确认并生成每日计划',
+              ),
             ),
           ],
         ),
