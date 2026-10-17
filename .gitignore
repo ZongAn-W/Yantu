@@ -1,15 +1,56 @@
+# 依赖与包缓存
 node_modules/
+.npm/
+.npm-cache/
+.npm-verify-cache/
+.pnp.*
+
+# 构建产物
 dist/
+build/
+*.tsbuildinfo
+.eslintcache
+
+# Flutter/Dart 生成物
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub/
+*.iml
+
+# 测试与浏览器自动化产物
+coverage/
+test-results/
+playwright-report/
+blob-report/
+.playwright-browsers/
+.playwright-cli/
+
+# 本地验证的临时脚本、截图与日志
+.dsh-verify/
+.impeccable/
+work/
+output/
+
+# 日志与临时文件
+*.log
+npm-debug.log*
+yarn-error.log*
+*.tmp
+*.bak
+*.orig
+*.rej
+
+# 环境变量，保留示例文件
 .env
 .env.local
 .env.*.local
-coverage/
-*.tsbuildinfo
-test-results/
-playwright-report/
-.dsh-verify/
-work/
-.impeccable/
-.playwright-browsers/
-.playwright-cli/
-output/
+!.env.example
+
+# 编辑器与操作系统
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
