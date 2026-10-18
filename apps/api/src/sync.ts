@@ -18,13 +18,18 @@ type StateRow = {
 };
 const clone = <T>(value: T): T => structuredClone(value);
 /**
- * 缺失字段、null 和空字符串都表示“没有值”。
+ * 缺失字段、null、空字符串和空数组都表示“没有值”。
  *
- * 客户端与历史文档对这些空值的写法不同（客户端的模型会写出空字符串，
- * 服务端快照可能直接省略），比较时统一忽略，避免每次同步都误报冲突。
+ * 客户端与历史文档对这些空值的写法不同：客户端的模型会把空字符串/null
+ * 写成显式值，也会为 `@Default([])` 的列表字段（例如 `ad_hoc_learnings`）
+ * 写出空数组，而服务端快照在列表为空时直接省略该键。比较时统一忽略，
+ * 避免每次同步都因为“同一份内容的两种空值写法”误报 base 变化而永久 409。
  */
 const emptyValue = (value: unknown) =>
-  value === null || value === undefined || value === "";
+  value === null ||
+  value === undefined ||
+  value === "" ||
+  (Array.isArray(value) && value.length === 0);
 
 const stable = (value: unknown): string =>
   JSON.stringify(value, (_key, child) => {

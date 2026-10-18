@@ -169,6 +169,45 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       expect((await db.query<{ weekly_minutes: any }>("select weekly_minutes from profiles where user_id=$1", [user.id])).rows[0].weekly_minutes).toEqual(week);
     });
 
+    it("does not treat an empty optional list materialized by the client model as a base change", async () => {
+      const user = await account(), data = await fixture(user.id);
+      // 服务端生成的文档在列表为空时省略 ad_hoc_learnings 键（见 snapshot）。
+      // 客户端模型的 `@Default([]) List<AdHocLearning>` 会在把该文档持久化为
+      // metadata.base 并回传时补出 `ad_hoc_learnings: []`：同一份内容、两种空值
+      // 写法，不能被判成 base 冲突，否则同步会永久停留在 409。
+      const first = await app.inject({
+        method: "PUT", url: "/api/planner/sync", headers: user.headers,
+        payload: { data, base: null, expectedRevision: 0 },
+      });
+      expect(first.statusCode, first.body).toBe(200);
+      const pulled = (await app.inject({ url: "/api/planner/sync", headers: user.headers })).json();
+      expect(Object.prototype.hasOwnProperty.call(pulled.data, "ad_hoc_learnings")).toBe(false);
+      const clientBase = { ...pulled.data, ad_hoc_learnings: [] };
+      const changed = { ...structuredClone(pulled.data), ad_hoc_learnings: [] };
+      changed.profile.goal_text = "更新后的学习目标";
+      const next = await app.inject({
+        method: "PUT", url: "/api/planner/sync", headers: user.headers,
+        payload: { data: changed, base: clientBase, expectedRevision: pulled.revision },
+      });
+      expect(next.statusCode, next.body).toBe(200);
+      expect(next.json().data.profile.goal_text).toBe("更新后的学习目标");
+      // 空数组被忽略不等于忽略真实内容：非空列表仍能触发 base 冲突。
+      const stale = { ...structuredClone(next.json().data), ad_hoc_learnings: [] };
+      const now = new Date().toISOString();
+      const conflict = await app.inject({
+        method: "PUT", url: "/api/planner/sync", headers: user.headers,
+        payload: {
+          data: stale,
+          base: {
+            ...clientBase,
+            ad_hoc_learnings: [{ id: randomUUID(), user_id: user.id, title: "临时学习", created_at: now, updated_at: now }],
+          },
+          expectedRevision: next.json().revision,
+        },
+      });
+      expect(conflict.statusCode, conflict.body).toBe(409);
+    });
+
     it("persists strategy projections and refuses older writers without losing metadata", async () => {
       const user = await account(), data = await fixture(user.id);
       data.planning = { version: 1, prompt_version: "planning-1", rules_version: "rules-1", detail_days: 14,
