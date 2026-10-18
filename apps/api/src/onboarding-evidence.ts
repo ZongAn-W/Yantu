@@ -39,7 +39,8 @@ const SUBTYPE_RULES: Array<[RegExp, string]> = [
   [/考公|公务员|国考|省考/, "考公"],
   [/雅思|IELTS/i, "雅思"],
   [/托福|TOEFL/i, "托福"],
-  [/四六级|四级|六级|CET/i, "四六级"],
+  // “6级/4级”是用户最常用的写法（尤其输入法带空格时写作“6 级”）；排除“2024级”这类年级。
+  [/四六级|四级|六级|CET|(?<![0-9０-９])(?:[46])\s*级/i, "四六级"],
   [/教资|教师资格/, "教师资格"],
   [/注会|注册会计师|CPA/i, "注册会计师"],
   [/法考|司法考试/, "法律职业资格"],
@@ -302,6 +303,9 @@ export function analyzeInterview(session: OnboardingSession): InterviewEvidence 
     else if (ABANDON_GOAL.test(answer) || REDEFINE_GOAL.test(answer)) goalType = "other";
   }
   let subtype = subtypeFromAnswers(answers);
+  // 用户明确说出考试名称，本身就是“考试目标”的证据，即使这句话不是对首个目标题的复查回答。
+  // 不提升目标类型时，下面的清理会把 subtype 清空，AI 正常提到“六级”的追问会被判成无依据。
+  if (subtype && goalType === "other") goalType = "exam";
   const last = answers.at(-1);
   const lastAnswer = last?.answer.trim() ?? "";
   const examTypeUnsure = goalType === "exam" && !subtype && EXAM_UNSURE.test(lastAnswer);
@@ -446,8 +450,17 @@ export function findUngroundedMentions(
     if (verified || askingChoice || isGroundedMention(term, session) || normalizeForMatch(evidence.subtype).includes(normalizeForMatch(term))) continue;
     issues.add(`考试科目「${term}」`);
   }
+  // 输入法常在数字和“分”之间补空格（“580 分”），比较前统一去掉空白；用户也可能只说“考了 530”。
+  // 用户说过两个分数时，AI 计算的差值（如“580-530，还差 50 分”）同样有依据，不能判成编造。
+  const answerNumbers = session.answers.flatMap(answer => {
+    const normalized = answer.answer.replace(/\s+/g, "");
+    if (!/分|分数|考了|考过|成绩|模考|真题/.test(normalized)) return [];
+    return [...normalized.matchAll(/(?<!\d)(\d{1,4})(?!\d)/g)].map(match => Number(match[1]));
+  });
+  const groundedScores = new Set(answerNumbers);
+  for (const higher of answerNumbers) for (const lower of answerNumbers) if (higher > lower) groundedScores.add(higher - lower);
   for (const number of scoreNumbers(joined)) {
-    if (session.answers.some(answer => answer.answer.includes(`${number}分`))) continue;
+    if (groundedScores.has(Number(number))) continue;
     issues.add(`分数「${number}」`);
   }
   for (const date of dateMentions(joined)) {

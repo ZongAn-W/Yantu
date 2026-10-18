@@ -23,6 +23,17 @@ export const SHARED_SYSTEM_PROMPT = [
 
 type AIRequestOptions = { timeoutMs?: number; reasoningEffort?: AIReasoningEffort; label?: string };
 
+/**
+ * 模型返回的 content 本身不是合法 JSON（截断、缺逗号、坏转义等）。
+ * 和 zod 校验失败区分开：调用方可以据此继续降级，而不会把英文解析错误直接抛给用户。
+ */
+export class AIResponseFormatError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "AIResponseFormatError";
+  }
+}
+
 type AIUsage = {
   prompt_tokens?: number; completion_tokens?: number; total_tokens?: number;
   prompt_cache_hit_tokens?: number; prompt_cache_miss_tokens?: number;
@@ -60,11 +71,22 @@ export async function requestStructuredAI<S extends z.ZodTypeAny>(schema: S, ins
       }),
     });
     if (!response.ok) throw new Error(`AI 请求失败（${response.status}），请重试`);
-    const body = await response.json() as { choices?: Array<{ message?: { content?: string } }>; usage?: AIUsage };
+    const body = await response.json() as { choices?: Array<{ message?: { content?: string }; finish_reason?: string }>; usage?: AIUsage };
     logAIUsage(settings.label ?? "structured", config.aiModel, body.usage);
     const content = body.choices?.[0]?.message?.content ?? "{}";
+    let parsed: unknown;
     try {
-      return schema.parse(JSON.parse(content));
+      parsed = JSON.parse(content);
+    } catch (error) {
+      // 不能把 V8 的 “Expected ',' or '}' … at position N” 直接展示给用户；把足够定位的
+      // 证据写进服务端日志（finish_reason=length 通常说明输出被截断），路由层只给通用文案。
+      console.error(JSON.stringify({ event: "ai_json_invalid", label: settings.label ?? "structured", model: config.aiModel,
+        finish_reason: body.choices?.[0]?.finish_reason ?? null, content_length: content.length,
+        content_head: content.slice(0, 200), content_tail: content.slice(-400) }));
+      throw new AIResponseFormatError("AI 返回内容格式有误，请重试；已有进度已保留", { cause: error });
+    }
+    try {
+      return schema.parse(parsed);
     } catch (error) {
       // 结构化输出校验失败时把 issues 写进服务端日志：路由层只给用户通用文案，
       // 没有这条日志就无法知道模型违反了哪个字段（曾出现 model 把 exam_year 写成数字）。

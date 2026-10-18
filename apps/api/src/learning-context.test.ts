@@ -68,6 +68,19 @@ describe("learner context and useful follow-up questions", () => {
     expect(LearnerUpdateSchema.safeParse({ field: "exam_year", value: { year: 2027 }, answer_index: 2, quote: "x" }).success).toBe(false);
   });
 
+  it("does not record or count a meta question as an interview answer", () => {
+    const session = newSession();
+    session.profile.goal_type = "exam";
+    session.profile.goal_subtype = "四六级";
+    session.answers = [{ question: "目前哪一科最薄弱？主要是还没学、理解困难、做不出题，还是速度慢？", answer: "你是什么 AI", fields: ["weakness"] }];
+    // 提问不是对“薄弱科目”的回答：不能写成 weakness，也不能算作“已经问过”。
+    expect(buildLearningContext(session).facts.weakness).toBeUndefined();
+    expect(missingLearnerFields(session)).toContain("weakness");
+    // 正常回答仍然会被记录。
+    const answered = { ...session, answers: [{ question: "目前哪一科最薄弱？", answer: "听力最差，阅读还行", fields: ["weakness" as const] }] };
+    expect(buildLearningContext(answered).facts.weakness?.value).toBe("听力最差，阅读还行");
+  });
+
   it("persists the question purpose so paraphrased questions do not depend on keyword matching", async () => {
     const session = newSession();
     session.question = "说说这一块的情况。";

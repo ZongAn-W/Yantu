@@ -109,6 +109,16 @@ describe("structured AI request timeouts", () => {
     expect(AbortSignal.timeout).toHaveBeenCalledWith(1_000);
   });
 
+  it("explains malformed model JSON instead of leaking the parser message", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockResolvedValueOnce(Response.json({ choices: [{ finish_reason: "length", message: { content: '{"value":"ok"' } }] }));
+    await expect(requestStructuredAI(schema, "instructions", {})).rejects.toThrow("AI 返回内容格式有误，请重试；已有进度已保留");
+    // 服务端日志保留 finish_reason 与原始输出片段，便于定位截断/坏转义。
+    const line = errorSpy.mock.calls.map(call => String(call[0])).find(text => text.includes('"ai_json_invalid"'));
+    expect(JSON.parse(line!)).toMatchObject({ event: "ai_json_invalid", label: "structured", finish_reason: "length" });
+    errorSpy.mockRestore();
+  });
+
   it("preserves unrelated transport and JSON failures", async () => {
     const transportError = new TypeError("fetch failed");
     fetchMock.mockRejectedValueOnce(transportError);

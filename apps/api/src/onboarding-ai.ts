@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { AI_REQUEST_TIMEOUT_MS, requestStructuredAI as model } from "./ai-json.js";
+import { AI_REQUEST_TIMEOUT_MS, AIResponseFormatError, requestStructuredAI as model } from "./ai-json.js";
 import { compactPlanContext } from "./onboarding-plan-context.js";
 import { attachExamResearch } from "./exam-research.js";
-import { buildLearningContext, knownStudySubjects, LEARNER_FIELDS, LearnerUpdateSchema, SubjectUpdateSchema, missingLearnerFields, questionFields } from "./learning-context.js";
+import { buildLearningContext, isNonAnswer, knownStudySubjects, LEARNER_FIELDS, LearnerUpdateSchema, SubjectUpdateSchema, missingLearnerFields, questionFields } from "./learning-context.js";
 import { config } from "./config.js";
 import { estimatedExamDate } from "./exam-dates.js";
 import { ProfileSchema, type GoalType } from "./contracts.js";
@@ -206,6 +206,25 @@ const GOAL_TYPE_LABELS: Record<GoalType, string> = {
   exam: "考试备考", course: "课程学习", skill: "技能提升", self_study: "自主学习", other: "其他",
 };
 
+/**
+ * 模型偶尔会把可选提取数组写成对象，或塞进不合规的条目（线上实际样本：
+ * learner_updates 里出现 goal_text/goal_type/goal_subtype 等资料字段名）。
+ * 这些数组只是辅助抽取结果，丢掉单条仍可继续；不能因为一条坏数据让整轮访谈降级成模板。
+ */
+function tolerantArray<T extends z.ZodTypeAny>(item: T, max: number, label: string) {
+  return z.preprocess(value => {
+    if (value === null || value === undefined) return [];
+    if (!Array.isArray(value)) return [];
+    const kept = value.filter(entry => item.safeParse(entry).success).slice(0, max);
+    if (kept.length !== value.length) {
+      const fields = value.filter(entry => !item.safeParse(entry).success).slice(0, 20)
+        .map(entry => entry && typeof entry === "object" ? (entry as { field?: unknown }).field ?? (entry as { name?: unknown }).name ?? null : null);
+      console.error(JSON.stringify({ event: "ai_updates_dropped", label, dropped: value.length - kept.length, fields }));
+    }
+    return kept;
+  }, z.array(item).max(max));
+}
+
 export async function nextInterview(session: OnboardingSession) {
   session = { ...session, learning_context: buildLearningContext(session) };
   const evidence = analyzeInterview(session);
@@ -230,16 +249,17 @@ export async function nextInterview(session: OnboardingSession) {
       question_options: optionalArray(QuestionOptionsSchema.default([])),
       question_multiple: z.preprocess(value => (value === null ? false : value), z.boolean().default(false)),
       recommendations: z.preprocess(value => (value === null ? undefined : value), RecommendationsSchema.optional()),
-      question_fields: optionalArray(z.array(z.enum(LEARNER_FIELDS)).max(4).default([])),
-      learner_updates: optionalArray(z.array(LearnerUpdateSchema).max(30).default([])),
-      subject_updates: optionalArray(z.array(SubjectUpdateSchema).max(30).default([])),
+      question_fields: tolerantArray(z.enum(LEARNER_FIELDS), 4, "question_fields"),
+      learner_updates: tolerantArray(LearnerUpdateSchema, 30, "learner_updates"),
+      subject_updates: tolerantArray(SubjectUpdateSchema, 30, "subject_updates"),
     });
     let result: z.infer<typeof schema>;
     try {
       result = await model(schema, [
       '返回 {"question":"下一道问题","question_type":"text或single_choice或multiple_choice","question_options":[],"question_multiple":false,"profile":完整资料对象,"recommendations":完整推荐对象}。一次只提一道问题。读取全部历史，根据学习目标和最新回答选择最值得补充的信息，不重复已明确的信息。',
+      '用户最新消息如果不是对当前问题的回答，而是提问、闲聊或质疑（例如问“你是什么 AI”），先用一句话礼貌回应，再把同一个问题重新问一次或提出更合适的一问；不要把这类消息当作学习资料写进 learner_updates/subject_updates。',
       'answers 是本轮用户唯一明确提供的信息；current_plan 只是历史计划背景、进度和已有事项，不能把其中的旧目标、考试类型、院校、专业或科目当作本轮已确认信息。',
-      '先更新学习者情况，再决定最值得问的问题。返回learner_updates:[{field,value,answer_index,quote}]，answer_index从0计，quote必须逐字引用对应用户回答；一段回答可补全多个field。value 一律用字符串（年份、分数、分钟数也写成字符串，例如 "2027"），answer_index 用整数。field仅限identity,school,college,program,degree,exam_year,baseline,weakness,diagnostic,outcome,availability,materials,constraints。diagnostic是薄弱项的实际做题表现或测评依据。模型记忆、旧计划或网页内容不能放入learner_updates。',
+      '先更新学习者情况，再决定最值得问的问题。返回learner_updates:[{field,value,answer_index,quote}]，answer_index从0计，quote必须逐字引用对应用户回答；一段回答可补全多个field。value 一律用字符串（年份、分数、分钟数也写成字符串，例如 "2027"），answer_index 用整数。field仅限identity,school,college,program,degree,exam_year,baseline,weakness,diagnostic,outcome,availability,materials,constraints；learner_updates 里不要出现 goal_text、goal_type、goal_subtype 等资料字段名，这些信息只写在 profile 里。diagnostic是薄弱项的实际做题表现或测评依据。模型记忆、旧计划或网页内容不能放入learner_updates。',
       '同时返回subject_updates:[{name,progress,weakness,answer_index,quote}]记录每门学科的情况，支持任意学科名称。name、progress、weakness、quote都必须来自同一用户回答的原文，没有的信息用空字符串。不要把目标分数当作当前水平，不要把官方考试要求当作用户自述。',
       'question_fields标记这一问获取的字段。从missing_fields选择对课程或安排最有影响的一项；已知、已推算、已暂缓的信息跳过，避免同义重复提问。研究生招生/研究生考试/考研归一理解，不层层重复确认名称。',
       '公开事实交给research查询，用户只提供定位目标所需的院校/专业/学位。不要让用户解释408包含什么、官网考试要求或自行查英语几。research中reference_only=false的事实经后台核对原文，可以用于提问和课程依据；往年或待核实资料不能作为当年定论。',
@@ -261,9 +281,9 @@ export async function nextInterview(session: OnboardingSession) {
       current_plan: compactPlanContext(session, "interview"), current_date: shanghaiDate() },
     { reasoningEffort: config.aiSimpleReasoningEffort, label: "interview" });
     } catch (error) {
-      if (!(error instanceof z.ZodError)) throw error;
-      // 模型结构化输出仍有无法归一的偏差时退回安全模板：访谈继续推进，而不是把整轮
-      // 进度卡在「AI 返回内容不完整或格式有误」上。ai-json.ts 已把 issues 写入日志。
+      if (!(error instanceof z.ZodError) && !(error instanceof AIResponseFormatError)) throw error;
+      // 模型结构化输出仍有无法归一的偏差，或返回的 JSON 被截断时退回安全模板：访谈继续推进，
+      // 而不是把整轮进度卡在错误提示上。ai-json.ts 已把 issues/原始输出写入服务端日志。
       return { ...fallback, ...contextResult, profile: fallbackProfile, recommendations: fallbackRecommendations({ ...session, profile: fallbackProfile }) };
     }
     const presentation = normalizeQuestionPresentation(result);
@@ -287,8 +307,10 @@ export async function nextInterview(session: OnboardingSession) {
     }
     const fields = result.question_fields.length ? result.question_fields : questionFields(result.question);
     const available = missingLearnerFields(session);
+    // 用户发来的是提问/闲聊时，AI 用一句话回应后重新追问上一题是合理的，不能按“字段已问过”退回模板。
+    const reasksAfterNonAnswer = fields.length > 0 && isNonAnswer(session.answers.at(-1)?.answer ?? "");
     const repeatsExam = Boolean(evidence.subtype) && /哪(?:一)?类.*考试|具体.*考试(?:是|叫)|考试(?:名称|类型|类别)|参加什么考试/.test(result.question);
-    if (repeatsExam || fields.length && !fields.some(field => available.includes(field)) || /408.*(?:包含|包括|组成|有什么)|你.*(?:查阅|查询|查一下).*(?:官网|招生|科目)/.test(result.question)) {
+    if (repeatsExam || (!reasksAfterNonAnswer && fields.length && !fields.some(field => available.includes(field))) || /408.*(?:包含|包括|组成|有什么)|你.*(?:查阅|查询|查一下).*(?:官网|招生|科目)/.test(result.question)) {
       const safe = buildSafeInterview(session, analyzeInterview(session));
       return { ...safe, ...normalizeQuestionPresentation(safe), learning_context: session.learning_context, research: session.research, profile, recommendations };
     }

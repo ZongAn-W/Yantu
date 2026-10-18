@@ -193,14 +193,19 @@ describe("guided onboarding", () => {
     expect(legacy.recommendations.plan_end_date).toBe("");
   });
 
-  it("keeps asking after five answers and advances to the next generated question", async () => {
+  it("keeps asking after five answers and advances on an on-topic answer", async () => {
     const session = await fiveAnswers();
     expect(session.stage).toBe("interview");
-    const next = await answer(session, "工作日2小时，周末4小时");
+    const next = await answer(session, "英语比较弱，阅读经常来不及");
     expect(next.stage).toBe("interview");
     expect(next.answers).toHaveLength(6);
-    expect(next.profile.weekly_minutes["1"]).toBe(120);
+    expect(next.learning_context.facts.weakness?.value).toContain("英语比较弱");
     expect(next.question).not.toBe(session.question);
+    // 答非所问（在薄弱题下只说了可用时间）不能写成 weakness，只记录真实提供的可用时间。
+    const offTopic = await answer(session, "工作日2小时，周末4小时");
+    expect(offTopic.learning_context.facts.weakness).toBeUndefined();
+    expect(offTopic.learning_context.facts.availability?.value).toContain("工作日2小时");
+    expect(offTopic.profile.weekly_minutes["1"]).toBe(120);
     expect(session.answers).toHaveLength(5);
   });
 
@@ -454,7 +459,82 @@ describe("guided onboarding", () => {
     expect(result.profile.goal_type).toBe("exam");
     expect(result.question_options.length).toBeLessThanOrEqual(8);
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(JSON.parse(String(errorSpy.mock.calls[0][0]))).toMatchObject({ event: "ai_schema_invalid", label: "interview" });
+    // 宽松数组会先记录被丢弃的 learner_updates，schema 失败日志可能不是第一行。
+    const lines = errorSpy.mock.calls.map(call => String(call[0]));
+    expect(lines.some(line => line.includes('"ai_schema_invalid"'))).toBe(true);
+    errorSpy.mockRestore();
+  });
+
+  it("keeps the model's question when the user wrote the exam level as 6级", async () => {
+    const session = await answer(newSession(), "12 月份要考 6 级，这次 6 级我要刷到 580 分，还要保研");
+    aiConfig.aiApiKey = "key";
+    fetchMock.mockResolvedValue(Response.json({ choices: [{ message: { content: JSON.stringify({
+      question: "你目前六级是什么水平？上次考试总分大概多少？",
+      question_type: "text", question_options: [], question_multiple: false,
+      profile: { ...session.profile, goal_type: "exam", goal_subtype: "四六级" },
+      recommendations: null,
+    }) } }] }));
+    const result = await nextInterview(session);
+    // 关键：用户写“6 级”、模型说“六级”，不能因为归一差异退回安全模板。
+    expect(result.question).toBe("你目前六级是什么水平？上次考试总分大概多少？");
+    expect(result.profile.goal_type).toBe("exam");
+    expect(result.profile.goal_subtype).toBe("四六级");
+  });
+
+  it("drops invalid learner_updates entries instead of degrading the whole turn", async () => {
+    const session = await answer(newSession(), "12 月份要考 6 级，这次 6 级我要刷到 580 分，还要保研");
+    aiConfig.aiApiKey = "key";
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockResolvedValue(Response.json({ choices: [{ message: { content: JSON.stringify({
+      question: "你目前六级是什么水平？上次考试总分大概多少？",
+      profile: { ...session.profile, goal_type: "exam", goal_subtype: "四六级" },
+      recommendations: null,
+      learner_updates: [
+        // 线上实际样本：模型把资料字段名当成 learner field 输出。
+        { field: "goal_text", value: "12 月份要考 6 级", answer_index: 0, quote: "12 月份要考 6 级" },
+        { field: "goal_subtype", value: "四六级", answer_index: 0, quote: "6 级" },
+        { field: "outcome", value: "580", answer_index: 0, quote: "这次 6 级我要刷到 580 分" },
+      ],
+    }) } }] }));
+    const result = await nextInterview(session);
+    expect(result.question).toBe("你目前六级是什么水平？上次考试总分大概多少？");
+    // 合规的那条仍然生效；两条非法条目被丢弃，并留下可定位的服务端日志。
+    expect(result.learning_context.facts.outcome?.value).toBe("580");
+    const lines = errorSpy.mock.calls.map(call => String(call[0]));
+    expect(lines.some(line => line.includes('"ai_updates_dropped"'))).toBe(true);
+    expect(lines.some(line => line.includes('"ai_schema_invalid"'))).toBe(false);
+    errorSpy.mockRestore();
+  });
+
+  it("lets the model re-ask an already-recorded field after the user sends an off-topic question", async () => {
+    const session = await answer(newSession(), "12 月份要考 6 级，这次 6 级我要刷到 580 分");
+    session.profile = { ...session.profile, goal_type: "exam", goal_subtype: "四六级" };
+    session.answers.push({ question: "你最近一次六级考了多少分？", answer: "六级上次考了 530", fields: ["baseline"] });
+    session.answers.push({ question: "你觉得哪部分最薄弱？", answer: "你是什么 AI", fields: ["weakness"] });
+    aiConfig.aiApiKey = "key";
+    fetchMock.mockResolvedValue(Response.json({ choices: [{ message: { content: JSON.stringify({
+      question: "我是负责目标访谈的助手。回到刚才的问题：你最近一次六级考了多少分？",
+      profile: { ...session.profile },
+      recommendations: null,
+      question_fields: ["baseline"],
+    }) } }] }));
+    const result = await nextInterview(session);
+    // baseline 已经记录，但上一轮用户发的是提问；AI 回应提问后再追问同一题是合理的，不应退回模板。
+    expect(result.question).toBe("我是负责目标访谈的助手。回到刚才的问题：你最近一次六级考了多少分？");
+  });
+
+  it("falls back to a safe question when the model returns malformed JSON", async () => {
+    const session = await answer(newSession(), "12 月份要考 6 级，这次 6 级我要刷到 580 分");
+    aiConfig.aiApiKey = "key";
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockResolvedValue(Response.json({ choices: [{ finish_reason: "length",
+      message: { content: '{"question":"你目前六级是什么水平？","profile":' } }] }));
+    const result = await nextInterview(session);
+    // 不把英文 JSON 解析错误抛给路由/用户，访谈用安全模板继续。
+    expect(result.question.length).toBeGreaterThan(0);
+    expect(result.question).not.toContain("你目前六级");
+    const lines = errorSpy.mock.calls.map(call => String(call[0]));
+    expect(lines.some(line => line.includes('"ai_json_invalid"'))).toBe(true);
     errorSpy.mockRestore();
   });
 

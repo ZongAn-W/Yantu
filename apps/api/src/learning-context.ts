@@ -37,7 +37,7 @@ const SUBJECTS = ["数据结构", "计算机组成原理", "计算机组成", "�
 const UNSURE = /暂未|尚未确定|未确定|暂不|没(?:想好|确定)|不确定|不知道|之后补充|还在比较|需要建议/;
 const PROGRESS = /零基础|从零|没(?:有)?(?:学|开始)|尚未开始|学(?:完|过|了)|背完|刚开始|刷完|复习|一轮|二轮|基础|进度|刷题|做题|正确率|模考|测验|掌握|薄弱|弱|差|吃力|不会|困难|卡在|看不懂|做不出/;
 
-export function questionFields(question: string): LearnerField[] {
+export const questionFields = (question: string): LearnerField[] => {
   const fields: LearnerField[] = [];
   if (/年级|大几|身份|在校|毕业|在职/.test(question)) fields.push("identity");
   if (/院校|学校|单位/.test(question)) fields.push("school");
@@ -52,6 +52,39 @@ export function questionFields(question: string): LearnerField[] {
   if (/资料|教材/.test(question)) fields.push("materials");
   if (/限制|固定安排|偏好/.test(question)) fields.push("constraints");
   return fields;
+}
+
+/**
+ * 用户在聊天里发来的提问/闲聊不是对上一问的回答（线上样本：“你是什么 AI”）。
+ * 这类消息不能按题目的 question_fields 记成学习资料，否则会污染 baseline/weakness，
+ * 还会让下一轮 AI 的正常追问被误判成“重复提问”而退回安全模板。
+ */
+const NON_ANSWER = /(?:你(?:是|叫什么|是谁)|什么\s*(?:AI|ai|模型)|怎么用|什么意思|听不(?:懂|明白)|没听(?:懂|明白)|重复一下|问的什么|你能做(?:什么|啥)|在吗)/;
+export const isNonAnswer = (answer: string) => {
+  const text = answer.trim();
+  return text.length > 0 && text.length <= 40 && (NON_ANSWER.test(text) || /^[?？]+$/.test(text));
+};
+
+/**
+ * 题目的 question_fields 只说明“这道题想了解什么”，不代表用户一定回答了它。
+ * 线上样本：用户在“六级考了多少分”下回答“我要考英语六级”，旧逻辑把这个目标描述
+ * 记成了 baseline/weakness，后续 AI 再问这些字段就被误判成重复提问而退回模板。
+ */
+const ANSWERED_FIELD_PATTERNS: Partial<Record<LearnerField, RegExp>> = {
+  baseline: /基础|进度|水平|学到|学过|学完|学了一半|背完|背过|刷完|刷过|复习|做过|正确率|模考|真题|测验|分数|\d+\s*分|考过|考了|过了|没过|刚开始|零基础|没学|没开始|尚未|第[一二三四五六七八九十\d]+[章节页单元课讲]|章|节|页/,
+  weakness: /薄弱|最弱|弱项|较弱|比较差|较差|差|吃力|不会|困难|卡在|丢分|失分|做不出|看不懂|来不及/,
+  diagnostic: /正确率|错\s*\d+|错题|做错|丢分|失分|模考|真题|测验|卡在|做不出|做题|题型|单项|听力|阅读|写作|翻译|\d+\s*分/,
+  outcome: /目标|分数|达到|考上|刷到|考到|拿到|完成|掌握|提升|提高|希望|想要|结果/,
+  materials: /资料|教材|课本|书|网课|题库|真题|讲义|笔记|视频|app|APP/,
+  constraints: /固定|不能|只能|冲突|安排|时间|限制|周末|工作日|每天|晚上|早上|实习|上课|上班|比赛|论文|考试|习惯|约束|没有/,
+  availability: /每天|每日|工作日|周末|每周|周[一二三四五六日天]|小时|分钟|休息/,
+};
+
+/** 这道题想了解的字段，用户这条消息是否真的提供了。 */
+export function fieldAnswerApplies(field: LearnerField, answer: string) {
+  if (isNonAnswer(answer)) return false;
+  const pattern = ANSWERED_FIELD_PATTERNS[field];
+  return !pattern || pattern.test(answer);
 }
 
 export function buildLearningContext(session: OnboardingSession, updates: z.infer<typeof LearnerUpdateSchema>[] = [], today = new Date(), subjectUpdates: z.infer<typeof SubjectUpdateSchema>[] = []): LearningContext {
@@ -71,6 +104,9 @@ export function buildLearningContext(session: OnboardingSession, updates: z.infe
       context.deferred = [];
     }
     const fields = recordedFields ?? questionFields(question);
+    // 提问/闲聊不是对上一问的回答；就算在回答，也要确认内容确实像题目想了解的字段，
+    // 不能只凭 question_fields 把“我要考英语六级”记成 baseline/weakness。
+    const answeredFields = isNonAnswer(answer) ? [] : fields.filter(field => fieldAnswerApplies(field, answer));
     if (UNSURE.test(answer)) context.deferred.push(...fields.filter(field => !context.deferred.includes(field)));
     const identity = answer.match(/(?:本科)?大[一二三四五六]|[一二三四五六]年级|研究生在读|硕士在读|博士在读|已毕业|毕业\d*年|在职|上班|全职工作|二战|三战/);
     if (identity) {
@@ -86,13 +122,13 @@ export function buildLearningContext(session: OnboardingSession, updates: z.infe
     if (degree) set("degree", /学硕|学术/.test(degree) ? "学硕" : "专硕", index, degree);
     const program = answer.match(/计算机科学与技术|计算机技术|软件工程|人工智能|电子信息|法律硕士|金融学|工商管理|临床医学/)?.[0];
     if (program) set("program", program, index, program);
-    else if (fields.includes("program") && !UNSURE.test(answer) && !/^(?:考)?\s*408\s*$/.test(answer) && !school && !identity && !PROGRESS.test(answer) && !/^已确定/.test(answer)) set("program", answer, index, answer);
-    if (fields.includes("baseline") || PROGRESS.test(answer)) set("baseline", answer, index, answer);
-    if (fields.includes("weakness") || /薄弱|最弱|吃力|比较差|较差|[英语数学].*差|不会|卡在|做不出/.test(answer)) set("weakness", answer, index, answer);
-    if (fields.includes("diagnostic") || /模考|测验|正确率|错\s*\d+|做不出题|做题慢|做得慢|读不懂|看不懂|不会应用|来不及/.test(answer)) set("diagnostic", answer, index, answer);
-    if (fields.includes("outcome") && !UNSURE.test(answer)) set("outcome", answer, index, answer);
-    if (fields.includes("materials") && !UNSURE.test(answer)) set("materials", answer, index, answer);
-    if (fields.includes("constraints") && !UNSURE.test(answer)) set("constraints", answer, index, answer);
+    else if (answeredFields.includes("program") && !UNSURE.test(answer) && !/^(?:考)?\s*408\s*$/.test(answer) && !school && !identity && !PROGRESS.test(answer) && !/^已确定/.test(answer)) set("program", answer, index, answer);
+    if (answeredFields.includes("baseline") || PROGRESS.test(answer)) set("baseline", answer, index, answer);
+    if (answeredFields.includes("weakness") || /薄弱|最弱|吃力|比较差|较差|[英语数学].*差|不会|卡在|做不出/.test(answer)) set("weakness", answer, index, answer);
+    if (answeredFields.includes("diagnostic") || /模考|测验|正确率|错\s*\d+|做不出题|做题慢|做得慢|读不懂|看不懂|不会应用|来不及/.test(answer)) set("diagnostic", answer, index, answer);
+    if (answeredFields.includes("outcome") && !UNSURE.test(answer)) set("outcome", answer, index, answer);
+    if (answeredFields.includes("materials") && !UNSURE.test(answer)) set("materials", answer, index, answer);
+    if (answeredFields.includes("constraints") && !UNSURE.test(answer)) set("constraints", answer, index, answer);
     if (/(?:每天|每日|工作日|周末|每周|周[一二三四五六日天]).*(?:小时|分钟|休息|不学习)/.test(answer)) set("availability", answer, index, answer);
     for (const rawName of SUBJECTS.filter(name => answer.includes(name))) {
       const name = rawName === "高数" ? "高等数学" : rawName === "线代" ? "线性代数" : rawName;
@@ -168,7 +204,9 @@ export function researchTarget(session: OnboardingSession) {
 
 export function missingLearnerFields(session: OnboardingSession): LearnerField[] {
   const context = buildLearningContext(session);
-  const attempted = session.answers.flatMap(item => item.fields ?? questionFields(item.question));
+  // 提问/闲聊不计入“已经问过”；答非所问的消息也不算回答过该字段，否则 AI 追问会被误判成重复提问。
+  const attempted = session.answers.flatMap(item => isNonAnswer(item.answer) ? []
+    : (item.fields ?? questionFields(item.question)).filter(field => fieldAnswerApplies(field, item.answer)));
   const missing = (field: LearnerField) => !context.facts[field] && !context.deferred.includes(field) && attempted.filter(item => item === field).length < (["school", "program", "degree"].includes(field) ? 2 : 1);
   const fields: LearnerField[] = [];
   if (session.profile.goal_type === "exam" && missing("identity")) fields.push("identity");
