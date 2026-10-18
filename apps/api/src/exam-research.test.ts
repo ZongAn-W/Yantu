@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { officialSource, readOfficialDocument, researchExam, type ResearchDependencies } from "./exam-research.js";
+import { extractionDocuments, officialSource, readOfficialDocument, researchExam, type ResearchDependencies } from "./exam-research.js";
 
 vi.mock("node:dns/promises", () => ({ lookup: vi.fn(async () => [{ address: "203.0.113.1", family: 4 }]) }));
 const target = { exam: "考研", school: "上海交通大学", college: "", program: "计算机技术", degree: "专硕", admission_year: 2028, subject_codes: ["408"] };
@@ -86,5 +86,20 @@ describe("official exam research", () => {
     expect(document.title).toBe("官方目录");
     expect(document.text).toContain("计算机技术");
     expect(document.text).not.toContain("英语二");
+  });
+
+  it("sends only trimmed page text to extraction and drops navigation links and fetch metadata", () => {
+    const documents = extractionDocuments([{
+      url: "https://yzb.sjtu.edu.cn/catalogue",
+      title: "上海交通大学2028年招生目录",
+      text: quote + "x".repeat(40_000),
+      fetched_at: "2026-10-17T04:00:00Z",
+      links: Array.from({ length: 500 }, (_, index) => ({ url: `https://yzb.sjtu.edu.cn/nav/${index}`, title: `导航${index}` })),
+    }], target);
+    expect(documents).toHaveLength(1);
+    expect(Object.keys(documents[0])).toEqual(["url", "title", "text"]);
+    expect(documents[0].text).toContain(quote);
+    // Unique navigation URLs and fetch metadata would be uncacheable dead weight in the prompt.
+    expect(documents[0].text.length).toBeLessThanOrEqual(16_000);
   });
 });

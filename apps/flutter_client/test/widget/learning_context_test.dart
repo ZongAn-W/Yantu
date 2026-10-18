@@ -157,13 +157,22 @@ void main() {
       );
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 200));
-      await tester.enterText(find.byType(TextFormField), '我还在填写这段回答');
+      final input = find.byKey(const ValueKey('interview-answer-input'));
+      for (var frame = 0; frame < 10 && input.evaluate().isEmpty; frame++) {
+        await tester.pump(const Duration(milliseconds: 50));
+      }
+      expect(input, findsOneWidget);
+      await tester.enterText(input, '我还在填写这段回答');
       await tester.pump(const Duration(seconds: 3));
       await tester.pump(const Duration(milliseconds: 200));
+      await tester.pump(const Duration(milliseconds: 200));
+      expect(tester.widget<TextFormField>(input).controller!.text, '我还在填写这段回答');
       expect(find.text('我还在填写这段回答'), findsOneWidget);
       expect(find.text(data['question'] as String), findsOneWidget);
       expect(find.text('暂未核实目标年度要求'), findsOneWidget);
       expect(find.text('第 6 问'), findsOneWidget);
+      expect(find.text('不白学助手'), findsOneWidget);
+      expect(find.text('对方正在输入中'), findsNothing);
       await tester.pumpWidget(const SizedBox.shrink());
     },
   );

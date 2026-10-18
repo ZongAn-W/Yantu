@@ -110,16 +110,47 @@ describe("guided onboarding", () => {
     expect(rest.recommendations.weekly_minutes).toEqual({ "0": 180, "1": 120, "2": 120, "3": 0, "4": 120, "5": 120, "6": 180 });
   });
 
-  it("keeps an unknown target date unknown and uses explicit dates when given", async () => {
+  it("estimates the exam day from an explicit year and schedules to the day before a real target date", async () => {
     const future = await answer(newSession(), "2028年考研");
     expect(future.recommendations.target_date).toBe("");
     expect(future.profile.target_date).toBeNull();
-    expect(future.recommendations.plan_end_date).toBe("2026-11-13");
+    // 目标日期未知但初试年份已知时按往年规律估算：2028 年 12 月倒数第二个周六是 2028-12-23。
+    expect(future.recommendations.plan_end_date).toBe("2028-12-22");
+    expect(future.recommendations.plan_end_date_reason).toContain("12月倒数第二个周六");
+    expect(future.recommendations.plan_end_date_reason).toContain("以官方通知为准");
     const explicit = await answer({ ...future, question: "考试日期是哪一天？" }, "2028年12月25日");
     expect(explicit.profile.target_date).toBe("2028-12-25");
     expect(explicit.profile.target_date_confirmed).toBe(false);
     expect(explicit.recommendations.target_date).toBe("2028-12-25");
     expect(explicit.recommendations.target_date_estimated).toBe(true);
+    // 有目标日期时排到目标日期前一天，既不等于目标日期，也不再固定为 28 天。
+    expect(explicit.recommendations.plan_end_date).toBe("2028-12-24");
+    expect(explicit.recommendations.plan_end_date_reason).toBe("本次排程到目标日期前一天（2028-12-24）。");
+  });
+
+  it("schedules to the day before a target date that is inside the default four weeks", async () => {
+    const session = await answer(newSession(), "考研，考试日期2026年11月1日");
+    expect(session.recommendations.target_date).toBe("2026-11-01");
+    expect(session.recommendations.plan_end_date).toBe("2026-10-31");
+    expect(session.recommendations.plan_end_date_reason).toBe("本次排程到目标日期前一天（2026-10-31）。");
+  });
+
+  it("falls back to the default 28-day cycle when the target date is not in the future", async () => {
+    const session = await answer(newSession(), "考研，考试日期2026年10月1日");
+    expect(session.recommendations.target_date).toBe("2026-10-01");
+    expect(session.recommendations.plan_end_date).toBe("2026-11-13");
+    expect(session.recommendations.plan_end_date_reason).toBe("本次规划周期默认为从今天开始的未来28个自然日，首尾均计入，可以随时调整。");
+  });
+
+  it("truncates a horizon longer than three years at the hard limit and explains it", async () => {
+    const byTarget = await answer(newSession(), "考研，目标日期2032年5月1日");
+    // 从 2026-10-17 起 1095 个自然日（首尾均计入）的上限是 2029-10-15。
+    expect(byTarget.recommendations.plan_end_date).toBe("2029-10-15");
+    expect(byTarget.recommendations.plan_end_date_reason).toContain("超过三年上限");
+    expect(byTarget.recommendations.plan_end_date_reason).toContain("到期后再续排");
+    const byExam = await answer(newSession(), "2033年考研");
+    expect(byExam.recommendations.plan_end_date).toBe("2029-10-15");
+    expect(byExam.recommendations.plan_end_date_reason).toContain("超过三年上限");
   });
 
   it("accepts an explicit no-deadline answer without inventing a target date", async () => {
@@ -359,7 +390,9 @@ describe("guided onboarding", () => {
     expect(result.question).toContain("听说读写");
     expect(result.question_options).toEqual(["听力较弱", "口语较弱", "阅读较弱", "写作较弱"]);
     expect(result.question_multiple).toBe(true);
-    expect(result.recommendations).toEqual(recommendations);
+    // AI 建议的“安排到目标日期”必须改成为目标日期前一天，避免默认四周。
+    expect(result.recommendations).toEqual({ ...recommendations, plan_end_date: "2027-06-29",
+      plan_end_date_reason: "本次排程到目标日期前一天（2027-06-29）。" });
     expect(result.profile.target_date).toBeNull();
     const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     expect(JSON.parse(request.messages[1].content).answers).toEqual(session.answers);
@@ -381,7 +414,26 @@ describe("guided onboarding", () => {
     expect(result.profile.target_date).toBe("2028-12-25");
     expect(result.recommendations.target_date).toBe("2028-12-25");
     expect(result.recommendations.target_date_estimated).toBe(true);
+    // 用户明确给出的目标日期同样决定规划结束日期：排到目标日期前一天，覆盖 AI 的建议。
+    expect(result.recommendations.plan_end_date).toBe("2028-12-24");
+    expect(result.recommendations.plan_end_date_reason).toBe("本次排程到目标日期前一天（2028-12-24）。");
     expect(Object.values(result.recommendations.weekly_minutes)).toEqual(Array(7).fill(60));
+  });
+
+  it("overrides an AI four-week plan end with the estimated exam horizon", async () => {
+    aiConfig.aiApiKey = "key";
+    const session = newSession();
+    session.answers = [{ question: FIRST_QUESTION, answer: "2028年考研" }];
+    fetchMock.mockResolvedValue(Response.json({ choices: [{ message: { content: JSON.stringify({
+      question: "你目前是大几？", question_options: ["本科大三", "已毕业，正在备考"], profile: session.profile,
+      recommendations: { target_date: "", plan_end_date: "2026-11-13", plan_end_date_reason: "默认四周", weekly_minutes: week },
+    }) } }] }));
+    const result = await nextInterview(session);
+    expect(result.recommendations.target_date).toBe("");
+    // 只有初试年份时不能沿用 AI 的四周默认，要一次性排到估算初试日的前一天。
+    expect(result.recommendations.plan_end_date).toBe("2028-12-22");
+    expect(result.recommendations.plan_end_date_reason).toContain("12月倒数第二个周六");
+    expect(result.recommendations.plan_end_date_reason).toContain("以官方通知为准");
   });
 
   it("deduplicates AI choices and reserves Other for the client's custom input", async () => {
@@ -431,7 +483,10 @@ describe("guided onboarding", () => {
     fetchMock.mockResolvedValue(Response.json({ choices: [{ message: { content: JSON.stringify({ recommendations }) } }] }));
     const schedule = await advanceOnboarding(session, { type: "confirm_items", items: session.items });
     expect(schedule.stage).toBe("schedule");
-    expect(schedule.recommendations.plan_end_date).toBe("2027-12-20");
+    expect(schedule.recommendations.plan_end_date).toBe("2027-12-19");
+    expect(schedule.recommendations.plan_end_date_reason).toBe("本次排程到目标日期前一天（2027-12-19）。");
+    // 日程阶段的初始结束日期随推荐值一次性排到目标日期前一天。
+    expect(schedule.end_date).toBe("2027-12-19");
     expect(schedule.answers).toEqual(session.answers);
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
@@ -534,9 +589,12 @@ describe("full-period onboarding (one model response, flexible capacity)", () =>
       detailed_until: cycle.end_date, forecast: null });
     expect(items.planning!.assumptions).toContain("模型给出的全周期假设");
     const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
-    expect(request.messages[0].content).toContain("全周期一次性生成");
-    expect(JSON.parse(request.messages[1].content)).toMatchObject({ plan_mode: "full", plan_horizon_days: 28 });
-    expect(JSON.parse(request.messages[1].content).capacity.basis).toBe("gross_buffer");
+    // Per-session planning notes live in the user payload so the system prefix stays cacheable.
+    const input = JSON.parse(request.messages[1].content);
+    expect(input.planning_instructions.horizon).toContain("全周期一次性生成");
+    expect(request.messages[0].content).not.toContain("全周期一次性生成");
+    expect(input).toMatchObject({ plan_mode: "full", plan_horizon_days: 28 });
+    expect(input.capacity.basis).toBe("gross_buffer");
 
     const schedule = await advanceOnboarding(items, { type: "confirm_items", items: items.items });
     expect(schedule.stage).toBe("schedule");

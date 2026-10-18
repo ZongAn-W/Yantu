@@ -1,3 +1,5 @@
+import { z } from "zod";
+import { requestStructuredAI } from "./ai-json.js";
 import { PlanDraftSchema, type PlanDraft, type ProfileInput } from "./contracts.js";
 import { config } from "./config.js";
 
@@ -45,6 +47,15 @@ const draftOutputSchema = {
     warnings: { type: "array", maxItems: 20, items: { type: "string", maxLength: 500 } },
   },
 };
+
+const draftInstructions = [
+  "只返回满足 output_schema 的 JSON 对象，不要 Markdown 或额外说明。",
+  "课程和事项的 priority 必须是 JSON 整数 1、2 或 3，分别表示低、中、高。禁止数字字符串、英文或中文等级名称。",
+  "estimated_minutes 必须是 30 到 100000 之间的整数分钟，不能是字符串或小时数。assumptions 和 warnings 必须是字符串数组，没有内容时返回 []。",
+  "课程和事项必须可执行、可计时，分别使用唯一的字符串 id；事项的 course_id 必须引用本次课程数组中的 id。",
+  "使用 YYYY-MM-DD 日期字符串，earliest_date 可以省略但不能为 null。满足 current_date <= earliest_date <= deadline。deadline_kind 为 deadline 表示真实截止日期，为 plan_end 表示本期安排边界（使用 profile.plan_end_date）。目标日期 profile.target_date 可以为空，不能把规划结束日期当作目标日期。",
+  "依据 profile 和 constraints_text 生成课程数量、事项数量、内容和时长；example 仅展示结构与类型，不代表实际学习计划。",
+].join("\n");
 
 function addDays(date: string, amount: number) {
   const value = new Date(`${date}T00:00:00Z`);
@@ -97,32 +108,9 @@ async function callModel(profile: ProfileInput): Promise<PlanDraft> {
     assumptions: [],
     warnings: [],
   };
-  const response = await fetch(`${config.aiBaseUrl}/chat/completions`, {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${config.aiApiKey}` },
-    body: JSON.stringify({
-      model: config.aiModel,
-      reasoning_effort: config.aiReasoningEffort,
-      temperature: 0.2,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: [
-          "你是学习规划师。只返回满足 output_schema 的 JSON 对象，不要 Markdown 或额外说明。",
-          "课程和事项的 priority 必须是 JSON 整数 1、2 或 3，分别表示低、中、高。禁止数字字符串、英文或中文等级名称。",
-          "estimated_minutes 必须是 30 到 100000 之间的整数分钟，不能是字符串或小时数。assumptions 和 warnings 必须是字符串数组，没有内容时返回 []。",
-          "课程和事项必须可执行、可计时，分别使用唯一的字符串 id；事项的 course_id 必须引用本次课程数组中的 id。",
-          "使用 YYYY-MM-DD 日期字符串，earliest_date 可以省略但不能为 null。满足 current_date <= earliest_date <= deadline。deadline_kind 为 deadline 表示真实截止日期，为 plan_end 表示本期安排边界（使用 profile.plan_end_date）。目标日期 profile.target_date 可以为空，不能把规划结束日期当作目标日期。",
-          "依据 profile 和 constraints_text 生成课程数量、事项数量、内容和时长；example 仅展示结构与类型，不代表实际学习计划。",
-        ].join("\n") },
-        { role: "user", content: JSON.stringify({ profile, current_date: currentDate, output_schema: draftOutputSchema, example }) },
-      ],
-    }),
-  });
-  if (!response.ok) throw new Error(`AI 请求失败（${response.status}）`);
-  const body = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-  const content = body.choices?.[0]?.message?.content;
-  if (!content) throw new Error("AI 没有返回内容");
-  return PlanDraftSchema.parse(JSON.parse(content));
+  return requestStructuredAI(PlanDraftSchema, draftInstructions,
+    { profile, current_date: currentDate, output_schema: draftOutputSchema, example },
+    { label: "plan-draft" });
 }
 
 export async function createPlanDraft(profile: ProfileInput) {
@@ -130,14 +118,14 @@ export async function createPlanDraft(profile: ProfileInput) {
   return callModel(profile);
 }
 
+const adviceSchema = z.object({ advice_text: z.string(), advice_topics: z.array(z.string()) });
+
 export async function adviceFor(item: { title: string; description: string }, date: string, feedback = "") {
   const fallbackAdvice = () => ({ advice_text: `${item.title}：${item.description || "完成本事项的一个小段落并记录卡点。"}`, advice_topics: feedback ? ["根据昨日反馈复习", date] : [date] });
   if (!config.aiApiKey) return fallbackAdvice();
   try {
-    const response = await fetch(`${config.aiBaseUrl}/chat/completions`, { method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${config.aiApiKey}` }, body: JSON.stringify({ model: config.aiModel, reasoning_effort: config.aiReasoningEffort, temperature: 0.2, response_format: { type: "json_object" }, messages: [{ role: "system", content: "只返回 JSON：{advice_text:string,advice_topics:string[]}" }, { role: "user", content: JSON.stringify({ item, date, feedback }) }] }) });
-    if (!response.ok) throw new Error("AI advice failed");
-    const body = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-    const parsed = JSON.parse(body.choices?.[0]?.message?.content || "{}");
+    const parsed = await requestStructuredAI(adviceSchema, "只返回 JSON：{advice_text:string,advice_topics:string[]}",
+      { item, date, feedback }, { label: "advice" });
     if (typeof parsed.advice_text !== "string" || !Array.isArray(parsed.advice_topics)) throw new Error("invalid advice");
     return { advice_text: parsed.advice_text.slice(0, 4000), advice_topics: parsed.advice_topics.slice(0, 10).map(String) };
   } catch { return fallbackAdvice(); }

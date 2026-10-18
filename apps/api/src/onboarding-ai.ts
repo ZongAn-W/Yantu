@@ -4,6 +4,7 @@ import { compactPlanContext } from "./onboarding-plan-context.js";
 import { attachExamResearch } from "./exam-research.js";
 import { buildLearningContext, knownStudySubjects, LEARNER_FIELDS, LearnerUpdateSchema, SubjectUpdateSchema, missingLearnerFields, questionFields } from "./learning-context.js";
 import { config } from "./config.js";
+import { estimatedExamDate } from "./exam-dates.js";
 import { ProfileSchema, type GoalType } from "./contracts.js";
 import { PlanPlanningSchema } from "./planning-contracts.js";
 import { newPlanning, PLANNING_PROMPT_VERSION, PLANNING_RULES_VERSION, effectivePlanMode, inclusiveDaySpan, summarizePlanCapacity } from "./planning-service.js";
@@ -23,6 +24,53 @@ function addDays(date: string, days: number) {
   const value = new Date(`${date}T00:00:00Z`);
   value.setUTCDate(value.getUTCDate() + days);
   return value.toISOString().slice(0, 10);
+}
+
+/** 规划周期默认跨度：从今天起 28 个自然日（首尾均计入），只在没有目标日期和初试年份时使用。 */
+const DEFAULT_PLAN_DAYS = 28;
+/** 单次规划周期硬上限：从今天起 1095 个自然日（首尾均计入），与 prepareSchedule 的三年校验一致。 */
+const MAX_PLAN_DAYS = 1095;
+const DEFAULT_PLAN_REASON = "本次规划周期默认为从今天开始的未来28个自然日，首尾均计入，可以随时调整。";
+
+interface PlanHorizon {
+  planEndDate: string;
+  reason: string;
+  /** true 表示结束日期来自目标日期或预计初试日；此时必须覆盖 AI 给出的“默认四周”。 */
+  preferred: boolean;
+}
+
+/**
+ * 规划结束日期的优先级：
+ * 1) 未来目标日期的前一天；
+ * 2) 没有目标日期但已知初试年份（考研）时，12 月倒数第二个周六估算的初试日前一天；
+ * 3) 以上都没有时保持从今天起 28 个自然日的默认周期。
+ * 目标日期不在未来时退回默认周期；任何情况下跨度不超过 1095 天，超出则截到上限并说明。
+ */
+function planHorizon(today: string, targetDate: string, examYear: number | null): PlanHorizon {
+  const fallback: PlanHorizon = { planEndDate: addDays(today, DEFAULT_PLAN_DAYS - 1), reason: DEFAULT_PLAN_REASON, preferred: false };
+  const cap = addDays(today, MAX_PLAN_DAYS - 1);
+  if (targetDate && targetDate > today) {
+    const desired = addDays(targetDate, -1);
+    if (desired > cap) {
+      return { planEndDate: cap, preferred: true,
+        reason: `目标日期 ${targetDate} 超过三年上限，先排到上限（${cap}），到期后再续排。` };
+    }
+    return { planEndDate: desired, reason: `本次排程到目标日期前一天（${desired}）。`, preferred: true };
+  }
+  // 目标日期为空或已过去时，只有初试年份可供估算；估算日前一天同样不能超过上限。
+  if (!targetDate && examYear) {
+    const examDate = estimatedExamDate(examYear);
+    if (examDate > today) {
+      const desired = addDays(examDate, -1);
+      if (desired > cap) {
+        return { planEndDate: cap, preferred: true,
+          reason: `按往年规律估算的 ${examYear} 年初试日 ${examDate}（12月倒数第二个周六）超过三年上限，先排到上限（${cap}），到期后再续排；这是估算，请以官方通知为准，可随时调整。` };
+      }
+      return { planEndDate: desired, preferred: true,
+        reason: `暂未设置准确考试日期；按往年规律估算 ${examYear} 年初试日为 ${examDate}（12月倒数第二个周六），本次排程到其前一天（${desired}）。这是按往年规律的估算，请以官方通知为准，可随时调整。` };
+    }
+  }
+  return fallback;
 }
 
 const week = (weekday: number, weekend = weekday) => Object.fromEntries(Array.from({ length: 7 }, (_, i) => [String(i), i === 0 || i === 6 ? weekend : weekday]));
@@ -58,11 +106,8 @@ function fallbackRecommendations(session: OnboardingSession): OnboardingRecommen
     targetDate = "";
     targetReason = "尚未确定目标日期，先安排一段有限规划周期；你也可以稍后在设置中补充。";
   }
-  const horizon = addDays(today, 27);
-  const planEnd = targetDate && targetDate > today && targetDate < horizon ? targetDate : horizon;
-  const planReason = targetDate && planEnd === targetDate
-    ? "目标日期在四周内，本次直接安排到目标日期。"
-    : "本次规划周期默认为从今天开始的未来28个自然日，首尾均计入，可以随时调整。";
+  const examYear = session.profile.goal_type === "exam" ? session.learning_context?.timing?.exam_year ?? null : null;
+  const horizon = planHorizon(today, targetDate, examYear);
 
   let weekday = 120, weekend = 180;
   let timeReason = "根据当前目标，先以工作日2小时、周末3小时作为可调整的学习预算。";
@@ -79,7 +124,7 @@ function fallbackRecommendations(session: OnboardingSession): OnboardingRecommen
   const explicitTime = hasExplicitTime(session);
   return RecommendationsSchema.parse({
     target_date: targetDate, target_date_reason: targetReason, target_date_estimated: estimated,
-    plan_end_date: planEnd, plan_end_date_reason: planReason,
+    plan_end_date: horizon.planEndDate, plan_end_date_reason: horizon.reason,
     weekly_minutes: explicitTime
       ? { ...week(0), ...Object.fromEntries(Object.entries(session.profile.weekly_minutes).map(([day, minutes]) => [day, Math.min(480, minutes)])) }
       : week(weekday, weekend),
@@ -90,7 +135,8 @@ function fallbackRecommendations(session: OnboardingSession): OnboardingRecommen
 const recommendationInstructions = [
   'recommendations 对象包含 target_date(用户目标日期 YYYY-MM-DD，没有就是空字符串)、target_date_reason(中文理由)、target_date_estimated(布尔，预计为 true)、plan_end_date(本次规划周期结束日期)、plan_end_date_reason(中文理由)、weekly_minutes(完整0到6数字典，每天0到480整数分钟，0表示休息)、weekly_minutes_reason(中文理由)。',
   '目标日期是用户希望达成结果的日期，可以为空；plan_end_date 是本次排程的有限区间边界，必须填写且不早于今天。用户选择“没有截止日期”时 target_date 必须为空，不能替其编造日期。',
-  '不要凭空给考试指定准确日期，也不得声称日期来自官方通知；只有用户明确提供的日期才可直接采用，其余情况保持为空并说明。',
+  '日期规则：plan_end_date 优先取用户目标日期的前一天；用户没有目标日期但初试年份已知（learning_context.timing.exam_year，仅考研）时，取该年12月倒数第二个周六作为预计初试日，plan_end_date 取其前一天，并在理由中说明这是按往年规律估算、以官方通知为准、可调整；两者都没有时才使用从今天起的28个自然日。任何情况下 plan_end_date 不得超过今天起1094天，超出时先排到上限并说明到期后再续排。',
+  '不要凭空给考试指定准确日期，也不得声称日期来自官方通知；target_date 只有用户明确提供的日期才可直接采用，其余情况保持为空并说明。plan_end_date 可以按上面的日期规则估算初试日，但理由必须说明这是估算。',
   '每周可用时间要覆盖完整一周，尊重休息日。用户只说每天几小时时可平均分配，但必须保留用户明确填写的值。',
 ].join("\n");
 
@@ -120,9 +166,20 @@ function normalizeRecommendations(session: OnboardingSession, value: OnboardingR
     // 目标日期已过去时保留实际状态，不用未来日期覆盖。
     result.target_date_reason = result.target_date_reason || "目标日期已经过去，请确认是否调整。";
   }
-  if (!result.plan_end_date || result.plan_end_date < today) {
+  // 目标日期或初试年份已知时，本期必须一次排到考试前，不能保留 AI 给出的“默认四周”。
+  const examYear = session.profile.goal_type === "exam" ? session.learning_context?.timing?.exam_year ?? null : null;
+  const horizon = planHorizon(today, result.target_date, examYear);
+  const cap = addDays(today, MAX_PLAN_DAYS - 1);
+  if (horizon.preferred) {
+    result.plan_end_date = horizon.planEndDate;
+    result.plan_end_date_reason = horizon.reason;
+  } else if (!result.plan_end_date || result.plan_end_date < today) {
     result.plan_end_date = fallback.plan_end_date;
     result.plan_end_date_reason = fallback.plan_end_date_reason;
+  } else if (result.plan_end_date > cap) {
+    // AI 也可能给出超过三年的结束日期；推荐值同样受硬上限约束。
+    result.plan_end_date = cap;
+    result.plan_end_date_reason = `目标超过三年上限，先排到上限（${cap}），到期后再续排。${result.plan_end_date_reason}`.slice(0, 1000);
   }
   if (!Object.keys(result.weekly_minutes).length || hasExplicitTime(session)) {
     result.weekly_minutes = fallback.weekly_minutes;
@@ -136,8 +193,9 @@ export async function recommendSchedule(session: OnboardingSession) {
   if (!config.aiApiKey) return fallbackRecommendations(prepared);
   const result = await model(z.object({ recommendations: RecommendationsSchema }), recommendationInstructions
     + '\n只返回 {"recommendations":完整推荐对象}，不要继续提问。',
-  { current_date: shanghaiDate(), answers: prepared.answers, profile: prepared.profile, learning_context: buildLearningContext(session), research: session.research, recommendations: prepared.recommendations,
-    current_plan: compactPlanContext(session, "recommendations") }, { reasoningEffort: config.aiSimpleReasoningEffort });
+  { answers: prepared.answers, profile: prepared.profile, learning_context: buildLearningContext(session), research: session.research, recommendations: prepared.recommendations,
+    current_plan: compactPlanContext(session, "recommendations"), current_date: shanghaiDate() },
+  { reasoningEffort: config.aiSimpleReasoningEffort, label: "recommendations" });
   return normalizeRecommendations(prepared, result.recommendations);
 }
 
@@ -189,9 +247,11 @@ export async function nextInterview(session: OnboardingSession) {
       '如果用户只说“提升英语”，继续了解具体学习目的，不要直接推断成雅思或托福。',
       '保留已有信息，仅依据用户回答更新。不要生成课程或计划。',
       '如果有current_plan，只结合现有课程、事项、完成进度和固定安排了解历史背景，询问变化或尚未明确的信息；不要复述旧目标为已确认信息。',
+      '推荐对象中的 plan_end_date 遵守统一日期规则：有未来目标日期时取其前一天；没有目标日期但考研初试年份已知时，按12月倒数第二个周六估算初试日并取其前一天（说明这是估算、以官方通知为准）；两者都没有才用28天默认；任何情况下不超过今天起1094天。',
       recommendationInstructions,
-    ].join("\n"), { current_date: shanghaiDate(), answers: session.answers, profile: session.profile, learning_context: session.learning_context, missing_fields: missingLearnerFields(session), research: session.research, recommendations: session.recommendations,
-      current_plan: compactPlanContext(session, "interview") }, { reasoningEffort: config.aiSimpleReasoningEffort });
+    ].join("\n"), { answers: session.answers, profile: session.profile, learning_context: session.learning_context, missing_fields: missingLearnerFields(session), research: session.research, recommendations: session.recommendations,
+      current_plan: compactPlanContext(session, "interview"), current_date: shanghaiDate() },
+    { reasoningEffort: config.aiSimpleReasoningEffort, label: "interview" });
     const presentation = normalizeQuestionPresentation(result);
     const options = presentation.question_options;
     session = { ...session, learning_context: buildLearningContext(session, result.learner_updates, new Date(), result.subject_updates) };
@@ -264,7 +324,7 @@ export async function generateCourses(session: OnboardingSession, instruction = 
       "同一领域的基础、练习、强化、冲刺或实践属于事项和路线阶段，不将它们拆成多门同名领域课程；例如Python课程下包含基础练习和项目成果事项。",
       '依据learning_context中的年级、各科学情、薄弱项和目标设置课程与优先级。research中reference_only=false的事实可确定公开课程范围；待核实或往年资料列入assumptions。408已核实为四门内容时可分别生成课程，仍保持课程→事项两层，不擅自确定尚未核实的英语一/二等要求。',
     ].join("\n"), { answers: session.answers, profile: session.profile, learning_context: session.learning_context, research: session.research, courses: session.courses,
-      current_plan: compactPlanContext(session, "courses"), instruction }, { reasoningEffort: config.aiSimpleReasoningEffort });
+      current_plan: compactPlanContext(session, "courses"), instruction }, { reasoningEffort: config.aiSimpleReasoningEffort, label: "courses" });
     validateReferences(result.courses, []);
     if (session.profile.goal_type === "exam") {
       const unverified = findUngroundedMentions(result.courses.flatMap(course => [course.name, course.description]), session);
@@ -315,8 +375,6 @@ export async function generateItems(session: OnboardingSession, instruction = ""
       "deadline_kind 为 deadline 表示真实截止日期：可以等于、早于或晚于本期结束日期，本次只安排与规划区间相交的部分；为 plan_end 表示本期安排边界，随规划周期延展。没有真实截止日期的事项使用 plan_end，禁止给所有事项设置遥远日期。",
       "事项标题要能落到具体学习行动，避免“全面掌握”“系统提升”等空泛表述；练习、复习和实践按场景决定，不给所有目标套同一种阶段。",
       "日期不得早于今天且开始不得晚于截止。本次规划周期为 plan_start_date 到 plan_end_date；目标日期是 target_date，可以为空，且不等于规划结束日期。真实截止日期可以晚于 plan_end_date，不要为了塞进本期而缩短它。",
-      horizonInstruction,
-      capacityInstruction,
       "全周期覆盖要求：每一项学习内容都必须有明确去向——正式安排、明确在本期范围外、用户确认的备选，或量化的容量缺口（写入 planning.uncovered / risks）。未知材料或速度用明确估算、可信度和少量诊断事项表达，仍一次生成完整计划，不要求先完成诊断才生成远期安排。",
       "有修改要求时以当前手动编辑后的事项为基础，只做用户要求的修改，保留未修改事项的id。",
       "有current_plan时，继续同一学习事项应复用原id，estimated_minutes为包含已完成用时的总预算；固定事项必须原样保留。不要恢复status为archived的事项，除非用户明确要求。",
@@ -329,13 +387,17 @@ export async function generateItems(session: OnboardingSession, instruction = ""
       '只把知识领域作为课程，阶段写在路线里。保留用户可用时间和所有真实日期，容量不足明确取舍与未覆盖内容，禁止为了填满日历编任务或压缩单价。修订必须保留全部已确认事项ID，范围变化写入risks。',
       'current_plan.feedback_signals 分别提供实际用时、用户确认内容进度和困难。有效计时少于3次不能推断稳定速度；遇到困难应调整练习方式、范围或复习，不只是移动分钟。达到预算不表示内容完成，后续依赖需要实际内容确认。',
     ].join("\n"), {
-      current_date: shanghaiDate(), answers: session.answers, profile: session.profile, learning_context: session.learning_context, research: session.research, recommendations: session.recommendations,
+      answers: session.answers, profile: session.profile, learning_context: session.learning_context, research: session.research, recommendations: session.recommendations,
       plan_start_date: session.start_date || shanghaiDate(),
       plan_end_date: session.end_date || session.recommendations.plan_end_date || session.profile.plan_end_date || "",
       plan_mode: planMode, plan_horizon_days: horizonDays, capacity,
       target_date: session.profile.target_date ?? "",
-      courses: session.courses, items: session.items, current_plan: compactPlanContext(session, "items"), instruction,
-    }, { timeoutMs: timeout, reasoningEffort: config.aiPlanningReasoningEffort });
+      courses: session.courses, items: session.items, current_plan: compactPlanContext(session, "items"),
+      // Per-session planning notes stay in the user payload: in the system prompt they would make
+      // the cacheable prefix different for every session. `instruction` is only set for revisions.
+      planning_instructions: { horizon: horizonInstruction, capacity: capacityInstruction },
+      instruction, current_date: shanghaiDate(),
+    }, { timeoutMs: timeout, reasoningEffort: config.aiPlanningReasoningEffort, label: instruction ? "items-revise" : "items" });
     validateReferences(session.courses, result.items);
     return { ...result, planning: result.planning ?? newPlanning() };
   }

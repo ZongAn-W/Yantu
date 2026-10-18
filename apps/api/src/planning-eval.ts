@@ -58,7 +58,7 @@ async function run() {
       try {
         const generated = variant === "baseline"
           ? await requestStructuredAI(z.object({ items: ItemsSchema, summary: z.string(), assumptions: z.array(z.string()), warnings: z.array(z.string()) }),
-            '只为已确认课程生成事项，不得增加或改变课程。返回items,summary,assumptions,warnings。每项包含id(唯一),course_id(已确认课程id),title(可执行标题),description(学习范围),completion_criteria(可验证标准),estimated_minutes(30到100000整数分钟),earliest_date(YYYY-MM-DD),deadline(YYYY-MM-DD),deadline_kind(deadline表示真实截止日期，plan_end表示本期安排边界),priority(1到3整数)。最多500项。事项标题具体，练习复习实践按场景决定。日期不得早于本次plan_start_date且开始不得晚于截止。没有真实截止日期使用plan_end，真实截止可以晚于本期结束。target_date可以为空。', session, 65_000)
+            '只为已确认课程生成事项，不得增加或改变课程。返回items,summary,assumptions,warnings。每项包含id(唯一),course_id(已确认课程id),title(可执行标题),description(学习范围),completion_criteria(可验证标准),estimated_minutes(30到100000整数分钟),earliest_date(YYYY-MM-DD),deadline(YYYY-MM-DD),deadline_kind(deadline表示真实截止日期，plan_end表示本期安排边界),priority(1到3整数)。最多500项。事项标题具体，练习复习实践按场景决定。日期不得早于本次plan_start_date且开始不得晚于截止。没有真实截止日期使用plan_end，真实截止可以晚于本期结束。target_date可以为空。', session, { timeoutMs: 65_000, label: "eval-items" })
           : await generateItems(session, "", 65_000);
         const candidate = { ...session, ...generated };
         const repaired = repair && variant === "upgrade" ? await checkAndRepair(candidate) : null;

@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { z } from "zod";
-import { AI_REQUEST_TIMEOUT_MS, requestStructuredAI } from "./ai-json.js";
+import { AI_REQUEST_TIMEOUT_MS, requestStructuredAI, SHARED_SYSTEM_PROMPT } from "./ai-json.js";
 import { generateItems } from "./onboarding-ai.js";
 import { newSession } from "./onboarding-contracts.js";
 
@@ -124,5 +124,39 @@ describe("structured AI request timeouts", () => {
   it("preserves the actionable upstream HTTP error", async () => {
     fetchMock.mockResolvedValueOnce(new Response(null, { status: 503 }));
     await expect(requestStructuredAI(schema, "instructions", {})).rejects.toThrow("AI 请求失败（503），请重试");
+  });
+
+  it("shares one byte-identical system prefix across tasks and keeps user data after it", async () => {
+    fetchMock.mockImplementation(async () => validResponse({ value: "ok" }));
+    await requestStructuredAI(schema, "任务A指令", { a: 1 }, { label: "task-a" });
+    await requestStructuredAI(schema, "任务B指令", { b: 2 }, { label: "task-b" });
+
+    const bodies = fetchMock.mock.calls.map(([, options]) => JSON.parse(String(options!.body)));
+    const systems = bodies.map(body => body.messages[0]);
+    expect(systems[0].role).toBe("system");
+    expect(systems[0].content.startsWith(`${SHARED_SYSTEM_PROMPT}\n`)).toBe(true);
+    expect(systems[1].content.startsWith(`${SHARED_SYSTEM_PROMPT}\n`)).toBe(true);
+    expect(systems[0].content).toContain("任务A指令");
+    expect(systems[1].content).toContain("任务B指令");
+    // The provider can cache exactly this shared prefix for every AI call in the app.
+    const sharedPrefixLength = SHARED_SYSTEM_PROMPT.length + 1;
+    expect(systems[0].content.slice(0, sharedPrefixLength)).toBe(systems[1].content.slice(0, sharedPrefixLength));
+    expect(bodies[0].messages[1].role).toBe("user");
+    expect(JSON.parse(bodies[0].messages[1].content)).toEqual({ a: 1 });
+    expect(JSON.parse(bodies[1].messages[1].content)).toEqual({ b: 2 });
+  });
+
+  it("logs cache hit and miss tokens per labelled call", async () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => {});
+    fetchMock.mockResolvedValueOnce(Response.json({
+      choices: [{ message: { content: JSON.stringify({ value: "ok" }) } }],
+      usage: { prompt_tokens: 1200, completion_tokens: 30, prompt_cache_hit_tokens: 900, prompt_cache_miss_tokens: 300 },
+    }));
+    await requestStructuredAI(schema, "instructions", {}, { label: "interview" });
+
+    const line = info.mock.calls.map(call => String(call[0])).find(text => text.includes('"ai_usage"'));
+    expect(line).toBeTruthy();
+    expect(JSON.parse(line!)).toMatchObject({ event: "ai_usage", label: "interview", model: "test",
+      prompt_tokens: 1200, cache_hit_tokens: 900, cache_miss_tokens: 300, completion_tokens: 30 });
   });
 });

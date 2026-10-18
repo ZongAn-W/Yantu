@@ -246,7 +246,10 @@ void main() {
         await tester.tap(find.text('继续访谈'));
         await tester.pumpAndSettle();
         expect(actions, ['resume_interview']);
-        expect(find.text('已回答 5 个问题'), findsOneWidget);
+        expect(find.text('不白学助手'), findsOneWidget);
+        expect(find.text('第 6 问'), findsOneWidget);
+        expect(find.textContaining('已答 5 问'), findsOneWidget);
+        expect(find.text('发送'), findsOneWidget);
         expect(find.text('最近有哪些准备情况需要补充？'), findsOneWidget);
         expect(find.text('新计划确认前，当前计划保持生效。'), findsOneWidget);
         await tester.tap(find.text('今日').last);
@@ -254,6 +257,7 @@ void main() {
         await tester.tap(find.text('访谈').last);
         await tester.pumpAndSettle();
         expect(find.text('最近有哪些准备情况需要补充？'), findsOneWidget);
+        expect(find.text('不白学助手'), findsOneWidget);
         await tester.tap(find.text('重新访谈'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('取消'));
