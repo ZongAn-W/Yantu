@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ProfileSchema } from "./contracts.js";
-import { ActionSchema, CalendarDateSchema, FIRST_QUESTION, FIRST_QUESTION_OPTIONS, QuestionOptionsSchema, newSession, normalizeQuestionOptions, SessionSchema, type OnboardingSession } from "./onboarding-contracts.js";
+import { ActionSchema, CalendarDateSchema, FIRST_QUESTION, FIRST_QUESTION_OPTIONS, QuestionOptionsSchema, RecommendationsSchema, newSession, normalizeQuestionOptions, SessionSchema, type OnboardingSession } from "./onboarding-contracts.js";
 import { advanceOnboarding } from "./onboarding.js";
 import { sanitizeInterviewSession } from "./onboarding-evidence.js";
 import { generateCourses, generateItems, nextInterview } from "./onboarding-ai.js";
@@ -410,6 +410,57 @@ describe("guided onboarding", () => {
     expect(request.messages[0].content).toContain("一次只提一道问题");
     expect(request.messages[0].content).toContain("界面自动提供“其他”文字输入");
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("accepts a numeric exam_year in learner_updates instead of failing the whole interview turn", async () => {
+    // 线上实际失败样本：模型把 learner_updates 里 exam_year 的 value 写成数字 2027，
+    // LearnerUpdateSchema 只接受字符串，导致整条 AI 输出被判“格式有误”。
+    const session = await fiveAnswers();
+    aiConfig.aiApiKey = "key";
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockResolvedValue(Response.json({ choices: [{ message: { content: JSON.stringify({
+      question: "你周一、周三的课程分别在什么时间？",      question_type: "text", question_options: null, question_multiple: false,
+      profile: { ...session.profile, goal_type: "exam", goal_subtype: "考研" },
+      learner_updates: [
+        { field: "identity", value: "本科大三", answer_index: 0, quote: "我要考研" },
+        { field: "exam_year", value: 2027, answer_index: 0, quote: "我要考研" },
+      ],
+      subject_updates: [],
+      question_fields: ["availability"],
+    }) } }] }));
+    const result = await nextInterview(session);
+    expect(result.question.length).toBeGreaterThan(0);
+    // 校验通过就不会走安全模板兜底，也不会写 ai_schema_invalid 日志。
+    expect(errorSpy).not.toHaveBeenCalled();
+    errorSpy.mockRestore();
+    const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(request.messages[0].content).toContain("value 一律用字符串");
+  });
+
+  it("degrades to the safe question when the model output still violates the schema", async () => {
+    const session = await fiveAnswers();
+    aiConfig.aiApiKey = "key";
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchMock.mockResolvedValue(Response.json({ choices: [{ message: { content: JSON.stringify({
+      question: "",
+      profile: { goal_type: "invalid_goal_type" },
+      learner_updates: [{ field: "unknown_field", value: { nested: true }, answer_index: -1, quote: "" }],
+      recommendations: null,
+      question_options: null,
+    }) } }] }));
+    const result = await nextInterview(session);
+    // 不再把 ZodError 抛给路由；用户看到的是可继续回答的安全问题，进度不丢。
+    expect(result.question.length).toBeGreaterThan(0);
+    expect(result.profile.goal_type).toBe("exam");
+    expect(result.question_options.length).toBeLessThanOrEqual(8);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(String(errorSpy.mock.calls[0][0]))).toMatchObject({ event: "ai_schema_invalid", label: "interview" });
+    errorSpy.mockRestore();
+  });
+
+  it("normalizes null dates and null option lists from model output", () => {
+    expect(QuestionOptionsSchema.parse(null)).toEqual([]);
+    expect(RecommendationsSchema.parse({ target_date: null, plan_end_date: null })).toMatchObject({ target_date: "", plan_end_date: "" });
   });
 
   it("keeps user-provided dates and time over conflicting AI suggestions", async () => {

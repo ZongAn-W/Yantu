@@ -46,10 +46,13 @@ export const FIRST_QUESTION_EXAMPLES = [
 
 export { CalendarDateSchema };
 
-export const QuestionOptionsSchema = z
-  .array(z.string().trim().max(200))
-  .transform(options => normalizeQuestionOptions(options))
-  .refine(options => options.length <= 8, "题目选项不能超过8项");
+export const QuestionOptionsSchema = z.preprocess(
+  // 模型对文字题有时会省略选项字段或写成 null；两者都表示“没有选项”。
+  value => (value === null || value === undefined ? [] : value),
+  z.array(z.string().trim().max(200))
+    .transform(options => normalizeQuestionOptions(options))
+    .refine(options => options.length <= 8, "题目选项不能超过8项"),
+);
 
 export const QuestionTypeSchema = z.enum(["text", "single_choice", "multiple_choice"]);
 export type QuestionType = z.infer<typeof QuestionTypeSchema>;
@@ -81,11 +84,11 @@ const legacyRecommendations = z.preprocess(value => {
   return row;
 }, z.object({
   /** 用户希望达成目标的可选日期；空表示没有目标日期。 */
-  target_date: z.preprocess(value => (value === "" || value === undefined ? "" : value), CalendarDateSchema.or(z.literal(""))).default(""),
+  target_date: z.preprocess(value => (value === "" || value === undefined || value === null ? "" : value), CalendarDateSchema.or(z.literal(""))).default(""),
   target_date_reason: z.string().max(1000).default(""),
   target_date_estimated: z.boolean().default(true),
   /** 本次规划周期的结束日期，必须是有限区间。 */
-  plan_end_date: z.preprocess(value => (value === "" || value === undefined ? "" : value), CalendarDateSchema.or(z.literal(""))).default(""),
+  plan_end_date: z.preprocess(value => (value === "" || value === undefined || value === null ? "" : value), CalendarDateSchema.or(z.literal(""))).default(""),
   plan_end_date_reason: z.string().max(1000).default(""),
   weekly_minutes: RecommendedWeeklyMinutesSchema.default({}),
   weekly_minutes_reason: z.string().max(1000).default(""),

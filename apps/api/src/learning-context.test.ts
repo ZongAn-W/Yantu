@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { buildLearningContext, knownStudySubjects, missingLearnerFields, ResearchSchema } from "./learning-context.js";
+import { buildLearningContext, knownStudySubjects, LearnerUpdateSchema, missingLearnerFields, ResearchSchema } from "./learning-context.js";
 import { FIRST_QUESTION, newSession } from "./onboarding-contracts.js";
 import { analyzeInterview, buildSafeInterview } from "./onboarding-evidence.js";
 import { advanceOnboarding } from "./onboarding.js";
@@ -58,6 +58,14 @@ describe("learner context and useful follow-up questions", () => {
     expect(context.facts.identity.value).toBe("本科大三");
     expect(context.timing.exam_year).toBe(2027);
     expect(analyzeInterview(session).subtype).toBe("考研");
+  });
+
+  it("accepts numeric JSON values for learner_updates and normalizes them to text", () => {
+    // 真实模型会把 exam_year 的 value 写成数字 2027（线上 ZodError 的实际触发点）。
+    expect(LearnerUpdateSchema.parse({ field: "exam_year", value: 2027, answer_index: 2, quote: "本科大三参加明年的考研初试" }).value).toBe("2027");
+    expect(LearnerUpdateSchema.parse({ field: "baseline", value: "408 过了一遍基础", answer_index: 3, quote: "408 过了一遍基础" }).value).toBe("408 过了一遍基础");
+    // 真正的类型错误仍然被拒绝，避免把任意对象塞进资料。
+    expect(LearnerUpdateSchema.safeParse({ field: "exam_year", value: { year: 2027 }, answer_index: 2, quote: "x" }).success).toBe(false);
   });
 
   it("persists the question purpose so paraphrased questions do not depend on keyword matching", async () => {

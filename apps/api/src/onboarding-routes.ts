@@ -150,6 +150,10 @@ export async function onboardingRoutes(app: FastifyInstance) {
       });
       return { session: await attachExamResearch(next) };
     } catch (error) {
+      // 用户只看到通用提示；把具体校验失败的字段写进服务端日志以便定位。
+      if (error instanceof z.ZodError)
+        console.error(JSON.stringify({ event: "onboarding_schema_invalid", userId: user.id,
+          issues: error.issues.slice(0, 20).map(issue => ({ code: issue.code, path: issue.path, message: issue.message })) }));
       const message = error instanceof z.ZodError ? "AI 返回内容不完整或格式有误，请重试；已有进度已保留" : error instanceof Error ? error.message : "操作失败，请重试";
       return reply.code(error instanceof SessionConflict || error instanceof PlannerRevisionConflict
         || ["40001", "40P01"].includes((error as { code?: string }).code ?? "") ? 409 : 400).send({ error: message });

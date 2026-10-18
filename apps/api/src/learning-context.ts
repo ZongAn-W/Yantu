@@ -3,8 +3,17 @@ import type { OnboardingSession } from "./onboarding-contracts.js";
 
 export const LEARNER_FIELDS = ["identity", "school", "college", "program", "degree", "exam_year", "baseline", "weakness", "diagnostic", "outcome", "availability", "materials", "constraints"] as const;
 export type LearnerField = typeof LEARNER_FIELDS[number];
+/**
+ * 模型经常把年份、分数、分钟数直接输出成 JSON 数字（例如把 exam_year 的
+ * value 写成 2027）。这些字段的语义是文本，先转成字符串再校验，避免整条
+ * 结构化响应因为 JSON 类型写法不同被判定为“格式有误”而中断访谈。
+ */
+const textualValue = z.preprocess(
+  value => (typeof value === "number" || typeof value === "boolean" ? String(value) : value),
+  z.string().trim().min(1).max(1000),
+);
 export const LearnerUpdateSchema = z.object({
-  field: z.enum(LEARNER_FIELDS), value: z.string().trim().min(1).max(1000),
+  field: z.enum(LEARNER_FIELDS), value: textualValue,
   answer_index: z.number().int().nonnegative(), quote: z.string().min(1).max(4000),
 });
 export const SubjectUpdateSchema = z.object({ name: z.string().trim().min(1).max(100), progress: z.string().max(1000).default(""), weakness: z.string().max(1000).default(""), answer_index: z.number().int().nonnegative(), quote: z.string().min(1).max(4000) });

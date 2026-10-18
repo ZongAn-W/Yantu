@@ -62,7 +62,19 @@ export async function requestStructuredAI<S extends z.ZodTypeAny>(schema: S, ins
     if (!response.ok) throw new Error(`AI 请求失败（${response.status}），请重试`);
     const body = await response.json() as { choices?: Array<{ message?: { content?: string } }>; usage?: AIUsage };
     logAIUsage(settings.label ?? "structured", config.aiModel, body.usage);
-    return schema.parse(JSON.parse(body.choices?.[0]?.message?.content ?? "{}"));
+    const content = body.choices?.[0]?.message?.content ?? "{}";
+    try {
+      return schema.parse(JSON.parse(content));
+    } catch (error) {
+      // 结构化输出校验失败时把 issues 写进服务端日志：路由层只给用户通用文案，
+      // 没有这条日志就无法知道模型违反了哪个字段（曾出现 model 把 exam_year 写成数字）。
+      if (error instanceof z.ZodError) {
+        console.error(JSON.stringify({ event: "ai_schema_invalid", label: settings.label ?? "structured", model: config.aiModel,
+          issues: error.issues.slice(0, 20).map(issue => ({ code: issue.code, path: issue.path, message: issue.message })),
+          content_tail: content.slice(-600) }));
+      }
+      throw error;
+    }
   } catch (error) {
     if (signal.aborted && signal.reason?.name === "TimeoutError" || error instanceof Error && error.name === "TimeoutError") {
       throw new Error("AI 生成用时较长，本次请求已超时；已有进度已保留，请重试。", { cause: error });

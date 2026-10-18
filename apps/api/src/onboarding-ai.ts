@@ -222,19 +222,24 @@ export async function nextInterview(session: OnboardingSession) {
     return { ...fallback, ...contextResult, profile: fallbackProfile, recommendations: fallbackRecommendations({ ...session, profile: fallbackProfile }) };
   }
   if (config.aiApiKey) {
+    // 模型偶尔会把可选字段写成 null；先归一化为缺省值，避免整条结构化响应被判格式错误。
+    const optionalArray = <T extends z.ZodTypeAny>(inner: T) => z.preprocess(value => (value === null || value === undefined ? [] : value), inner);
     const schema = z.object({
       question: z.string().trim().min(1).max(1000), profile: ProfileSchema,
-      question_type: QuestionTypeSchema.optional(),
-      question_options: QuestionOptionsSchema.default([]), question_multiple: z.boolean().default(false),
-      recommendations: RecommendationsSchema.optional(),
-      question_fields: z.array(z.enum(LEARNER_FIELDS)).max(4).default([]),
-      learner_updates: z.array(LearnerUpdateSchema).max(30).default([]),
-      subject_updates: z.array(SubjectUpdateSchema).max(30).default([]),
+      question_type: z.preprocess(value => (value === null ? undefined : value), QuestionTypeSchema.optional()),
+      question_options: optionalArray(QuestionOptionsSchema.default([])),
+      question_multiple: z.preprocess(value => (value === null ? false : value), z.boolean().default(false)),
+      recommendations: z.preprocess(value => (value === null ? undefined : value), RecommendationsSchema.optional()),
+      question_fields: optionalArray(z.array(z.enum(LEARNER_FIELDS)).max(4).default([])),
+      learner_updates: optionalArray(z.array(LearnerUpdateSchema).max(30).default([])),
+      subject_updates: optionalArray(z.array(SubjectUpdateSchema).max(30).default([])),
     });
-    const result = await model(schema, [
+    let result: z.infer<typeof schema>;
+    try {
+      result = await model(schema, [
       '返回 {"question":"下一道问题","question_type":"text或single_choice或multiple_choice","question_options":[],"question_multiple":false,"profile":完整资料对象,"recommendations":完整推荐对象}。一次只提一道问题。读取全部历史，根据学习目标和最新回答选择最值得补充的信息，不重复已明确的信息。',
       'answers 是本轮用户唯一明确提供的信息；current_plan 只是历史计划背景、进度和已有事项，不能把其中的旧目标、考试类型、院校、专业或科目当作本轮已确认信息。',
-      '先更新学习者情况，再决定最值得问的问题。返回learner_updates:[{field,value,answer_index,quote}]，answer_index从0计，quote必须逐字引用对应用户回答；一段回答可补全多个field。field仅限identity,school,college,program,degree,exam_year,baseline,weakness,diagnostic,outcome,availability,materials,constraints。diagnostic是薄弱项的实际做题表现或测评依据。模型记忆、旧计划或网页内容不能放入learner_updates。',
+      '先更新学习者情况，再决定最值得问的问题。返回learner_updates:[{field,value,answer_index,quote}]，answer_index从0计，quote必须逐字引用对应用户回答；一段回答可补全多个field。value 一律用字符串（年份、分数、分钟数也写成字符串，例如 "2027"），answer_index 用整数。field仅限identity,school,college,program,degree,exam_year,baseline,weakness,diagnostic,outcome,availability,materials,constraints。diagnostic是薄弱项的实际做题表现或测评依据。模型记忆、旧计划或网页内容不能放入learner_updates。',
       '同时返回subject_updates:[{name,progress,weakness,answer_index,quote}]记录每门学科的情况，支持任意学科名称。name、progress、weakness、quote都必须来自同一用户回答的原文，没有的信息用空字符串。不要把目标分数当作当前水平，不要把官方考试要求当作用户自述。',
       'question_fields标记这一问获取的字段。从missing_fields选择对课程或安排最有影响的一项；已知、已推算、已暂缓的信息跳过，避免同义重复提问。研究生招生/研究生考试/考研归一理解，不层层重复确认名称。',
       '公开事实交给research查询，用户只提供定位目标所需的院校/专业/学位。不要让用户解释408包含什么、官网考试要求或自行查英语几。research中reference_only=false的事实经后台核对原文，可以用于提问和课程依据；往年或待核实资料不能作为当年定论。',
@@ -255,6 +260,12 @@ export async function nextInterview(session: OnboardingSession) {
     ].join("\n"), { answers: session.answers, profile: session.profile, learning_context: session.learning_context, missing_fields: missingLearnerFields(session), research: session.research, recommendations: session.recommendations,
       current_plan: compactPlanContext(session, "interview"), current_date: shanghaiDate() },
     { reasoningEffort: config.aiSimpleReasoningEffort, label: "interview" });
+    } catch (error) {
+      if (!(error instanceof z.ZodError)) throw error;
+      // 模型结构化输出仍有无法归一的偏差时退回安全模板：访谈继续推进，而不是把整轮
+      // 进度卡在「AI 返回内容不完整或格式有误」上。ai-json.ts 已把 issues 写入日志。
+      return { ...fallback, ...contextResult, profile: fallbackProfile, recommendations: fallbackRecommendations({ ...session, profile: fallbackProfile }) };
+    }
     const presentation = normalizeQuestionPresentation(result);
     const options = presentation.question_options;
     session = { ...session, learning_context: buildLearningContext(session, result.learner_updates, new Date(), result.subject_updates) };
