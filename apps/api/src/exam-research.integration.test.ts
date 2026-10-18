@@ -1,12 +1,29 @@
 import { afterAll, describe, expect, it, vi } from "vitest";
 import { randomUUID } from "node:crypto";
 import { newSession } from "./onboarding-contracts.js";
-import { attachExamResearch, type ResearchDependencies } from "./exam-research.js";
+import { attachExamResearch, libraryDocument, librarySearch, type ResearchDependencies } from "./exam-research.js";
 import { query, pool } from "./db.js";
 vi.mock("./config.js", async importOriginal => ({ config: { ...(await importOriginal<typeof import("./config.js")>()).config, researchProvider: "bing" } }));
 
 describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)("persisted official research jobs", () => {
   afterAll(async () => { await pool.end(); });
+
+  it("persists fetched official pages and search hits so later checks can reuse them offline", async () => {
+    const unique = randomUUID();
+    const pageUrl = `https://yzb.sjtu.edu.cn/library-${unique}.html`;
+    const search = `本地资料库隔离查询 ${unique}`;
+    const page = { url: pageUrl, title: "招生目录", text: "408 计算机学科专业基础 数据结构 计算机组成原理 操作系统 计算机网络", fetched_at: new Date().toISOString() };
+    expect(await libraryDocument(pageUrl, { fetch: async () => page })).toMatchObject({ url: pageUrl, title: "招生目录" });
+    // 第二次必须命中本地资料库，不允许再联网。
+    expect(await libraryDocument(pageUrl, { fetch: async () => { throw new Error("不应联网抓取"); } })).toMatchObject({ title: "招生目录" });
+    expect(await librarySearch(search, { fetch: async () => [pageUrl] })).toEqual([pageUrl]);
+    expect(await librarySearch(search, { fetch: async () => { throw new Error("不应联网搜索"); } })).toEqual([pageUrl]);
+    const stored = await query<{ text: string }>("select text from exam_research_documents where url=$1", [pageUrl]);
+    expect(stored.rows[0]?.text).toContain("408");
+    await query("delete from exam_research_documents where url=$1", [pageUrl]);
+    await query("delete from exam_research_searches where search_query=$1", [search]);
+  });
+
   it("shares public results, does not change session revisions, and separates changed goals from late jobs", async () => {
     const school = `隔离${randomUUID().slice(0, 8)}大学`;
     const session = newSession();

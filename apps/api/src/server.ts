@@ -3,14 +3,18 @@ import cors from "@fastify/cors";
 import cookie from "@fastify/cookie";
 import rateLimit from "@fastify/rate-limit";
 import { config } from "./config.js";
-import { query } from "./db.js";
+import { query, transaction } from "./db.js";
 import { requireUser } from "./auth.js";
 import { authRoutes } from "./auth-routes.js";
 import { syncRoutes } from "./sync.js";
+import { commitPlannerState, PlannerRevisionConflict, readPlannerState } from "./sync.js";
+import { PlannerDocumentSchema } from "./sync-contracts.js";
 import { onboardingRoutes, onboardingProfileVisible } from "./onboarding-routes.js";
 import { migrateDatabase } from "./migrate.js";
 import { PlanDraftSchema, ProfileSchema, ProfileUpdateSchema, SettleSchema } from "./contracts.js";
 import { createPlanDraft } from "./ai.js";
+import { applyPlanAdjustment, PlanAdjustmentError, type PlanAdjustmentJobPreview, type PlanAdjustmentPreview } from "./plan-adjust.js";
+import { buildAdjustmentContext, generatePlanAdjustment, type PlanAdjustment } from "./plan-adjust-ai.js";
 import { confirmDraft, dateAdd, dateToday, generatePlan, getProfile, itemToJson, listCourses, listDailyPlans, listItems, saveProfile, settleDay, snapshot, undoRun, type ItemRow } from "./planner.js";
 import { z } from "zod";
 import { fileURLToPath } from "node:url";
@@ -54,6 +58,112 @@ app.post("/api/ai/plan-drafts", async (request, reply) => {
 });
 app.get("/api/ai/plan-drafts/:id", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const params = request.params as { id: string }; const result = await query<{ id: string; output_payload: unknown }>("select id,output_payload from ai_jobs where id=$1 and user_id=$2 and kind='plan_draft'", [params.id, user.id]); if (!result.rows[0]) return reply.code(404).send({ error: "找不到草案" }); return { id: result.rows[0].id, draft: result.rows[0].output_payload }; });
 app.post("/api/ai/plan-drafts/:id/confirm", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const params = request.params as { id: string }; const found = await query<{ output_payload: unknown; status: string }>("select output_payload,status from ai_jobs where id=$1 and user_id=$2 and kind='plan_draft'", [params.id, user.id]); if (!found.rows[0]) return reply.code(404).send({ error: "找不到草案" }); if (found.rows[0].status === "confirmed") return reply.code(409).send({ error: "这个草案已经确认过了" }); const submitted = bodyObject(request.body) as { draft?: unknown }; const parsed = PlanDraftSchema.safeParse(submitted.draft ?? found.rows[0].output_payload); if (!parsed.success) return reply.code(400).send({ error: "草案格式不正确" }); try { const result = await confirmDraft(user.id, parsed.data); await query("update ai_jobs set status='confirmed',updated_at=now() where id=$1 and user_id=$2", [params.id, user.id]); return { ...result, confirmed: true }; } catch (error) { return reply.code(400).send({ error: errorMessage(error) }); } });
+
+// ---- AI 一键调整后续计划（PLAN_ADJUST_AI_DESIGN §2）----
+type AdjustmentJobPayload = { base_revision?: number; document?: unknown; preview?: PlanAdjustmentPreview; ai?: unknown };
+const PlanAdjustmentRequestSchema = z.object({ expectedRevision: z.number().int().min(0), requestId: z.string().min(1).max(200).optional() });
+const PlanAdjustmentConfirmSchema = z.object({ expectedRevision: z.number().int().min(0) });
+const adjustmentRateLimit = { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } } as const;
+/** 客户端按 §3 从 preview 内读取 id/base_revision；存储的预览不含这两个字段，读取时补上。 */
+function adjustmentPreview(id: string, payload: AdjustmentJobPayload) {
+  return { ...(payload.preview as PlanAdjustmentPreview), id, base_revision: payload.base_revision ?? 0 } satisfies PlanAdjustmentJobPreview;
+}
+app.post("/api/ai/plan-adjustments", adjustmentRateLimit, async (request, reply) => {
+  const user = await requireUser(request, reply); if (!user) return;
+  const parsed = PlanAdjustmentRequestSchema.safeParse(bodyObject(request.body));
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "调整请求格式不正确" });
+  const { expectedRevision, requestId } = parsed.data;
+  try {
+    // 幂等：同一用户同一 requestId 已生成的预览直接复用，避免重复调用 AI。
+    if (requestId) {
+      const existing = await query<{ id: string; output_payload: unknown }>("select id,output_payload from ai_jobs where user_id=$1 and kind='plan_adjustment' and request_id=$2 order by created_at desc limit 1", [user.id, requestId]);
+      const row = existing.rows[0], payload = row?.output_payload as AdjustmentJobPayload | null;
+      if (row && payload?.preview) return { id: row.id, preview: adjustmentPreview(row.id, payload) };
+    }
+    const state = await transaction(client => readPlannerState(client, user.id));
+    if (state.revision !== expectedRevision)
+      return reply.code(409).send({ error: "云端计划已更新，请先同步后再调整" });
+    const document = state.data;
+    if (!document || (!document.tasks.length && !document.subjects.length))
+      return reply.code(409).send({ error: "当前还没有可调整的计划，请先完成学习目标与计划设置" });
+    const today = dateToday();
+    const context = buildAdjustmentContext(document, today);
+    let ai: PlanAdjustment;
+    try {
+      ai = await generatePlanAdjustment(context);
+    } catch (error) {
+      // Zod 结构化输出失败时把具体 issues 写日志；用户只看到可操作的通用提示。
+      request.log.error(JSON.stringify({ event: "plan_adjust_ai_failed", userId: user.id, error: error instanceof z.ZodError ? error.issues.slice(0, 20) : errorMessage(error) }));
+      return reply.code(502).send({ error: error instanceof z.ZodError ? "AI 生成的调整方案格式不正确，请重试" : errorMessage(error) });
+    }
+    let result: ReturnType<typeof applyPlanAdjustment>;
+    try {
+      result = applyPlanAdjustment(document, ai, today);
+    } catch (error) {
+      if (error instanceof PlanAdjustmentError) {
+        request.log.error(JSON.stringify({ event: "plan_adjust_invalid", userId: user.id, message: error.message, detail: error.detail }));
+        return reply.code(422).send({ error: "AI 调整方案不合法，请重试" });
+      }
+      throw error;
+    }
+    const saved = await query<{ id: string }>(
+      "insert into ai_jobs(user_id,kind,status,request_id,input_payload,output_payload) values($1,'plan_adjustment','previewed',$2,$3,$4) returning id",
+      [user.id, requestId ?? null, JSON.stringify({ expectedRevision }),
+        JSON.stringify({ base_revision: state.revision, document: result.document, preview: result.preview, ai })]);
+    return { id: saved.rows[0].id, preview: { ...result.preview, id: saved.rows[0].id, base_revision: state.revision } };
+  } catch (error) {
+    if (error instanceof PlannerRevisionConflict) return reply.code(409).send({ error: error.message });
+    throw error;
+  }
+});
+app.get("/api/ai/plan-adjustments/:id", adjustmentRateLimit, async (request, reply) => {
+  const user = await requireUser(request, reply); if (!user) return;
+  const params = request.params as { id: string };
+  if (!z.string().uuid().safeParse(params.id).success) return reply.code(404).send({ error: "找不到调整预览" });
+  const result = await query<{ id: string; output_payload: unknown }>("select id,output_payload from ai_jobs where id=$1 and user_id=$2 and kind='plan_adjustment'", [params.id, user.id]);
+  const row = result.rows[0], payload = row?.output_payload as AdjustmentJobPayload | null;
+  if (!row || !payload?.preview) return reply.code(404).send({ error: "找不到调整预览" });
+  return { id: row.id, preview: adjustmentPreview(row.id, payload) };
+});
+app.post("/api/ai/plan-adjustments/:id/confirm", adjustmentRateLimit, async (request, reply) => {
+  const user = await requireUser(request, reply); if (!user) return;
+  const params = request.params as { id: string };
+  if (!z.string().uuid().safeParse(params.id).success) return reply.code(404).send({ error: "找不到调整预览" });
+  const parsed = PlanAdjustmentConfirmSchema.safeParse(bodyObject(request.body));
+  if (!parsed.success) return reply.code(400).send({ error: parsed.error.issues[0]?.message ?? "确认请求格式不正确" });
+  const found = await query<{ id: string; status: string; output_payload: unknown }>("select id,status,output_payload from ai_jobs where id=$1 and user_id=$2 and kind='plan_adjustment'", [params.id, user.id]);
+  const row = found.rows[0], payload = row?.output_payload as AdjustmentJobPayload | null;
+  if (!row) return reply.code(404).send({ error: "找不到调整预览" });
+  if (row.status !== "previewed") return reply.code(409).send({ error: "这次调整已经确认" });
+  if (!payload || typeof payload.base_revision !== "number" || payload.document === undefined || !payload.preview)
+    return reply.code(409).send({ error: "调整预览已失效，请重新预览" });
+  const stored = PlannerDocumentSchema.safeParse(payload.document);
+  if (!stored.success) {
+    request.log.error(JSON.stringify({ event: "plan_adjust_confirm_invalid", userId: user.id, issues: stored.error.issues.slice(0, 20) }));
+    return reply.code(409).send({ error: "调整预览已失效，请重新预览" });
+  }
+  try {
+    const revision = await transaction(async client => {
+      const state = await readPlannerState(client, user.id);
+      if (state.revision !== payload.base_revision || state.revision !== parsed.data.expectedRevision)
+        throw new PlannerRevisionConflict("计划已更新，请重新预览");
+      const next = await commitPlannerState(client, user.id, stored.data, parsed.data.expectedRevision);
+      await client.query("insert into plan_versions(user_id,kind,payload) values($1,'adjust',$2)",
+        [user.id, JSON.stringify({ summary: payload.preview!.assessment, previous_revision: payload.base_revision,
+          previous_document: state.data, preview: adjustmentPreview(row.id, payload) })]);
+      await client.query("update ai_jobs set status='confirmed',updated_at=now() where id=$1 and user_id=$2", [row.id, user.id]);
+      return next;
+    });
+    return { confirmed: true, revision };
+  } catch (error) {
+    if (error instanceof PlannerRevisionConflict) return reply.code(409).send({ error: error.message });
+    if (error instanceof z.ZodError) {
+      request.log.error(JSON.stringify({ event: "plan_adjust_confirm_commit_invalid", userId: user.id, issues: error.issues.slice(0, 20) }));
+      return reply.code(422).send({ error: "调整后的计划未通过校验，请重新预览" });
+    }
+    throw error;
+  }
+});
 
 app.get("/api/courses", async (request, reply) => { const user = await requireUser(request, reply); return user ? { courses: await listCourses(user.id) } : undefined; });
 app.get("/api/items", async (request, reply) => { const user = await requireUser(request, reply); return user ? { items: await listItems(user.id) } : undefined; });

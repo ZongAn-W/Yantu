@@ -187,7 +187,7 @@ WEB_ORIGIN=http://127.0.0.1:5180
 - 修改先落本机，再同步。每 15 秒及应用回到前台自动重试，也可在设置页手动重试。
 - 使用共同 `base` 合并独立字段；同一事项同一天的累计日志按**总量修正**而非相加。
 - 同一字段或同一天总量的并发修改会暂停上传，设置页提供「冲突项保留本机 / 使用云端」的显式选择；未选择时保留本机修改与原基线，重启后重新识别冲突，不静默丢弃任何一侧。
-- 本机排程预览不落盘；确认与撤销经同一串行保存路径。客户端本机重排**不等价于**服务端 `/api/plans/generate`，`结束今天` 目前也只写本机并经 `/api/planner/sync` 提交。
+- 本机排程预览不落盘；确认经同一串行保存路径。今日页「智能重排」入口已移除，相关本机重排 API 仅保留给旧数据/跨端 golden 对照，不再有页面入口。调整页「一键调整后续计划」走服务端 AI 接口（见 8.2），不再使用本地 `reschedulePlan` 自动调整；客户端本机生成**不等价于**服务端 `/api/plans/generate`，`结束今天` 仍只写本机并经 `/api/planner/sync` 提交。
 - 关系表中的日计划汇总只更新原时间块发生变化的字段，保留分块 ID、开始时间、固定标记、创建时间、反馈和未变化的日志关联。无法安全映射到分块/固定块/分时模式的汇总时长变化返回 409，保留原快照；需先核对并纠正云端汇总，再重试同步。
 - 重新打开「结束今天」会读取已有完成程度和反馈。保存只更新用户改过的字段，并在一次本机保存中提交整份记录；未修改的混合时间块状态和反馈不会被统一覆盖。整体反馈保存为可选 `PlannerData.daily_feedback`（日期到文字的映射），支持 JSON 导入导出和按日期三方合并；旧 v1 JSON 无需增加该字段。
 
@@ -314,8 +314,8 @@ API 的同步与 refresh token 表属于当前客户端的运行依赖，客户�
 - **iOS 未验证**：需 macOS/Xcode。
 - **Windows 安装包未验证**：未打包、未在干净机器安装。
 - **无离线资源缓存**：见上文 Web 步骤 6。
-- **真实 AI 输出未验收**：未配置密钥时走服务端确定性回退。
-- **服务端结算与正式生成未接入页面**：`结束今天` 与客户端重排只写本机。
+- **真实 AI 输出未验收**：未配置 AI 时访谈/草案走服务端确定性回退；调整页“一键调整后续计划”不提供算法回退，未配置 AI 时直接报错并保留原计划。
+- **服务端结算与正式生成仍未接入每日页面**：`结束今天` 只写本机；计划级调整改由调整页“一键调整后续计划”调用服务端 AI 接口生成预览、确认后原子提交。
 - **Wasm 不在承诺范围**：`flutter_secure_storage_web` 与 `share_plus` 的 Wasm dry-run 提示仍存在；普通 JavaScript 构建可用。
 - **Android 签名与 applicationId 仍是模板状态**：上架前必须替换。
 
@@ -344,30 +344,31 @@ npm test -- apps/api/src/auth.integration.test.ts
 
 纯 Dart 引擎位于 `lib/features/planner/domain/scheduler/planner_scheduler.dart`，与 TypeScript 共用 `packages/planner-engine/fixtures/planner-goldens.json` 的 92 个输入和完整预期（含生成后的 ID、UTC 毫秒时间、建议字段、任务状态快照和数组顺序）。旧 JSON 缺省 `planning_mode` 时读取为 daily、导出仍省略。
 
-本地还有两类排程操作，语义不同，调用方必须区分：
+本地排程操作，语义不同，调用方必须区分：
 
 - `generatePlanBlocks(from, to)`：只新增与区间相交的安排，保留现有安排；用于续排下一周期。
-- `reschedulePlan(today, start, end)`：按新的容量/周期重新安排受影响的未来安排（设置变化用），保护历史、已完成、固定、有实际用时或有日志引用的记录，排不完的部分作为未安排量保留。
+- `reschedulePlan(today, start, end)`：按新的容量/周期重新安排受影响的未来安排；保护历史、已完成、固定、有实际用时或有日志引用的记录，排不完的部分作为未安排量保留。**页面不再自动调用它**：设置/容量保存只保存设置，计划级调整改由调整页 AI 一键调整（见 8.2）。
 
-应用入口由 `PlannerCoordinator` 提供，Widget 只展示返回的 preview 并调用这些命令：
+本次升级后，今日页的「智能重排」入口已移除；`PlannerCoordinator.previewReplan/confirmReplan/undoReplan` 及其领域实现只保留给旧数据兼容与共享 golden 对照，不再有用户入口。
 
 ```dart
-final preview = await coordinator.previewReplan(
-  today: '2026-10-17',
-  mode: ReplanMode.unfinished,
-);
-coordinator.cancelReplan(); // No persistence or network request.
-await coordinator.previewReplan(today: '2026-10-17');
-await coordinator.confirmReplan();
-await coordinator.undoReplan();
 await coordinator.recordDayMinutes(taskId, '2026-10-17', 90);
 ```
 
-`ReplanMode.overcompleted` 可带 `excessMinutes`，只从未来 7 天提前。未完成只重排现有块在未来 14 天内的待完成部分，不自动补齐整项预计需求。容量口径按 `capacity_basis` 解析：旧数据为 `gross_buffer`（每日预算扣至少 30 分钟缓冲），新计划为 `net`（净学习预算，不再机械扣机动）；同科最多 240 分钟，支持周/日期覆盖与显式休息日。daily 模式固定事件含休息按并集扣容量，timed 模式休息只占时间窗口、不扣同一预算。已执行记录留在原日，固定/已完成/窗口外块保护。
+容量口径按 `capacity_basis` 解析：旧数据为 `gross_buffer`（每日预算扣至少 30 分钟缓冲），新计划为 `net`（净学习预算，不再机械扣机动）；同科最多 240 分钟，支持周/日期覆盖与显式休息日。daily 模式固定事件含休息按并集扣容量，timed 模式休息只占时间窗口、不扣同一预算。已执行记录留在原日，固定/已完成/窗口外块保护。
 
-全周期计划的容量/周期调整使用 `reschedulePlan` 覆盖整个剩余周期，不被 14 天边界截断；续排下一周期一次生成完整周期安排。旧 rolling 计划（`planning.rolling == true`）通过一次“补全本周期安排”预览确认后写入 `mode: "full"`、`rolling: false`、`detail_days = 周期天数`、`detailed_until = 周期末`、`forecast: null`；旧计划在确认前不改动。全周期计划不再显示“其后待细化”的预测区间。
+续排下一周期一次生成完整周期安排。旧 rolling 计划（`planning.rolling == true`）通过一次“补全本周期安排”预览确认后写入 `mode: "full"`、`rolling: false`、`detail_days = 周期天数`、`detailed_until = 周期末`、`forecast: null`；旧计划在确认前不改动。全周期计划不再显示“其后待细化”的预测区间。
 
-## 8.1 三类学习与临时学习（本次升级）
+## 8.1 AI 一键调整后续计划
+
+调整页（`/adjust`）的「一键调整后续计划」不再由本地算法重排，而是调用服务端 AI：
+
+- `POST /api/ai/plan-adjustments`：客户端携带 `expectedRevision`；服务端读取当前计划，基于人物画像、学习进度、近 7/14 天实际执行与当前计划，让 AI 先审查“目标所需总学习时长 vs 当前计划总时长/剩余时间/近期强度”，再给出调整方案（周期结束日期、每周可用时间、事项总工作量、必要的新增事项）。返回 `{id, preview}`，preview 含结论、所需/当前/调整后总时长、周期与强度变化、工作量变化、日程影响、截止风险。
+- `POST /api/ai/plan-adjustments/:id/confirm`：客户端确认后才提交；服务端校验 revision 未变化，原子提交并推进同步 revision。
+- 本机存在未同步修改（pending）时禁止发起；AI 未配置、超时或方案不合法时直接报错，不会回退到本地算法。
+- 客户端实现见 `lib/features/adjust/data/plan_adjust_api.dart` 与 `lib/features/adjust/presentation/plan_adjust_dialog.dart`；契约见根目录 `PLAN_ADJUST_AI_DESIGN.md`。
+
+## 8.2 三类学习与临时学习（本次升级）
 
 - `TimeLog.relation` 记录计时发生时的执行关系：`scheduled`（今日原定）、`extra`（已有事项加学/超额）、`ad_hoc`（全新临时学习）、`legacy_unknown`（旧数据缺失）；与 `LogSource.timer/manual` 相互独立。原定学习按开始时的剩余额度写入 `quotaMinutes`，超出额度自动拆为 `extra` 记录（同一 `sessionId`，秒数不重复）；跨上海零点按日期拆分并重新判断新日期的执行关系。
 - `TimeLog.taskId` 可为空；临时学习使用 `ad_hoc_id` 指向 `PlannerData.adHocLearnings`（名称即可开始，可归档、可记录转换后的正式事项）。同名临时学习在未归档时可复用，不重复建实体。
@@ -377,24 +378,25 @@ await coordinator.recordDayMinutes(taskId, '2026-10-17', 90);
 
 容量解析核心位于 `lib/features/planner/domain/capacity.dart`，与 `apps/api/src/capacity.ts` 共用 `packages/planner-engine/fixtures/capacity-cases.json` 的跨端用例；页面、排程、校验与统计必须调用同一解析结果，不各自计算。
 
-预览/取消不落盘。确认和撤销先经协调器串行校验、持久化再同步；期间任务、日志、设置、固定事件或建议变化使确认过期。新本机 run 的可选 `local_undo_guard` 随 JSON/存储/API 保存，重启后修改数据仍阻止撤销覆盖。旧 TypeScript run 沿用其块快照保护和可选 `task_status_before/after`；没有完整旧输入时无法追溯增强保护。`study_edits.dart` 仅为兼容转发，今日学习记录已使用 domain。
+以下为本机重排兼容实现的说明（已无页面入口）：预览/取消不落盘。确认和撤销先经协调器串行校验、持久化再同步；期间任务、日志、设置、固定事件或建议变化使确认过期。本机 run 的可选 `local_undo_guard` 随 JSON/存储/API 保存，重启后修改数据仍阻止撤销覆盖。旧 TypeScript run 沿用其块快照保护和可选 `task_status_before/after`；没有完整旧输入时无法追溯增强保护。`study_edits.dart` 仅为兼容转发，今日学习记录已使用 domain。
 
-本机确认是客户端快照编辑，经 `/api/planner/sync` 的 revision/base 协议提交；不会调用 `/api/plans/generate` 或每日 settle。服务端仍负责正式生成/结算及 AI 建议。服务端现有算法使用一周七天容量、每天每任务一次最多 30 分钟、从开始日至规划周期结束日，尚没有客户端的固定事件和 14/7 天规则；不可将两者作为等价确认接口。差异表见根 `FLUTTER_MIGRATION_DESIGN.md` 第 9 节。正式 API 算法、数据库和旧客户端未被替换。
+调整页 AI 一键调整走服务端接口：预览不落盘到本机计划，确认后服务端原子提交并推进 revision，客户端随后同步拉取；不再由客户端快照编辑提交计划级重排。`结束今天` 仍是客户端快照编辑，经 `/api/planner/sync` 的 revision/base 协议提交；不会调用 `/api/plans/generate` 或每日 settle。旧服务端算法（一周七天容量、每天每任务一次最多 30 分钟）与客户端排程不等价，差异表见根 `FLUTTER_MIGRATION_DESIGN.md` 第 9 节。
 
 ## 9. 页面模块（第六阶段）
 
 ```text
 lib/features/
   shell/app_shell.dart                 侧栏（≥900px）/ 底部导航、同步条、账号对话框
-  dashboard/presentation/              今日：计划/已学/剩余、完成环、逐事项行、重排、撤销
+  dashboard/presentation/              今日：计划/已学/剩余、完成环、逐事项行
   tasks/presentation/                  事项：筛选、增删改、安排时间块、标记完成
   calendar/presentation/               日历：日/周视图、固定事件、容量、拖动/改日期
   progress/presentation/               进度：课程进度、周对比、热力图、燃尽
   onboarding/presentation/             学习目标访谈 + 课程/事项确认 + 日期与容量确认
-  settings/presentation/               设置：学习目标与规划、每日可用时间与排程边界、优先级、数据、同步；容量/周期变化经预览确认
+  adjust/presentation/                 调整：画像/进度/近期时间 + AI 一键调整预览与确认
+  settings/presentation/               设置：学习目标与规划、每日可用时间与排程边界、优先级、数据、同步；容量/周期只保存设置，重排到调整页
   planner/domain/                      格式化、每日统计、事项编辑、进度指标、最小计划
   planner/application/                 会话命令面、快照、学习目标设置控制器、续排
-  planner/presentation/                共用对话框、日程调整预览、续排对话框与页面状态外壳
+  planner/presentation/                共用对话框、续排对话框与页面状态外壳
 ```
 
 路由沿用 `/`、`/calendar`、`/tasks`、`/progress`、`/settings`，新增 `/onboarding`；认证与备考资料守卫在 `app/router/app_router.dart`。

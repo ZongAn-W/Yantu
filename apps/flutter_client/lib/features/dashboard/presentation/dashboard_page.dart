@@ -107,12 +107,6 @@ class DashboardPage extends ConsumerWidget {
               filled: false,
               onPressed: () => DailyReviewDialog.show(context, date: date),
             ),
-            AsyncActionButton(
-              label: '智能重排',
-              icon: Icons.refresh,
-              enabled: snapshot.editable,
-              onPressed: () => ReplanDialog.show(context),
-            ),
           ],
           children: [
             if (data.planning != null) ...[

@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -12,9 +10,7 @@ import '../../auth/application/auth_controller.dart';
 import '../../planner/application/onboarding_controller.dart';
 import '../../planner/application/planner_session.dart';
 import '../../planner/domain/capacity.dart' as capacity;
-import '../../planner/domain/plan_cycle.dart';
 import '../../planner/domain/planner_format.dart';
-import '../../planner/presentation/constraint_dialog.dart';
 import '../../planner/presentation/planner_dialogs.dart';
 import '../../planner/presentation/planner_page_state.dart';
 import '../../shell/app_shell.dart';
@@ -172,42 +168,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       _notice = null;
     });
     try {
-      final today = shanghaiToday();
-      final planned = applySettings(data, draft);
-      final affects = settingsAffectSchedule(data, draft);
-      var next = planned;
-      if (affects) {
-        // 容量或周期变化会重新评估受影响的未来安排：先预览，再确认。
-        final adjustment = reschedulePlan(
-          planned,
-          today: today,
-          start: draft.planStartDate,
-          end: draft.planEndDate,
-        );
-        if (!mounted) return;
-        final confirmed = await ScheduleChangeDialog.show(
-          context,
-          before: data,
-          adjustment: adjustment,
-          start: draft.planStartDate,
-          end: draft.planEndDate,
-        );
-        if (!confirmed) return;
-        next = adjustment.data;
-      }
-      // 预览期间计划可能已变化：用当前数据重新校验，避免旧快照覆盖新进度。
-      final expected = jsonEncode(data.toJson());
-      await ref.read(plannerSessionProvider).edit((current) {
-        if (jsonEncode(current.toJson()) != expected) {
-          throw StateError('计划已更新，请重新预览后再应用');
-        }
-        return next;
-      });
+      // 保存设置只写入本机 profile；未来安排的重排由调整页的 AI 一键调整负责。
+      await ref
+          .read(plannerSessionProvider)
+          .edit((current) => applySettings(current, draft));
       if (mounted) {
         setState(
-          () => _notice = affects
-              ? '学习目标与规划已保存，并按新的容量重新安排了未来日程。'
-              : '学习目标与规划已保存到本机。',
+          () => _notice =
+              '学习目标与规划已保存；如需按新容量或周期重排未来安排，请到调整页使用一键调整后续计划。',
         );
       }
     } catch (error) {

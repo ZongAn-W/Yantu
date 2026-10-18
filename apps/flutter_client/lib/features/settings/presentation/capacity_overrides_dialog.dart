@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -9,7 +7,6 @@ import '../../../core/widgets.dart';
 import '../../../shared/models/planner_models.dart';
 import '../../planner/application/planner_session.dart';
 import '../../planner/domain/capacity.dart' as capacity;
-import '../../planner/domain/plan_cycle.dart';
 import '../../planner/domain/planner_format.dart';
 import '../../planner/presentation/planner_dialogs.dart' show DateField;
 
@@ -19,9 +16,10 @@ import '../../planner/presentation/planner_dialogs.dart' show DateField;
 /// - 大致周容量范围 + 经用户确认的保守基线；
 /// - 特定自然周覆盖（只给周总量，或逐日覆盖）；
 /// - 特定日期覆盖（0 = 休息；删除 = 恢复上层规则）；
-/// - 显式展示每个值的来源（具体日期/本周逐日/周总量/基线/模板/估算）；
-/// - 保存前用 `reschedulePlan` 生成影响预览：保留/移动/未安排/真实截止日期影响，
-///   预览后计划或 revision 变化会失效并要求重新预览。
+/// - 显式展示每个值的来源（具体日期/本周逐日/周总量/基线/模板/估算）。
+///
+/// 保存只写入容量设置，不自动重排未来安排：需要按新容量重排时，由用户在
+/// 调整页发起 AI「一键调整后续计划」。
 class CapacityOverridesDialog extends ConsumerStatefulWidget {
   const CapacityOverridesDialog({super.key});
 
@@ -47,10 +45,7 @@ class _CapacityOverridesDialogState
   bool _acceptedConflicts = false;
   final _weeks = <String, WeekCapacityOverride>{};
   final _dates = <String, int>{};
-  bool _previewing = false;
-  ScheduleAdjustment? _adjustment;
-  PlannerData? _expected;
-  String? _previewError;
+  String? _saveError;
   bool _busy = false;
 
   @override
@@ -178,71 +173,39 @@ class _CapacityOverridesDialogState
     return result;
   }
 
-  Future<void> _preview() async {
+  Future<void> _save() async {
     final data = ref.read(plannerDataProvider).data;
     if (data == null) return;
     final errors = _validationErrors;
     if (errors.isNotEmpty) {
-      setState(() => _previewError = errors.first);
+      setState(() => _saveError = errors.first);
       return;
     }
     final nextProfile = _nextProfile(data.profile);
-    final next = data.copyWith(profile: nextProfile);
     final conflicts = _conflicts(nextProfile);
     if (conflicts.isNotEmpty && !_acceptedConflicts) {
       setState(
-        () => _previewError = '容量设置存在冲突，请先调整或勾选“接受该容量设置冲突”。',
+        () => _saveError = '容量设置存在冲突，请先调整或勾选“接受该容量设置冲突”。',
       );
       return;
     }
-    final today = shanghaiToday();
     setState(() {
-      _previewError = null;
+      _saveError = null;
       _busy = true;
     });
-    try {
-      final adjustment = reschedulePlan(
-        next,
-        today: today,
-        start: nextProfile.resolvedPlanStart(today),
-        end: nextProfile.resolvedPlanEnd(today),
-      );
-      if (!mounted) return;
-      setState(() {
-        _adjustment = adjustment;
-        _expected = data;
-        _previewing = true;
-      });
-    } catch (error) {
-      if (mounted) setState(() => _previewError = '$error');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _apply() async {
-    final adjustment = _adjustment;
-    final expected = _expected;
-    if (adjustment == null || expected == null) return;
-    setState(() => _busy = true);
     final navigator = Navigator.of(context);
     final messenger = ScaffoldMessenger.of(context);
     try {
-      final before = jsonEncode(expected.toJson());
-      await ref.read(plannerSessionProvider).edit((current) {
-        if (jsonEncode(current.toJson()) != before) {
-          throw StateError('计划已更新，请重新预览容量影响');
-        }
-        return adjustment.data;
-      });
+      // 只写入容量设置；不用本地重排算法自动改未来安排，重排交给调整页的 AI。
+      await ref
+          .read(plannerSessionProvider)
+          .edit(
+            (current) => current.copyWith(profile: _nextProfile(current.profile)),
+          );
       if (navigator.mounted) navigator.pop(true);
       messenger.showSnackBar(
-        SnackBar(
-          content: Text(
-            '容量设置已保存：保留 ${adjustment.protectedBlocks} 段，'
-            '重新排入 ${adjustment.placedBlocks} 段'
-            '${adjustment.unscheduledMinutes > 0 ? '，仍有 ${duration(adjustment.unscheduledMinutes)} 未安排' : ''}。',
-          ),
+        const SnackBar(
+          content: Text('容量已保存；请到调整页使用一键调整后续计划重排未来安排。'),
         ),
       );
     } catch (error) {
@@ -259,40 +222,25 @@ class _CapacityOverridesDialogState
     final conflicts = _conflicts(nextProfile);
     final errors = _validationErrors;
     return AlertDialog(
-      title: Text(_previewing ? '容量变化影响预览' : '容量假设与例外'),
+      title: const Text('容量假设与例外'),
       content: SizedBox(
         width: 640,
         child: SingleChildScrollView(
-          child: _previewing
-              ? _buildPreview(context)
-              : _buildEditor(context, data, nextProfile, conflicts, errors),
+          child: _buildEditor(context, data, nextProfile, conflicts, errors),
         ),
       ),
-      actions: _previewing
-          ? [
-              TextButton(
-                onPressed: _busy
-                    ? null
-                    : () => setState(() => _previewing = false),
-                child: const Text('返回修改'),
-              ),
-              FilledButton.icon(
-                onPressed: _busy ? null : _apply,
-                icon: const Icon(Icons.check),
-                label: const Text('确认应用'),
-              ),
-            ]
-          : [
-              TextButton(
-                onPressed: _busy ? null : () => Navigator.pop(context, false),
-                child: const Text('取消'),
-              ),
-              FilledButton.icon(
-                onPressed: _busy || errors.isNotEmpty ? null : _preview,
-                icon: const Icon(Icons.preview_outlined),
-                label: const Text('预览容量影响'),
-              ),
-            ],
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.pop(context, false),
+          child: const Text('取消'),
+        ),
+        FilledButton.icon(
+          key: const ValueKey('capacity-save'),
+          onPressed: _busy || errors.isNotEmpty ? null : _save,
+          icon: const Icon(Icons.save_outlined),
+          label: const Text('保存容量'),
+        ),
+      ],
     );
   }
 
@@ -327,7 +275,8 @@ class _CapacityOverridesDialogState
           padding: EdgeInsets.only(top: 4),
           child: Text(
             '净口径：你填写的就是真正用于学习的净时间，程序不再机械扣除机动。'
-            '旧版总预算：每日安排前先扣除机动时间。切换口径会改变容量并显示影响预览。',
+            '旧版总预算：每日安排前先扣除机动时间。切换口径会改变容量；'
+            '保存后如需重排未来安排，请到调整页使用一键调整后续计划。',
             style: TextStyle(color: PlannerColors.muted, fontSize: 12),
           ),
         ),
@@ -498,9 +447,9 @@ class _CapacityOverridesDialogState
               style: const TextStyle(color: PlannerColors.orange, fontSize: 12),
             ),
           ),
-        if (_previewError != null) ...[
+        if (_saveError != null) ...[
           const SizedBox(height: 8),
-          PlannerNotice(_previewError!, tone: PlannerNoticeTone.error),
+          PlannerNotice(_saveError!, tone: PlannerNoticeTone.error),
         ],
       ],
     );
@@ -858,82 +807,5 @@ class _CapacityOverridesDialogState
       if (date != existing) _dates.remove(existing);
       _dates[date] = value;
     });
-  }
-
-  Widget _buildPreview(BuildContext context) {
-    final adjustment = _adjustment!;
-    final changed = adjustment.changedDays;
-    final shown = changed.length > 14 ? changed.sublist(0, 14) : changed;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text('确认后会按新容量重新安排可调整的未来安排；历史、固定、已完成和有实际用时的记录保持不变。'),
-        const SizedBox(height: 12),
-        PlannerStat(
-          label: '保持不变（历史/固定/已完成/已有记录）',
-          value: '${adjustment.protectedBlocks} 段',
-        ),
-        PlannerStat(
-          label: '移动/释放的未来安排',
-          value:
-              '${adjustment.releasedBlocks} 段 · ${duration(adjustment.releasedMinutes)}',
-        ),
-        PlannerStat(
-          label: '重新排入',
-          value:
-              '${adjustment.placedBlocks} 段 · ${duration(adjustment.placedMinutes)}',
-        ),
-        PlannerStat(
-          label: '仍未安排',
-          value: duration(adjustment.unscheduledMinutes),
-          tone: adjustment.unscheduledMinutes > 0 ? PlannerColors.orange : null,
-        ),
-        if (adjustment.realDeadlineImpacts.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text('真实截止日期影响', style: Theme.of(context).textTheme.titleSmall),
-          for (final impact in adjustment.realDeadlineImpacts)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: PlannerNotice(impact, tone: PlannerNoticeTone.warning),
-            ),
-        ],
-        if (shown.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          Text('每日计划时长', style: Theme.of(context).textTheme.titleSmall),
-          for (final date in shown)
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: 2),
-              child: Row(
-                children: [
-                  Expanded(
-                    child: Text('${monthDayLabel(date)} ${weekdayLabel(date)}'),
-                  ),
-                  Text(
-                    '${duration(adjustment.beforeLoad[date] ?? 0)} → '
-                    '${duration(adjustment.afterLoad[date] ?? 0)}',
-                    style: tabularFigures,
-                  ),
-                ],
-              ),
-            ),
-          if (changed.length > shown.length)
-            Text(
-              '另有 ${changed.length - shown.length} 天发生变化。',
-              style: const TextStyle(color: PlannerColors.muted, fontSize: 12),
-            ),
-        ],
-        if (adjustment.notes.isNotEmpty) ...[
-          const SizedBox(height: 12),
-          for (final note in adjustment.notes)
-            Padding(
-              padding: const EdgeInsets.only(top: 6),
-              child: Text(
-                note,
-                style: const TextStyle(color: PlannerColors.muted, fontSize: 12),
-              ),
-            ),
-        ],
-      ],
-    );
   }
 }

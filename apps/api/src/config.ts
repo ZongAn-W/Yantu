@@ -1,6 +1,10 @@
 import "dotenv/config";
 
 const required = (name: string, fallback = "") => process.env[name]?.trim() || fallback;
+const positiveInt = (name: string, fallback: number) => {
+  const value = Number(required(name, String(fallback)));
+  return Number.isInteger(value) && value > 0 ? value : fallback;
+};
 export type AIReasoningEffort = "none" | "low" | "high" | "max";
 
 function reasoningEffort(name: string, fallback: AIReasoningEffort): AIReasoningEffort {
@@ -25,6 +29,9 @@ export const config = {
   aiPlanningReasoningEffort: reasoningEffort("AI_PLANNING_REASONING_EFFORT", "high"),
   researchProvider: required("RESEARCH_SEARCH_PROVIDER", process.env.NODE_ENV === "test" ? "disabled" : "bing"),
   researchApiKey: required("RESEARCH_SEARCH_API_KEY"),
+  /** 本地官方资料库：抓取过的页面原文 / 搜索命中的复用时长，过期才重新联网。 */
+  researchLibraryDocumentDays: positiveInt("RESEARCH_LIBRARY_DOCUMENT_DAYS", 30),
+  researchLibrarySearchDays: positiveInt("RESEARCH_LIBRARY_SEARCH_DAYS", 7),
   smtpHost: required("SMTP_HOST", "smtp.qq.com"),
   smtpPort: Number(required("SMTP_PORT", "465")),
   smtpUser: required("SMTP_USER"),

@@ -121,6 +121,72 @@ async function searchOfficial(search: string): Promise<string[]> {
   return [...new Set(urls.filter(officialSource))];
 }
 
+/** 本地资料库的默认复用时长：官方页面原文与搜索结果都按天过期，过期才重新联网。 */
+export const libDocumentAgeMs = () => config.researchLibraryDocumentDays * 86_400_000;
+export const libSearchAgeMs = () => config.researchLibrarySearchDays * 86_400_000;
+/** 本地资料库清理：超过这个天数没有被任何核实流程使用的页面/搜索记录删除。 */
+const LIBRARY_PRUNE_DAYS = 180;
+const LIBRARY_DOCUMENT_TEXT_LIMIT = 150_000;
+const LIBRARY_DOCUMENT_TITLE_LIMIT = 1_000;
+
+/**
+ * 从本地资料库读取抓取过的官方页面；超过复用时长或从未抓取过才联网。
+ * 返回的 `fetched_at` 保持首次抓取时间，供来源列表展示。
+ */
+export async function libraryDocument(url: string, options: { maxAgeMs?: number; fetch?: (url: string) => Promise<ResearchDocument> } = {}): Promise<ResearchDocument> {
+  const maxAgeMs = options.maxAgeMs ?? libDocumentAgeMs();
+  const cached = await query<{ title: string; text: string; links: ResearchDocument["links"]; fetched_at: Date | string }>(
+    "select title,text,links,fetched_at from exam_research_documents where url=$1 and fetched_at > now() - ($2::bigint * interval '1 millisecond')",
+    [url, maxAgeMs],
+  );
+  const row = cached.rows[0];
+  if (row) {
+    await query("update exam_research_documents set last_used_at=now() where url=$1", [url]);
+    return { url, title: row.title, text: row.text, links: Array.isArray(row.links) ? row.links : [],
+      fetched_at: new Date(row.fetched_at).toISOString() };
+  }
+  const document = await (options.fetch ?? readOfficialDocument)(url);
+  await saveLibraryDocument(document);
+  return document;
+}
+
+/** 把官方页面原文写入本地资料库，后续核实流程可以直接复用。 */
+export async function saveLibraryDocument(document: ResearchDocument) {
+  await query(
+    `insert into exam_research_documents(url,title,text,links,fetched_at,last_used_at) values($1,$2,$3,$4,$5,now())
+     on conflict(url) do update set title=excluded.title, text=excluded.text, links=excluded.links, fetched_at=excluded.fetched_at, last_used_at=now()`,
+    [document.url, document.title.slice(0, LIBRARY_DOCUMENT_TITLE_LIMIT), document.text.slice(0, LIBRARY_DOCUMENT_TEXT_LIMIT),
+      JSON.stringify(document.links ?? []), document.fetched_at],
+  );
+}
+
+/** 从本地资料库读取搜索命中过的官方链接；过期或从未搜索过才联网搜索。 */
+export async function librarySearch(search: string, options: { maxAgeMs?: number; fetch?: (query: string) => Promise<string[]> } = {}): Promise<string[]> {
+  const maxAgeMs = options.maxAgeMs ?? libSearchAgeMs();
+  const cached = await query<{ urls: string[] }>(
+    "select urls from exam_research_searches where search_query=$1 and searched_at > now() - ($2::bigint * interval '1 millisecond')",
+    [search, maxAgeMs],
+  );
+  const row = cached.rows[0];
+  if (row) {
+    await query("update exam_research_searches set last_used_at=now() where search_query=$1", [search]);
+    return (Array.isArray(row.urls) ? row.urls : []).filter(url => typeof url === "string");
+  }
+  const urls = await (options.fetch ?? searchOfficial)(search);
+  await query(
+    `insert into exam_research_searches(search_query,urls,searched_at,last_used_at) values($1,$2,now(),now())
+     on conflict(search_query) do update set urls=excluded.urls, searched_at=excluded.searched_at, last_used_at=now()`,
+    [search, JSON.stringify(urls)],
+  );
+  return urls;
+}
+
+/** 定期清理长时间未使用的资料库记录，避免缓存无限增长。 */
+async function pruneResearchLibrary() {
+  await query("delete from exam_research_documents where last_used_at < now() - ($1::int * interval '1 day')", [LIBRARY_PRUNE_DAYS]);
+  await query("delete from exam_research_searches where last_used_at < now() - ($1::int * interval '1 day')", [LIBRARY_PRUNE_DAYS]);
+}
+
 function queriesFor(target: Target): string[] {
   const queries: string[] = [];
   if (target.school && target.program) queries.push(`${target.school} ${target.college} ${target.program} ${target.degree} ${target.admission_year ?? ""} 硕士招生专业目录 考试科目 site:edu.cn`);
@@ -210,8 +276,9 @@ export async function researchExam(target: Target, dependencies: ResearchDepende
 }
 
 const productionDependencies: ResearchDependencies = {
-  search: searchOfficial,
-  document: readOfficialDocument,
+  // 搜索命中与页面原文都先查本地资料库，过期或缺失才联网。
+  search: search => librarySearch(search),
+  document: url => libraryDocument(url),
   discover: async target => {
     const roots = target.subject_codes.includes("408") ? ["https://yz.chsi.com.cn/kyzx/kydg/"] : [];
     if (!target.school || !config.aiApiKey) return roots;
@@ -230,11 +297,42 @@ const productionDependencies: ResearchDependencies = {
   },
 };
 
+/** 用户点「重新核实官方资料」时强制联网：忽略本地资料库的搜索/页面复用。 */
+const networkDependencies: ResearchDependencies = {
+  ...productionDependencies,
+  search: searchOfficial,
+  document: readOfficialDocument,
+};
+
+/** 强制联网刷新的目标（进程内标记，只用于同一次「重新核实」后的下一次核实任务）。 */
+const forcedRefresh = new Set<string>();
+
 const jobs = new Map<string, Promise<void>>();
 export async function expireExamResearch(session: OnboardingSession) {
   if (session.research.key && session.research.status !== "pending") {
     await query("update exam_research_cache set expires_at=now() where cache_key=$1", [session.research.key]);
+    // 主动刷新必须重新联网核实，不能被本地资料库挡住。
+    forcedRefresh.add(session.research.key);
   }
+}
+
+/** 缓存结果的有效期：官方核对不需要每次访谈都重查，过期后才重新核实。 */
+export function researchCacheSeconds(status: ExamResearch["status"]): number {
+  switch (status) {
+    case "verified": return 30 * 86_400;
+    case "reference": return 7 * 86_400;
+    case "not_found": return 86_400;
+    case "error": return 600;
+    default: return 3_600;
+  }
+}
+
+/** 命中本地缓存时在消息里标明来源与核对日期，让用户知道这次没有重新联网。 */
+export function libraryNote(research: ExamResearch): ExamResearch {
+  if (!["verified", "reference", "not_found"].includes(research.status) || research.message.includes("本地资料库")) return research;
+  const checked = research.checked_at ? new Date(research.checked_at) : null;
+  const day = checked && Number.isFinite(checked.getTime()) ? checked.toLocaleDateString("sv-SE", { timeZone: "Asia/Shanghai" }) : "";
+  return { ...research, message: `${research.message}${day ? `（本地资料库，更新于 ${day}）` : "（本地资料库）"}` };
 }
 
 export async function attachExamResearch(session: OnboardingSession, dependencies: ResearchDependencies = productionDependencies): Promise<OnboardingSession> {
@@ -245,16 +343,20 @@ export async function attachExamResearch(session: OnboardingSession, dependencie
     return { ...next, research: ResearchSchema.parse({ message: config.researchProvider === "disabled" ? "官方资料查询未启用" : "" }) };
   }
   const key = createHash("sha256").update(JSON.stringify(target)).digest("hex");
+  const refresh = forcedRefresh.delete(key);
   const cached = await query<{ payload: ExamResearch }>("select payload from exam_research_cache where cache_key=$1 and expires_at>now()", [key]);
-  if (cached.rows[0]) return { ...next, research: ResearchSchema.parse(cached.rows[0].payload) };
+  if (cached.rows[0]) return { ...next, research: libraryNote(ResearchSchema.parse(cached.rows[0].payload)) };
   const pending = ResearchSchema.parse({ key, status: "pending", message: "正在核对官方考试资料…" });
   const claimed = await query("insert into exam_research_cache(cache_key,payload,expires_at) values($1,$2,now()+interval '5 minutes') on conflict(cache_key) do update set payload=excluded.payload,expires_at=excluded.expires_at,updated_at=now() where exam_research_cache.expires_at<=now() returning cache_key", [key, JSON.stringify(pending)]);
   if (claimed.rowCount && !jobs.has(key)) {
+    // 只有生产环境的依赖才需要强制联网；测试注入的依赖保持不变。
+    const activeDependencies = refresh && dependencies === productionDependencies ? networkDependencies : dependencies;
     const job = Promise.resolve().then(async () => {
       let result: ExamResearch;
-      try { result = { ...await researchExam(target, dependencies), key }; }
+      try { result = { ...await researchExam(target, activeDependencies), key }; }
       catch { result = ResearchSchema.parse({ key, status: "error", checked_at: new Date().toISOString(), message: "官方资料查询暂时失败，稍后可重试；访谈进度已保留。" }); }
-      await query("update exam_research_cache set payload=$2,expires_at=now()+($3::int*interval '1 second'),updated_at=now() where cache_key=$1", [key, JSON.stringify(result), result.status === "verified" ? 86400 : result.status === "error" ? 60 : 3600]);
+      await query("update exam_research_cache set payload=$2,expires_at=now()+($3::int*interval '1 second'),updated_at=now() where cache_key=$1", [key, JSON.stringify(result), researchCacheSeconds(result.status)]);
+      await pruneResearchLibrary().catch(() => { /* 清理失败不影响核实结果 */ });
     }).catch(() => { /* The pending claim expires; a later request can safely retry. */ }).finally(() => jobs.delete(key));
     jobs.set(key, job);
   }

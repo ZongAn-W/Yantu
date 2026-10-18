@@ -8,7 +8,6 @@ import '../../../shared/models/planner_models.dart';
 import '../application/planner_session.dart';
 import '../domain/planner_format.dart';
 import '../domain/planning_feedback.dart';
-import 'planner_dialogs.dart';
 
 class PlanningFeedbackView extends ConsumerWidget {
   const PlanningFeedbackView({
@@ -60,9 +59,9 @@ class PlanningFeedbackView extends ConsumerWidget {
                 label: const Text('重新评估学习策略'),
               ),
               TextButton.icon(
-                onPressed: editable ? () => ReplanDialog.show(context) : null,
-                icon: const Icon(Icons.preview_outlined, size: 18),
-                label: const Text('预览调整安排'),
+                onPressed: editable ? () => context.go('/adjust') : null,
+                icon: const Icon(Icons.tune_outlined, size: 18),
+                label: const Text('到调整页调整后续计划'),
               ),
             ],
           ),

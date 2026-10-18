@@ -1,5 +1,3 @@
-import 'dart:convert';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,18 +7,21 @@ import '../../../core/widgets.dart';
 import '../../../shared/models/planner_models.dart';
 import '../../planner/application/planner_session.dart';
 import '../../planner/domain/capacity.dart' as capacity;
-import '../../planner/domain/plan_cycle.dart';
 import '../../planner/domain/planner_format.dart';
 import '../../planner/domain/progress_metrics.dart';
-import '../../planner/presentation/constraint_dialog.dart';
+import '../../planner/domain/scheduler/planner_scheduler.dart' show newUuid;
 import '../../planner/presentation/planner_page_state.dart';
 import '../../settings/presentation/capacity_overrides_dialog.dart';
+import '../data/plan_adjust_api.dart';
+import 'plan_adjust_dialog.dart';
 
 /// Web `/adjust` — 把影响后续排程的四类信息放在一页：人物画像、事项完成度、
-/// 近期可用时间与当前规划周期，并提供一次「一键调整后续计划」的预览与确认。
+/// 近期可用时间与当前规划周期，并提供一次「一键调整后续计划」的 AI 预览与确认。
 ///
-/// 重排本身由 [reschedulePlan] 计算：只释放并重新分配未来可调整的每日安排，
-/// 历史、已完成、固定和有实际用时的记录受保护，事项范围与真实截止日期不改写。
+/// 调整由服务端 AI 基于画像、学习进度、近期学习时间与当前计划生成方案：
+/// 先在预览对话框展示目标所需时长、周期 / 强度 / 工作量变化与日程影响，
+/// 用户确认后才由服务端原子写入并推进 revision。历史、已完成、固定和有实际
+/// 用时的记录由服务端保护，事项与真实截止日期不会被删除或改写。
 class AdjustPlanPage extends ConsumerStatefulWidget {
   const AdjustPlanPage({super.key});
 
@@ -31,52 +32,60 @@ class AdjustPlanPage extends ConsumerStatefulWidget {
 class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
   bool _applying = false;
 
-  /// 一键重排：先在对话框里预览释放、重新排入、未安排量与真实截止影响，
-  /// 用户确认后才写入；取消不会修改任何安排。
-  Future<void> _applyReschedule() async {
+  /// 一键调整：让服务端 AI 生成方案，预览确认后原子应用并拉取新计划。
+  ///
+  /// 本机存在未同步修改时不允许发起，避免服务端基于旧 revision 调整；
+  /// 取消预览不会写入任何数据，失败时保留原计划。
+  Future<void> _applyAdjustment() async {
     if (_applying) return;
-    final data = ref.read(plannerDataProvider).data;
+    final snapshot = ref.read(plannerDataProvider);
+    final data = snapshot.data;
     if (data == null) return;
+    if (snapshot.pending) {
+      showPlannerMessage(
+        context,
+        '本机修改尚未同步，请等待同步完成后再调整',
+        tone: PlannerNoticeTone.warning,
+      );
+      return;
+    }
+    final expectedRevision = snapshot.revision;
+    final api = ref.read(planAdjustApiProvider);
     setState(() => _applying = true);
     try {
-      final today = shanghaiToday();
-      final start = data.profile.resolvedPlanStart(today);
-      final end = data.profile.resolvedPlanEnd(today);
-      final adjustment = reschedulePlan(
-        data,
-        today: today,
-        start: start,
-        end: end,
+      final preview = await api.create(
+        expectedRevision: expectedRevision,
+        requestId: newUuid(),
       );
       if (!mounted) return;
-      final confirmed = await ScheduleChangeDialog.show(
-        context,
-        before: data,
-        adjustment: adjustment,
-        start: start,
-        end: end,
-      );
+      final confirmed = await PlanAdjustDialog.show(context, preview);
+      if (!mounted || !confirmed) return;
+      // 预览期间云端计划可能已被其他端修改；revision 以发起预览时的快照为准，
+      // 服务端校验不一致会返回 409 并要求重新预览。
+      await api.confirm(preview.id, expectedRevision: expectedRevision);
       if (!mounted) return;
-      if (!confirmed) return;
-      // 预览期间计划可能已变化：用当前数据重新校验，避免旧快照覆盖新进度。
-      final expected = jsonEncode(data.toJson());
-      await ref.read(plannerSessionProvider).edit((current) {
-        if (jsonEncode(current.toJson()) != expected) {
-          throw StateError('计划已更新，请重新预览后再调整');
-        }
-        return adjustment.data;
-      });
+      try {
+        await ref.read(plannerSessionProvider).sync();
+      } catch (error) {
+        if (!mounted) return;
+        showPlannerMessage(
+          context,
+          '调整已提交，正在同步新计划：${_errorMessage(error)}',
+          tone: PlannerNoticeTone.warning,
+        );
+        return;
+      }
       if (!mounted) return;
       showPlannerMessage(
         context,
-        '已按最新画像、完成度与可用时间重排后续计划。',
+        'AI 已按目标、学习进度与近期学习时间重排后续计划。',
         tone: PlannerNoticeTone.success,
       );
     } catch (error) {
       if (!mounted) return;
       showPlannerMessage(
         context,
-        error is StateError ? error.message : '$error',
+        _errorMessage(error),
         tone: PlannerNoticeTone.error,
       );
     } finally {
@@ -84,14 +93,21 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
     }
   }
 
-  /// 打开容量编辑器；返回 true 表示容量已保存，提示用户回到本页重排。
+  /// 服务端 409 / 校验失败已经带有可读中文消息，直接展示；其他异常退回字符串。
+  String _errorMessage(Object error) {
+    if (error is StateError) return error.message;
+    final message = '$error';
+    return message.isEmpty ? '调整失败，请稍后重试' : message;
+  }
+
+  /// 打开容量编辑器；返回 true 表示容量已保存，提示用户回到本页用 AI 调整。
   Future<void> _editCapacity() async {
     final changed = await CapacityOverridesDialog.show(context);
     if (!mounted) return;
     if (!changed) return;
     showPlannerMessage(
       context,
-      '可用时间已更新，可继续用「一键调整后续计划」重排未来安排。',
+      '可用时间已更新，可继续用「一键调整后续计划」让 AI 调整未来安排。',
       tone: PlannerNoticeTone.success,
     );
   }
@@ -109,7 +125,7 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
         );
         return PlannerPage(
           title: '调整学习计划',
-          subtitle: '画像、进度、时间变化后，一键重排后续安排。',
+          subtitle: '画像、进度、时间有变化后，让 AI 审查并调整后续安排。',
           children: [
             LayoutBuilder(
               builder: (context, constraints) {
@@ -444,7 +460,7 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
     return PlannerPanel(
       title: '一键调整',
       trailing: Text(
-        ended ? '本期规划周期已结束' : '按画像、完成度、近期容量重排未来安排',
+        ended ? '本期规划周期已结束' : 'AI 审查目标所需时长与当前计划是否匹配',
         style: const TextStyle(color: PlannerColors.muted, fontSize: 12),
       ),
       child: Column(
@@ -477,9 +493,9 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
             const SizedBox(height: 8),
           ],
           const Text(
-            '一键调整只会重排未来可调整的每日安排：历史日期、已完成安排、固定事件和'
-            '有实际用时的记录保持不变；事项范围与真实截止日期不会被改写。'
-            '容量不足时未排入的部分会保留并说明原因。',
+            'AI 会审查目标所需时长与当前计划是否匹配，必要时调整周期、强度和工作量，'
+            '可能需要 1–2 分钟。历史日期、已完成安排、固定事件和有实际用时的记录'
+            '保持不变；事项范围与真实截止日期不会被改写。',
             style: TextStyle(color: PlannerColors.muted, fontSize: 12),
           ),
           const SizedBox(height: 12),
@@ -487,11 +503,11 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
             height: 48,
             child: FilledButton.icon(
               key: const Key('adjust-apply'),
-              onPressed: enabled ? _applyReschedule : null,
+              onPressed: enabled ? _applyAdjustment : null,
               icon: Icon(
                 _applying ? Icons.hourglass_top : Icons.auto_fix_high,
               ),
-              label: Text(_applying ? '正在重排…' : '一键调整后续计划'),
+              label: Text(_applying ? 'AI 正在调整…' : '一键调整后续计划'),
             ),
           ),
         ],
