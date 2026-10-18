@@ -9,6 +9,7 @@ import '../auth/application/auth_controller.dart';
 import '../planner/application/planner_session.dart';
 import '../planner/application/study_timer.dart';
 import '../planner/domain/planner_format.dart';
+import '../planner/domain/study_day.dart' show timeLogRelationLabels;
 
 const syncLabels = <SyncStatus, String>{
   SyncStatus.demo: '本地计划',
@@ -146,13 +147,21 @@ class _ActiveTimerStrip extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final timer = ref.watch(studyTimerProvider);
     final taskId = timer.activeTaskId;
-    if (taskId == null) return const SizedBox.shrink();
-    final task = ref
-        .watch(plannerDataProvider)
-        .data
-        ?.tasks
-        .where((task) => task.id == taskId)
-        .firstOrNull;
+    final adHocId = timer.activeAdHocId;
+    if (taskId == null && adHocId == null) return const SizedBox.shrink();
+    final data = ref.watch(plannerDataProvider).data;
+    final task = taskId == null
+        ? null
+        : data?.tasks.where((task) => task.id == taskId).firstOrNull;
+    final adHoc = adHocId == null
+        ? null
+        : data?.adHocLearnings
+              .where((learning) => learning.id == adHocId)
+              .firstOrNull;
+    final relation = timer.activeRelation;
+    final relationLabel = relation == null
+        ? ''
+        : '${timeLogRelationLabels[relation] ?? ''} · ';
     return ColoredBox(
       color: PlannerColors.surface,
       child: Padding(
@@ -167,7 +176,7 @@ class _ActiveTimerStrip extends ConsumerWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                task?.title ?? '正在计时',
+                '$relationLabel${task?.title ?? adHoc?.title ?? '正在计时'}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 12),
@@ -286,6 +295,9 @@ class _Sidebar extends ConsumerWidget {
                         ],
                       ),
                     ),
+                    // The desktop layout has no app bar, so the account and
+                    // sign-out dialog must also be reachable from the sidebar.
+                    const _AccountAction(),
                   ],
                 ),
               ),
@@ -576,7 +588,13 @@ class AccountDialog extends ConsumerWidget {
               : () async {
                   final navigator = Navigator.of(context);
                   await ref.read(authControllerProvider.notifier).signOut();
-                  if (navigator.mounted) navigator.pop();
+                  if (!context.mounted) return;
+                  // Keep the dialog open when the local timer checkpoint could not
+                  // be saved: the account stays signed in and the error is shown.
+                  final latest = ref.read(authControllerProvider);
+                  if (latest.user == null && latest.error == null) {
+                    navigator.pop();
+                  }
                 },
           icon: const Icon(Icons.logout, size: 18),
           style: FilledButton.styleFrom(backgroundColor: PlannerColors.danger),

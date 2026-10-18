@@ -51,7 +51,9 @@ export const PlanPlanningSchema = z.object({
   version: z.literal(1),
   prompt_version: z.string().min(1).max(100),
   rules_version: z.string().min(1).max(100),
-  detail_days: z.number().int().min(1).max(90).default(14),
+  /** 规划范围：full 一次覆盖整个有限周期；rolling 为旧版默认近期细化窗口。 */
+  mode: z.enum(["rolling", "full"]).optional(),
+  detail_days: z.number().int().min(1).max(1095).default(14),
   rolling: z.boolean(),
   route: z.array(z.object({
     id: identifier,
@@ -71,6 +73,8 @@ export const PlanPlanningSchema = z.object({
   detailed_until: date.optional(),
   forecast: z.record(z.unknown()).nullable().optional(),
   needs_review: z.boolean().optional(),
+  /** 用户确认的容量采用值、来源与说明；完整计划基线的一部分。 */
+  capacity: z.record(z.unknown()).nullable().optional(),
 });
 
 export type ItemPlanning = z.infer<typeof ItemPlanningSchema>;

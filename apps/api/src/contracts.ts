@@ -35,6 +35,41 @@ export const EMPTY_WEEK = { "0": 0, "1": 0, "2": 0, "3": 0, "4": 0, "5": 0, "6":
 
 export const WeeklyMinutesSchema = z.record(z.string(), z.number().int().min(0).max(1440));
 
+/** 容量口径：旧数据为扣除机动的总预算；新数据为净学习预算。 */
+export const CapacityBasisSchema = z.enum(["gross_buffer", "net"]);
+export type CapacityBasis = z.infer<typeof CapacityBasisSchema>;
+
+const weeklyTotal = z.number().int().min(0).max(10080);
+const weekdayMinutes = z.number().int().min(0).max(1440);
+const weekdayKey = z.enum(["0", "1", "2", "3", "4", "5", "6"]);
+
+/**
+ * 特定自然周的容量覆盖。只给周总量时由程序按默认模板生成逐日建议（估算，不是用户逐日确认）。
+ * 周标识必须是周一日期（上海时区），由业务层 prepareSchedule 校验键值。
+ */
+export const WeekCapacityOverrideSchema = z.object({
+  total_minutes: weeklyTotal.optional(),
+  days: z.record(weekdayKey, weekdayMinutes).optional(),
+});
+export type WeekCapacityOverride = z.infer<typeof WeekCapacityOverrideSchema>;
+export const WeekCapacityOverridesSchema = z.record(z.string(), WeekCapacityOverrideSchema);
+/** 特定日期的净容量覆盖：显式 0 表示休息，删除键表示恢复上层规则。 */
+export const DateCapacityOverridesSchema = z.record(z.string(), weekdayMinutes);
+
+/**
+ * Capacity fields are optional and nullable: old DB rows/profiles have no capacity columns yet,
+ * and a NULL column means "not set" instead of invalid. Explicit null/{} clears where the
+ * writer supports it, matching the sync projection semantics.
+ */
+export const capacityFields = {
+  capacity_basis: CapacityBasisSchema.nullable().optional(),
+  weekly_baseline_minutes: weeklyTotal.nullable().optional(),
+  weekly_range_min_minutes: weeklyTotal.nullable().optional(),
+  weekly_range_max_minutes: weeklyTotal.nullable().optional(),
+  week_capacity_overrides: WeekCapacityOverridesSchema.nullable().optional(),
+  date_capacity_overrides: DateCapacityOverridesSchema.nullable().optional(),
+};
+
 /**
  * 规范的学习目标与规划设置。
  *
@@ -54,6 +89,7 @@ export const ProfileSchema = z.object({
   current_progress: z.string().max(4000).default(""),
   weekly_minutes: WeeklyMinutesSchema.default({ ...EMPTY_WEEK }),
   constraints_text: z.string().max(4000).default(""),
+  ...capacityFields,
 });
 
 /** 部分更新：字段缺失表示“不修改”，target_date 传 null 表示“清空”。 */

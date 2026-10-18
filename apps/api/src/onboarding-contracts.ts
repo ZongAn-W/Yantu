@@ -1,5 +1,8 @@
 import { z } from "zod";
-import { CalendarDateSchema, CourseDraftSchema, ItemDraftSchema, NullableDateSchema, ProfileSchema } from "./contracts.js";
+import {
+  CalendarDateSchema, CapacityBasisSchema, CourseDraftSchema, DateCapacityOverridesSchema, ItemDraftSchema, NullableDateSchema,
+  ProfileSchema, WeekCapacityOverridesSchema,
+} from "./contracts.js";
 import { LearningContextSchema, ResearchSchema, LEARNER_FIELDS } from "./learning-context.js";
 import { PlanPlanningSchema } from "./planning-contracts.js";
 
@@ -128,6 +131,28 @@ export const SessionSchema = z.object({
 });
 export type OnboardingSession = z.infer<typeof SessionSchema>;
 
+/**
+ * Schedule-stage action fields. Old clients keep sending `weekly_minutes` and `detail_days`;
+ * new clients may send only a capacity baseline/range plus explicit week/date overrides.
+ * `mode` is session/action-controlled and never read from the model.
+ */
+const scheduleFields = {
+  start_date: CalendarDateSchema,
+  /** 本次规划周期结束日期；目标日期可以没有，规划周期必须有。 */
+  end_date: CalendarDateSchema,
+  /** 可选目标日期，null、"" 或省略都表示暂不设置。 */
+  target_date: NullableDateSchema.optional(),
+  weekly_minutes: RecommendedWeeklyMinutesSchema.optional(),
+  mode: z.enum(["full", "rolling"]).optional(),
+  detail_days: z.number().int().min(1).max(1095).optional(),
+  capacity_basis: CapacityBasisSchema.optional(),
+  weekly_baseline_minutes: z.number().int().min(0).max(10080).optional(),
+  weekly_range_min_minutes: z.number().int().min(0).max(10080).optional(),
+  weekly_range_max_minutes: z.number().int().min(0).max(10080).optional(),
+  week_capacity_overrides: WeekCapacityOverridesSchema.optional(),
+  date_capacity_overrides: DateCapacityOverridesSchema.optional(),
+};
+
 export const ActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("resume_interview") }),
   z.object({ type: z.literal("restart_interview") }),
@@ -139,12 +164,8 @@ export const ActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("generate_courses") }),
   z.object({ type: z.literal("save_courses"), courses: CoursesSchema }),
   z.object({ type: z.literal("confirm_courses"), courses: CoursesSchema }),
-  z.object({ type: z.literal("set_constraints"), start_date: CalendarDateSchema, end_date: CalendarDateSchema,
-    target_date: NullableDateSchema.optional(), weekly_minutes: RecommendedWeeklyMinutesSchema.refine(value => Object.keys(value).length === 7, "请填写完整一周时间"),
-    detail_days: z.number().int().min(1).max(90).default(14) }),
-  z.object({ type: z.literal("preview_schedule"), start_date: CalendarDateSchema, end_date: CalendarDateSchema,
-    target_date: NullableDateSchema.optional(), weekly_minutes: RecommendedWeeklyMinutesSchema.refine(value => Object.keys(value).length === 7, "请填写完整一周时间"),
-    detail_days: z.number().int().min(1).max(90).default(14) }),
+  z.object({ type: z.literal("set_constraints"), ...scheduleFields }),
+  z.object({ type: z.literal("preview_schedule"), ...scheduleFields }),
   z.object({ type: z.literal("revise_courses"), courses: CoursesSchema, instruction: z.string().trim().min(1).max(2000) }),
   z.object({ type: z.literal("save_items"), items: ItemsSchema }),
   z.object({ type: z.literal("confirm_items"), items: ItemsSchema }),
@@ -152,16 +173,13 @@ export const ActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("back"), target: z.enum(["interview", "courses", "constraints", "items"]) }),
   z.object({
     type: z.literal("finish"),
-    start_date: CalendarDateSchema,
-    /** 本次规划周期结束日期；目标日期可以没有，规划周期必须有。 */
-    end_date: CalendarDateSchema,
-    /** 可选目标日期，null、"" 或省略都表示暂不设置。 */
-    target_date: NullableDateSchema.optional(),
-    weekly_minutes: z.record(z.enum(["0", "1", "2", "3", "4", "5", "6"]), z.number().int().min(0).max(480)),
+    ...scheduleFields,
     preview_token: z.string().optional(),
   }),
 ]);
 export type OnboardingAction = z.infer<typeof ActionSchema>;
+/** Shared shape of the three schedule stages; validation beyond types lives in prepareSchedule. */
+export type ScheduleAction = Extract<OnboardingAction, { type: "set_constraints" | "preview_schedule" | "finish" }>;
 
 export function newSession(): OnboardingSession {
   return {

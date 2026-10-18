@@ -45,7 +45,7 @@ class _TaskTimePiePanelState extends ConsumerState<TaskTimePiePanel> {
     final taskIds = <String>{
       ...tasks.keys,
       for (final log in widget.data.logs)
-        if (log.date == widget.date) log.taskId,
+        if (log.date == widget.date && log.taskId != null) log.taskId!,
       ?timer.activeTaskId,
     };
     _assignTaskColors(taskIds, _colorsByTaskId);

@@ -1,0 +1,1629 @@
+{
+  "version": 1,
+  "generated_note": "Reference values for CONTEXT.md §2.2; TS and Dart resolvers must match exactly.",
+  "defaults": {
+    "daily_limit_minutes": 480,
+    "buffer_minutes": 30,
+    "granularity_minutes": 30
+  },
+  "week_order_monday_first": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    0
+  ],
+  "cases": [
+    {
+      "name": "legacy-template-gross",
+      "profile": {
+        "daily_limit_minutes": 480,
+        "buffer_minutes": 30,
+        "granularity_minutes": 30,
+        "weekly_minutes": {
+          "0": 0,
+          "1": 60,
+          "2": 60,
+          "3": 60,
+          "4": 60,
+          "5": 90,
+          "6": 90
+        }
+      },
+      "days": [
+        {
+          "date": "2026-10-19",
+          "monday": "2026-10-19",
+          "raw_minutes": 60,
+          "minutes": 30,
+          "source": "template",
+          "estimated": false,
+          "week_budget_minutes": null
+        },
+        {
+          "date": "2026-10-23",
+          "monday": "2026-10-19",
+          "raw_minutes": 90,
+          "minutes": 60,
+          "source": "template",
+          "estimated": false,
+          "week_budget_minutes": null
+        },
+        {
+          "date": "2026-10-24",
+          "monday": "2026-10-19",
+          "raw_minutes": 90,
+          "minutes": 60,
+          "source": "template",
+          "estimated": false,
+          "week_budget_minutes": null
+        },
+        {
+          "date": "2026-10-25",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "template",
+          "estimated": false,
+          "week_budget_minutes": null
+        }
+      ],
+      "weeks": []
+    },
+    {
+      "name": "net-template",
+      "profile": {
+        "daily_limit_minutes": 480,
+        "buffer_minutes": 30,
+        "granularity_minutes": 30,
+        "capacity_basis": "net",
+        "weekly_minutes": {
+          "0": 0,
+          "1": 60,
+          "2": 60,
+          "3": 60,
+          "4": 60,
+          "5": 90,
+          "6": 90
+        }
+      },
+      "days": [
+        {
+          "date": "2026-10-19",
+          "monday": "2026-10-19",
+          "raw_minutes": 60,
+          "minutes": 60,
+          "source": "template",
+          "estimated": false,
+          "week_budget_minutes": null
+        },
+        {
+          "date": "2026-10-23",
+          "monday": "2026-10-19",
+          "raw_minutes": 90,
+          "minutes": 90,
+          "source": "template",
+          "estimated": false,
+          "week_budget_minutes": null
+        },
+        {
+          "date": "2026-10-25",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "template",
+          "estimated": false,
+          "week_budget_minutes": null
+        }
+      ],
+      "weeks": []
+    },
+    {
+      "name": "legacy-default",
+      "profile": {
+        "daily_limit_minutes": 480,
+        "buffer_minutes": 30,
+        "granularity_minutes": 30
+      },
+      "days": [
+        {
+          "date": "2026-10-19",
+          "monday": "2026-10-19",
+          "raw_minutes": 480,
+          "minutes": 450,
+          "source": "legacy_default",
+          "estimated": false,
+          "week_budget_minutes": null
+        },
+        {
+          "date": "2026-10-21",
+          "monday": "2026-10-19",
+          "raw_minutes": 480,
+          "minutes": 450,
+          "source": "legacy_default",
+          "estimated": false,
+          "week_budget_minutes": null
+        }
+      ],
+      "weeks": []
+    },
+    {
+      "name": "date-overrides-net",
+      "profile": {
+        "daily_limit_minutes": 480,
+        "buffer_minutes": 30,
+        "granularity_minutes": 30,
+        "capacity_basis": "net",
+        "weekly_minutes": {
+          "0": 60,
+          "1": 60,
+          "2": 60,
+          "3": 60,
+          "4": 60,
+          "5": 60,
+          "6": 60
+        },
+        "date_capacity_overrides": {
+          "2026-10-19": 0,
+          "2026-10-20": 120
+        }
+      },
+      "days": [
+        {
+          "date": "2026-10-19",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "date_override",
+          "estimated": false,
+          "week_budget_minutes": null
+        },
+        {
+          "date": "2026-10-20",
+          "monday": "2026-10-19",
+          "raw_minutes": 120,
+          "minutes": 120,
+          "source": "date_override",
+          "estimated": false,
+          "week_budget_minutes": null
+        },
+        {
+          "date": "2026-10-21",
+          "monday": "2026-10-19",
+          "raw_minutes": 60,
+          "minutes": 60,
+          "source": "template",
+          "estimated": false,
+          "week_budget_minutes": null
+        }
+      ],
+      "weeks": []
+    },
+    {
+      "name": "date-override-gross-buffer",
+      "profile": {
+        "daily_limit_minutes": 480,
+        "buffer_minutes": 45,
+        "granularity_minutes": 30,
+        "weekly_minutes": {
+          "0": 60,
+          "1": 60,
+          "2": 60,
+          "3": 60,
+          "4": 60,
+          "5": 60,
+          "6": 60
+        },
+        "date_capacity_overrides": {
+          "2026-10-19": 120
+        }
+      },
+      "days": [
+        {
+          "date": "2026-10-19",
+          "monday": "2026-10-19",
+          "raw_minutes": 120,
+          "minutes": 75,
+          "source": "date_override",
+          "estimated": false,
+          "week_budget_minutes": null
+        },
+        {
+          "date": "2026-10-20",
+          "monday": "2026-10-19",
+          "raw_minutes": 60,
+          "minutes": 15,
+          "source": "template",
+          "estimated": false,
+          "week_budget_minutes": null
+        }
+      ],
+      "weeks": []
+    },
+    {
+      "name": "daily-limit-cap-net",
+      "profile": {
+        "daily_limit_minutes": 120,
+        "buffer_minutes": 30,
+        "granularity_minutes": 30,
+        "capacity_basis": "net",
+        "weekly_minutes": {
+          "0": 300,
+          "1": 300,
+          "2": 300,
+          "3": 300,
+          "4": 300,
+          "5": 300,
+          "6": 300
+        }
+      },
+      "days": [
+        {
+          "date": "2026-10-19",
+          "monday": "2026-10-19",
+          "raw_minutes": 300,
+          "minutes": 120,
+          "source": "template",
+          "estimated": false,
+          "week_budget_minutes": null
+        }
+      ],
+      "weeks": []
+    },
+    {
+      "name": "week-total-distribution",
+      "profile": {
+        "daily_limit_minutes": 480,
+        "buffer_minutes": 30,
+        "granularity_minutes": 30,
+        "capacity_basis": "net",
+        "weekly_minutes": {
+          "0": 60,
+          "1": 60,
+          "2": 60,
+          "3": 60,
+          "4": 60,
+          "5": 60,
+          "6": 60
+        },
+        "week_capacity_overrides": {
+          "2026-10-19": {
+            "total_minutes": 180
+          }
+        }
+      },
+      "days": [
+        {
+          "date": "2026-10-19",
+          "monday": "2026-10-19",
+          "raw_minutes": 26,
+          "minutes": 26,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 180
+        },
+        {
+          "date": "2026-10-20",
+          "monday": "2026-10-19",
+          "raw_minutes": 26,
+          "minutes": 26,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 180
+        },
+        {
+          "date": "2026-10-21",
+          "monday": "2026-10-19",
+          "raw_minutes": 26,
+          "minutes": 26,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 180
+        },
+        {
+          "date": "2026-10-22",
+          "monday": "2026-10-19",
+          "raw_minutes": 26,
+          "minutes": 26,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 180
+        },
+        {
+          "date": "2026-10-23",
+          "monday": "2026-10-19",
+          "raw_minutes": 26,
+          "minutes": 26,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 180
+        },
+        {
+          "date": "2026-10-24",
+          "monday": "2026-10-19",
+          "raw_minutes": 25,
+          "minutes": 25,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 180
+        },
+        {
+          "date": "2026-10-25",
+          "monday": "2026-10-19",
+          "raw_minutes": 25,
+          "minutes": 25,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 180
+        },
+        {
+          "date": "2026-10-26",
+          "monday": "2026-10-26",
+          "raw_minutes": 60,
+          "minutes": 60,
+          "source": "template",
+          "estimated": false,
+          "week_budget_minutes": null
+        }
+      ],
+      "weeks": [
+        {
+          "monday": "2026-10-19",
+          "budget_minutes": 180,
+          "resolved_minutes": 180,
+          "conflicts": []
+        }
+      ]
+    },
+    {
+      "name": "week-total-with-explicit-day",
+      "profile": {
+        "daily_limit_minutes": 480,
+        "buffer_minutes": 30,
+        "granularity_minutes": 30,
+        "capacity_basis": "net",
+        "weekly_minutes": {
+          "0": 60,
+          "1": 60,
+          "2": 60,
+          "3": 60,
+          "4": 60,
+          "5": 60,
+          "6": 60
+        },
+        "week_capacity_overrides": {
+          "2026-10-19": {
+            "total_minutes": 200,
+            "days": {
+              "1": 90
+            }
+          }
+        }
+      },
+      "days": [
+        {
+          "date": "2026-10-19",
+          "monday": "2026-10-19",
+          "raw_minutes": 90,
+          "minutes": 90,
+          "source": "week_day_override",
+          "estimated": false,
+          "week_budget_minutes": 200
+        },
+        {
+          "date": "2026-10-20",
+          "monday": "2026-10-19",
+          "raw_minutes": 19,
+          "minutes": 19,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 200
+        },
+        {
+          "date": "2026-10-21",
+          "monday": "2026-10-19",
+          "raw_minutes": 19,
+          "minutes": 19,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 200
+        },
+        {
+          "date": "2026-10-22",
+          "monday": "2026-10-19",
+          "raw_minutes": 18,
+          "minutes": 18,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 200
+        },
+        {
+          "date": "2026-10-23",
+          "monday": "2026-10-19",
+          "raw_minutes": 18,
+          "minutes": 18,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 200
+        },
+        {
+          "date": "2026-10-24",
+          "monday": "2026-10-19",
+          "raw_minutes": 18,
+          "minutes": 18,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 200
+        },
+        {
+          "date": "2026-10-25",
+          "monday": "2026-10-19",
+          "raw_minutes": 18,
+          "minutes": 18,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 200
+        }
+      ],
+      "weeks": [
+        {
+          "monday": "2026-10-19",
+          "budget_minutes": 200,
+          "resolved_minutes": 200,
+          "conflicts": []
+        }
+      ]
+    },
+    {
+      "name": "week-total-weighted-remainder",
+      "profile": {
+        "daily_limit_minutes": 480,
+        "buffer_minutes": 30,
+        "granularity_minutes": 30,
+        "capacity_basis": "net",
+        "weekly_minutes": {
+          "0": 0,
+          "1": 30,
+          "2": 60,
+          "3": 90,
+          "4": 120,
+          "5": 150,
+          "6": 180
+        },
+        "week_capacity_overrides": {
+          "2026-10-19": {
+            "total_minutes": 300
+          }
+        }
+      },
+      "days": [
+        {
+          "date": "2026-10-19",
+          "monday": "2026-10-19",
+          "raw_minutes": 14,
+          "minutes": 14,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-20",
+          "monday": "2026-10-19",
+          "raw_minutes": 29,
+          "minutes": 29,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-21",
+          "monday": "2026-10-19",
+          "raw_minutes": 43,
+          "minutes": 43,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-22",
+          "monday": "2026-10-19",
+          "raw_minutes": 57,
+          "minutes": 57,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-23",
+          "monday": "2026-10-19",
+          "raw_minutes": 71,
+          "minutes": 71,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-24",
+          "monday": "2026-10-19",
+          "raw_minutes": 86,
+          "minutes": 86,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-25",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 300
+        }
+      ],
+      "weeks": [
+        {
+          "monday": "2026-10-19",
+          "budget_minutes": 300,
+          "resolved_minutes": 300,
+          "conflicts": []
+        }
+      ]
+    },
+    {
+      "name": "week-days-only-partial",
+      "profile": {
+        "daily_limit_minutes": 480,
+        "buffer_minutes": 30,
+        "granularity_minutes": 30,
+        "capacity_basis": "net",
+        "weekly_minutes": {
+          "0": 60,
+          "1": 60,
+          "2": 60,
+          "3": 60,
+          "4": 60,
+          "5": 60,
+          "6": 60
+        },
+        "week_capacity_overrides": {
+          "2026-10-19": {
+            "days": {
+              "3": 90
+            }
+          }
+        }
+      },
+      "days": [
+        {
+          "date": "2026-10-19",
+          "monday": "2026-10-19",
+          "raw_minutes": 60,
+          "minutes": 60,
+          "source": "template",
+          "estimated": false,
+          "week_budget_minutes": null
+        },
+        {
+          "date": "2026-10-20",
+          "monday": "2026-10-19",
+          "raw_minutes": 60,
+          "minutes": 60,
+          "source": "template",
+          "estimated": false,
+          "week_budget_minutes": null
+        },
+        {
+          "date": "2026-10-21",
+          "monday": "2026-10-19",
+          "raw_minutes": 90,
+          "minutes": 90,
+          "source": "week_day_override",
+          "estimated": false,
+          "week_budget_minutes": null
+        },
+        {
+          "date": "2026-10-22",
+          "monday": "2026-10-19",
+          "raw_minutes": 60,
+          "minutes": 60,
+          "source": "template",
+          "estimated": false,
+          "week_budget_minutes": null
+        },
+        {
+          "date": "2026-10-23",
+          "monday": "2026-10-19",
+          "raw_minutes": 60,
+          "minutes": 60,
+          "source": "template",
+          "estimated": false,
+          "week_budget_minutes": null
+        },
+        {
+          "date": "2026-10-24",
+          "monday": "2026-10-19",
+          "raw_minutes": 60,
+          "minutes": 60,
+          "source": "template",
+          "estimated": false,
+          "week_budget_minutes": null
+        },
+        {
+          "date": "2026-10-25",
+          "monday": "2026-10-19",
+          "raw_minutes": 60,
+          "minutes": 60,
+          "source": "template",
+          "estimated": false,
+          "week_budget_minutes": null
+        }
+      ],
+      "weeks": []
+    },
+    {
+      "name": "baseline-distribution",
+      "profile": {
+        "daily_limit_minutes": 480,
+        "buffer_minutes": 30,
+        "granularity_minutes": 30,
+        "capacity_basis": "net",
+        "weekly_minutes": {
+          "0": 60,
+          "1": 60,
+          "2": 60,
+          "3": 60,
+          "4": 60,
+          "5": 60,
+          "6": 60
+        },
+        "weekly_baseline_minutes": 210,
+        "weekly_range_min_minutes": 180,
+        "weekly_range_max_minutes": 420
+      },
+      "days": [
+        {
+          "date": "2026-10-19",
+          "monday": "2026-10-19",
+          "raw_minutes": 30,
+          "minutes": 30,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 210
+        },
+        {
+          "date": "2026-10-20",
+          "monday": "2026-10-19",
+          "raw_minutes": 30,
+          "minutes": 30,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 210
+        },
+        {
+          "date": "2026-10-21",
+          "monday": "2026-10-19",
+          "raw_minutes": 30,
+          "minutes": 30,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 210
+        },
+        {
+          "date": "2026-10-22",
+          "monday": "2026-10-19",
+          "raw_minutes": 30,
+          "minutes": 30,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 210
+        },
+        {
+          "date": "2026-10-23",
+          "monday": "2026-10-19",
+          "raw_minutes": 30,
+          "minutes": 30,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 210
+        },
+        {
+          "date": "2026-10-24",
+          "monday": "2026-10-19",
+          "raw_minutes": 30,
+          "minutes": 30,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 210
+        },
+        {
+          "date": "2026-10-25",
+          "monday": "2026-10-19",
+          "raw_minutes": 30,
+          "minutes": 30,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 210
+        }
+      ],
+      "weeks": [
+        {
+          "monday": "2026-10-19",
+          "budget_minutes": 210,
+          "resolved_minutes": 210,
+          "conflicts": []
+        }
+      ]
+    },
+    {
+      "name": "baseline-range-fallback",
+      "profile": {
+        "daily_limit_minutes": 480,
+        "buffer_minutes": 30,
+        "granularity_minutes": 30,
+        "capacity_basis": "net",
+        "weekly_minutes": {
+          "0": 60,
+          "1": 60,
+          "2": 60,
+          "3": 60,
+          "4": 60,
+          "5": 60,
+          "6": 60
+        },
+        "weekly_range_min_minutes": 150,
+        "weekly_range_max_minutes": 300
+      },
+      "days": [
+        {
+          "date": "2026-10-19",
+          "monday": "2026-10-19",
+          "raw_minutes": 22,
+          "minutes": 22,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 150
+        },
+        {
+          "date": "2026-10-20",
+          "monday": "2026-10-19",
+          "raw_minutes": 22,
+          "minutes": 22,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 150
+        },
+        {
+          "date": "2026-10-21",
+          "monday": "2026-10-19",
+          "raw_minutes": 22,
+          "minutes": 22,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 150
+        },
+        {
+          "date": "2026-10-22",
+          "monday": "2026-10-19",
+          "raw_minutes": 21,
+          "minutes": 21,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 150
+        },
+        {
+          "date": "2026-10-23",
+          "monday": "2026-10-19",
+          "raw_minutes": 21,
+          "minutes": 21,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 150
+        },
+        {
+          "date": "2026-10-24",
+          "monday": "2026-10-19",
+          "raw_minutes": 21,
+          "minutes": 21,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 150
+        },
+        {
+          "date": "2026-10-25",
+          "monday": "2026-10-19",
+          "raw_minutes": 21,
+          "minutes": 21,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 150
+        }
+      ],
+      "weeks": [
+        {
+          "monday": "2026-10-19",
+          "budget_minutes": 150,
+          "resolved_minutes": 150,
+          "conflicts": []
+        }
+      ]
+    },
+    {
+      "name": "baseline-with-date-override",
+      "profile": {
+        "daily_limit_minutes": 480,
+        "buffer_minutes": 30,
+        "granularity_minutes": 30,
+        "capacity_basis": "net",
+        "weekly_minutes": {
+          "0": 60,
+          "1": 60,
+          "2": 60,
+          "3": 60,
+          "4": 60,
+          "5": 60,
+          "6": 60
+        },
+        "weekly_baseline_minutes": 300,
+        "date_capacity_overrides": {
+          "2026-10-19": 120
+        }
+      },
+      "days": [
+        {
+          "date": "2026-10-19",
+          "monday": "2026-10-19",
+          "raw_minutes": 120,
+          "minutes": 120,
+          "source": "date_override",
+          "estimated": false,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-20",
+          "monday": "2026-10-19",
+          "raw_minutes": 30,
+          "minutes": 30,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-21",
+          "monday": "2026-10-19",
+          "raw_minutes": 30,
+          "minutes": 30,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-22",
+          "monday": "2026-10-19",
+          "raw_minutes": 30,
+          "minutes": 30,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-23",
+          "monday": "2026-10-19",
+          "raw_minutes": 30,
+          "minutes": 30,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-24",
+          "monday": "2026-10-19",
+          "raw_minutes": 30,
+          "minutes": 30,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-25",
+          "monday": "2026-10-19",
+          "raw_minutes": 30,
+          "minutes": 30,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 300
+        }
+      ],
+      "weeks": [
+        {
+          "monday": "2026-10-19",
+          "budget_minutes": 300,
+          "resolved_minutes": 300,
+          "conflicts": []
+        }
+      ]
+    },
+    {
+      "name": "baseline-rest-unallocated",
+      "profile": {
+        "daily_limit_minutes": 480,
+        "buffer_minutes": 30,
+        "granularity_minutes": 30,
+        "capacity_basis": "net",
+        "weekly_minutes": {
+          "0": 0,
+          "1": 0,
+          "2": 0,
+          "3": 0,
+          "4": 0,
+          "5": 0,
+          "6": 0
+        },
+        "weekly_baseline_minutes": 300
+      },
+      "days": [
+        {
+          "date": "2026-10-19",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-20",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-21",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-22",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-23",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-24",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-25",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "baseline",
+          "estimated": true,
+          "week_budget_minutes": 300
+        }
+      ],
+      "weeks": [
+        {
+          "monday": "2026-10-19",
+          "budget_minutes": 300,
+          "resolved_minutes": 0,
+          "conflicts": [
+            {
+              "code": "WEEK_TOTAL_UNALLOCATED",
+              "total": 300,
+              "resolved": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "week-total-explicit-and-date-same-day",
+      "profile": {
+        "daily_limit_minutes": 480,
+        "buffer_minutes": 30,
+        "granularity_minutes": 30,
+        "capacity_basis": "net",
+        "weekly_minutes": {
+          "0": 60,
+          "1": 60,
+          "2": 60,
+          "3": 60,
+          "4": 60,
+          "5": 60,
+          "6": 60
+        },
+        "week_capacity_overrides": {
+          "2026-10-19": {
+            "total_minutes": 200,
+            "days": {
+              "1": 90
+            }
+          }
+        },
+        "date_capacity_overrides": {
+          "2026-10-19": 60
+        }
+      },
+      "days": [
+        {
+          "date": "2026-10-19",
+          "monday": "2026-10-19",
+          "raw_minutes": 60,
+          "minutes": 60,
+          "source": "date_override",
+          "estimated": false,
+          "week_budget_minutes": 200
+        },
+        {
+          "date": "2026-10-20",
+          "monday": "2026-10-19",
+          "raw_minutes": 24,
+          "minutes": 24,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 200
+        },
+        {
+          "date": "2026-10-21",
+          "monday": "2026-10-19",
+          "raw_minutes": 24,
+          "minutes": 24,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 200
+        },
+        {
+          "date": "2026-10-22",
+          "monday": "2026-10-19",
+          "raw_minutes": 23,
+          "minutes": 23,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 200
+        },
+        {
+          "date": "2026-10-23",
+          "monday": "2026-10-19",
+          "raw_minutes": 23,
+          "minutes": 23,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 200
+        },
+        {
+          "date": "2026-10-24",
+          "monday": "2026-10-19",
+          "raw_minutes": 23,
+          "minutes": 23,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 200
+        },
+        {
+          "date": "2026-10-25",
+          "monday": "2026-10-19",
+          "raw_minutes": 23,
+          "minutes": 23,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 200
+        }
+      ],
+      "weeks": [
+        {
+          "monday": "2026-10-19",
+          "budget_minutes": 200,
+          "resolved_minutes": 200,
+          "conflicts": []
+        }
+      ]
+    },
+    {
+      "name": "week-total-rest-unallocated",
+      "profile": {
+        "daily_limit_minutes": 480,
+        "buffer_minutes": 30,
+        "granularity_minutes": 30,
+        "capacity_basis": "net",
+        "weekly_minutes": {
+          "0": 0,
+          "1": 0,
+          "2": 0,
+          "3": 0,
+          "4": 0,
+          "5": 0,
+          "6": 0
+        },
+        "week_capacity_overrides": {
+          "2026-10-19": {
+            "total_minutes": 300
+          }
+        }
+      },
+      "days": [
+        {
+          "date": "2026-10-19",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-20",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-21",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-22",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-23",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-24",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-25",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 300
+        }
+      ],
+      "weeks": [
+        {
+          "monday": "2026-10-19",
+          "budget_minutes": 300,
+          "resolved_minutes": 0,
+          "conflicts": [
+            {
+              "code": "WEEK_TOTAL_UNALLOCATED",
+              "total": 300,
+              "resolved": 0
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "week-total-explicit-day-rest-unallocated",
+      "profile": {
+        "daily_limit_minutes": 480,
+        "buffer_minutes": 30,
+        "granularity_minutes": 30,
+        "capacity_basis": "net",
+        "weekly_minutes": {
+          "0": 0,
+          "1": 0,
+          "2": 0,
+          "3": 0,
+          "4": 0,
+          "5": 0,
+          "6": 0
+        },
+        "week_capacity_overrides": {
+          "2026-10-19": {
+            "total_minutes": 100,
+            "days": {
+              "1": 50
+            }
+          }
+        }
+      },
+      "days": [
+        {
+          "date": "2026-10-19",
+          "monday": "2026-10-19",
+          "raw_minutes": 50,
+          "minutes": 50,
+          "source": "week_day_override",
+          "estimated": false,
+          "week_budget_minutes": 100
+        },
+        {
+          "date": "2026-10-20",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 100
+        },
+        {
+          "date": "2026-10-21",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 100
+        },
+        {
+          "date": "2026-10-22",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 100
+        },
+        {
+          "date": "2026-10-23",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 100
+        },
+        {
+          "date": "2026-10-24",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 100
+        },
+        {
+          "date": "2026-10-25",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 100
+        }
+      ],
+      "weeks": [
+        {
+          "monday": "2026-10-19",
+          "budget_minutes": 100,
+          "resolved_minutes": 50,
+          "conflicts": [
+            {
+              "code": "WEEK_TOTAL_UNALLOCATED",
+              "total": 100,
+              "resolved": 50
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "week-total-exceeded-by-date-override",
+      "profile": {
+        "daily_limit_minutes": 480,
+        "buffer_minutes": 30,
+        "granularity_minutes": 30,
+        "capacity_basis": "net",
+        "weekly_minutes": {
+          "0": 60,
+          "1": 60,
+          "2": 60,
+          "3": 60,
+          "4": 60,
+          "5": 60,
+          "6": 60
+        },
+        "week_capacity_overrides": {
+          "2026-10-19": {
+            "total_minutes": 100
+          }
+        },
+        "date_capacity_overrides": {
+          "2026-10-19": 120
+        }
+      },
+      "days": [
+        {
+          "date": "2026-10-19",
+          "monday": "2026-10-19",
+          "raw_minutes": 120,
+          "minutes": 120,
+          "source": "date_override",
+          "estimated": false,
+          "week_budget_minutes": 100
+        },
+        {
+          "date": "2026-10-20",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 100
+        },
+        {
+          "date": "2026-10-21",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 100
+        },
+        {
+          "date": "2026-10-22",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 100
+        },
+        {
+          "date": "2026-10-23",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 100
+        },
+        {
+          "date": "2026-10-24",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 100
+        },
+        {
+          "date": "2026-10-25",
+          "monday": "2026-10-19",
+          "raw_minutes": 0,
+          "minutes": 0,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 100
+        }
+      ],
+      "weeks": [
+        {
+          "monday": "2026-10-19",
+          "budget_minutes": 100,
+          "resolved_minutes": 120,
+          "conflicts": [
+            {
+              "code": "WEEK_TOTAL_EXCEEDED",
+              "total": 100,
+              "resolved": 120
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "week-total-within-date-override",
+      "profile": {
+        "daily_limit_minutes": 480,
+        "buffer_minutes": 30,
+        "granularity_minutes": 30,
+        "capacity_basis": "net",
+        "weekly_minutes": {
+          "0": 60,
+          "1": 60,
+          "2": 60,
+          "3": 60,
+          "4": 60,
+          "5": 60,
+          "6": 60
+        },
+        "week_capacity_overrides": {
+          "2026-10-19": {
+            "total_minutes": 300
+          }
+        },
+        "date_capacity_overrides": {
+          "2026-10-19": 120
+        }
+      },
+      "days": [
+        {
+          "date": "2026-10-19",
+          "monday": "2026-10-19",
+          "raw_minutes": 120,
+          "minutes": 120,
+          "source": "date_override",
+          "estimated": false,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-20",
+          "monday": "2026-10-19",
+          "raw_minutes": 30,
+          "minutes": 30,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-21",
+          "monday": "2026-10-19",
+          "raw_minutes": 30,
+          "minutes": 30,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-22",
+          "monday": "2026-10-19",
+          "raw_minutes": 30,
+          "minutes": 30,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-23",
+          "monday": "2026-10-19",
+          "raw_minutes": 30,
+          "minutes": 30,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-24",
+          "monday": "2026-10-19",
+          "raw_minutes": 30,
+          "minutes": 30,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 300
+        },
+        {
+          "date": "2026-10-25",
+          "monday": "2026-10-19",
+          "raw_minutes": 30,
+          "minutes": 30,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 300
+        }
+      ],
+      "weeks": [
+        {
+          "monday": "2026-10-19",
+          "budget_minutes": 300,
+          "resolved_minutes": 300,
+          "conflicts": []
+        }
+      ]
+    },
+    {
+      "name": "cross-year-week",
+      "profile": {
+        "daily_limit_minutes": 480,
+        "buffer_minutes": 30,
+        "granularity_minutes": 30,
+        "capacity_basis": "net",
+        "weekly_minutes": {
+          "0": 60,
+          "1": 60,
+          "2": 60,
+          "3": 60,
+          "4": 60,
+          "5": 60,
+          "6": 60
+        },
+        "week_capacity_overrides": {
+          "2026-12-28": {
+            "total_minutes": 140
+          }
+        }
+      },
+      "days": [
+        {
+          "date": "2026-12-28",
+          "monday": "2026-12-28",
+          "raw_minutes": 20,
+          "minutes": 20,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 140
+        },
+        {
+          "date": "2026-12-31",
+          "monday": "2026-12-28",
+          "raw_minutes": 20,
+          "minutes": 20,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 140
+        },
+        {
+          "date": "2027-01-03",
+          "monday": "2026-12-28",
+          "raw_minutes": 20,
+          "minutes": 20,
+          "source": "week_total",
+          "estimated": true,
+          "week_budget_minutes": 140
+        },
+        {
+          "date": "2027-01-04",
+          "monday": "2027-01-04",
+          "raw_minutes": 60,
+          "minutes": 60,
+          "source": "template",
+          "estimated": false,
+          "week_budget_minutes": null
+        }
+      ],
+      "weeks": [
+        {
+          "monday": "2026-12-28",
+          "budget_minutes": 140,
+          "resolved_minutes": 140,
+          "conflicts": []
+        }
+      ]
+    }
+  ]
+}

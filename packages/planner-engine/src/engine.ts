@@ -12,7 +12,15 @@ import type {
   TimeLog,
 } from "./types";
 import { defaultPlannerRuntime, type PlannerRuntime } from "./runtime";
-import { scheduleStrategy } from "../../../apps/api/src/planning-scheduler";
+import {
+  blockActualMinutes,
+  dependencySatisfied,
+  forecastRemainingMinutes,
+  occupiedDayMinutes,
+  resolveDayCapacity,
+  scheduleStrategy,
+  type CapacityProfile,
+} from "../../../apps/api/src/planning-scheduler";
 
 const DAY = 86_400_000;
 const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
@@ -64,13 +72,9 @@ export function remainingTaskMinutes(task: Task, logs: TimeLog[]): number {
   );
 }
 
+/** Logs and the block counter are two views of the same work, never added together. */
 function blockActual(block: ScheduleBlock, logs: TimeLog[]): number {
-  return Math.max(
-    finiteMinutes(block.actual_minutes),
-    logs
-      .filter((log) => log.block_id === block.id)
-      .reduce((sum, log) => sum + finiteMinutes(log.minutes), 0),
-  );
+  return blockActualMinutes(block, logs);
 }
 
 function blockPending(block: ScheduleBlock, logs: TimeLog[]): number {
@@ -86,18 +90,12 @@ export function weekdayIndex(date: string): number {
 }
 
 /**
- * 某一自然日的可用学习预算：优先使用一周七天的实际值。
- * 旧数据没有 weekly_minutes 时退回每日上限，两者默认结果一致。
+ * 某一自然日的可用学习预算：与 API 排程器共用同一份容量解析。
+ * 旧文档（无容量新字段）仍是“每日上限扣一次机动”的 gross 口径，结果保持不变；
+ * 新文档按 capacity_basis / 周基线 / 周与日期覆盖解析。
  */
 export function dailyStudyBudget(profile: Profile, date: string): number {
-  const week = profile.weekly_minutes;
-  const raw = week && Object.keys(week).length === 7
-    ? finiteMinutes(Number(week[String(weekdayIndex(date))] ?? 0))
-    : finiteMinutes(profile.daily_limit_minutes);
-  return Math.max(
-    0,
-    Math.min(480, raw) - Math.max(30, finiteMinutes(profile.buffer_minutes)),
-  );
+  return resolveDayCapacity(profile as CapacityProfile, date).minutes;
 }
 
 function limits(profile: Profile) {
@@ -217,8 +215,24 @@ function placementError(
   if (activity?.state === "paused" || activity?.state === "ended") return "活动已暂停或结束";
   if ((activity?.starts_on && candidate.date < activity.starts_on)
     || (activity?.ends_on && candidate.date > activity.ends_on)) return "时间块超出活动有效日期";
-  if (task.planning?.dependencies?.some(dependency => dependency.mode === "confirmed"
-    && input.tasks.find(prior => prior.id === dependency.task_id)?.status !== "completed")) return "前置内容尚未确认完成";
+  for (const dependency of task.planning?.dependencies ?? []) {
+    const prior = input.tasks.find((item) => item.id === dependency.task_id);
+    if (!prior || prior.user_id !== task.user_id || prior.status === "archived")
+      return "前置内容尚未确认完成";
+    const priorBlocks = input.blocks.filter(
+      (block) => block.task_id === prior.id,
+    );
+    if (
+      !dependencySatisfied({
+        prior,
+        dependency,
+        priorBlocks,
+        date: candidate.date,
+        remaining: forecastRemainingMinutes(prior, input.logs, priorBlocks),
+      })
+    )
+      return "前置内容尚未确认完成";
+  }
   const dayBlocks = blocks.filter((block) => block.date === candidate.date);
   if (
     timed &&
@@ -252,37 +266,34 @@ function placementError(
       log.date === candidate.date &&
       (!log.block_id || !dayBlocks.some((block) => block.id === log.block_id)),
   );
-  const load = dayBlocks.reduce(
-    (sum, block) =>
-      sum +
-      (block.status === "completed"
-        ? blockActual(block, input.logs)
-        : Math.max(block.duration_minutes, blockActual(block, input.logs))),
-    0,
+  // The same occupancy accounting is shared with the automatic strategy scheduler:
+  // fixed events count as their union, timed plans clip to the study window, and a
+  // completed block without actual history still reserves its planned slot.
+  const dailyOccupied = occupiedDayMinutes(
+    input.profile,
+    input.fixed_events,
+    dayBlocks,
+    input.logs,
+    candidate.date,
   );
-  const eventLoad = fixedEventMinutesForDate(events, candidate.date, !timed);
   if (
-    load +
-      eventLoad +
+    dailyOccupied +
       orphanLogs.reduce((sum, log) => sum + finiteMinutes(log.minutes), 0) +
       candidate.duration_minutes >
     dailyStudyBudget(input.profile, candidate.date)
   )
     return "超出当天可用的学习时间（每日上限），须保留至少30分钟机动时间";
-  const subjectLoad = dayBlocks
-    .filter(
+  const subjectOccupied = occupiedDayMinutes(
+    input.profile,
+    [],
+    dayBlocks.filter(
       (block) =>
         input.tasks.find((item) => item.id === block.task_id)?.subject_id ===
         task.subject_id,
-    )
-    .reduce(
-      (sum, block) =>
-        sum +
-        (block.status === "completed"
-          ? blockActual(block, input.logs)
-          : Math.max(block.duration_minutes, blockActual(block, input.logs))),
-      0,
-    );
+    ),
+    input.logs,
+    candidate.date,
+  );
   const orphanSubjectLoad = orphanLogs
     .filter(
       (log) =>
@@ -291,7 +302,7 @@ function placementError(
     )
     .reduce((sum, log) => sum + finiteMinutes(log.minutes), 0);
   if (
-    subjectLoad + orphanSubjectLoad + candidate.duration_minutes >
+    subjectOccupied + orphanSubjectLoad + candidate.duration_minutes >
     capacity.subject
   )
     return "同一科目每天最多安排4小时";

@@ -6,6 +6,7 @@ import '../../../core/widgets.dart';
 import '../../../shared/models/planner_models.dart';
 import '../../planner/application/planner_session.dart';
 import '../../planner/application/study_timer.dart';
+import '../../planner/domain/plan_cycle.dart';
 import '../../planner/domain/planner_format.dart';
 import '../../planner/domain/study_day.dart' as day_ops;
 import '../../planner/presentation/planner_dialogs.dart';
@@ -122,6 +123,12 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                   ),
                 ],
               ),
+            ),
+            const SizedBox(height: 8),
+            _CycleCoverageBar(
+              data: data,
+              date: _date,
+              onJump: (value) => setState(() => _date = value),
             ),
             const SizedBox(height: 12),
             if (_notice != null) ...[
@@ -246,12 +253,7 @@ class _CalendarDayColumn extends ConsumerWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 child: Text(
-                  day.capacity <= 0
-                      ? '休息或固定占用，未安排学习事项'
-                      : detailedUntil(data.planning) != null &&
-                            date.compareTo(detailedUntil(data.planning)!) > 0
-                      ? '路线待细化，尚未生成当日学习安排'
-                      : '尚未安排学习事项',
+                  _emptyDayReason(data, date),
                   style: const TextStyle(
                     color: PlannerColors.muted,
                     fontSize: 12,
@@ -322,6 +324,86 @@ class _CalendarDayColumn extends ConsumerWidget {
       ),
     );
   }
+}
+
+/// 全周期覆盖提示：让长周期日历能直接跳到周期末，避免只看到近期窗口。
+class _CycleCoverageBar extends StatelessWidget {
+  const _CycleCoverageBar({
+    required this.data,
+    required this.date,
+    required this.onJump,
+  });
+
+  final PlannerData data;
+  final String date;
+  final ValueChanged<String> onJump;
+
+  @override
+  Widget build(BuildContext context) {
+    final today = shanghaiToday();
+    final start = data.profile.resolvedPlanStart(today);
+    final end = data.profile.resolvedPlanEnd(today);
+    final full = isFullPeriodPlan(data.planning);
+    final span = daysBetween(start, end) + 1;
+    final coverage = _plannedCoverage(data);
+    return PlannerPanel(
+      key: const ValueKey('calendar-cycle-coverage'),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 8,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text(
+            '本周期 $start 至 $end（共 $span 天）',
+            style: const TextStyle(fontWeight: FontWeight.w600),
+          ),
+          Text(
+            full
+                ? '全周期每日安排已生成，已覆盖 $coverage'
+                : '滚动计划：每日安排覆盖 $coverage，可在今日页补全本周期安排',
+            style: const TextStyle(color: PlannerColors.muted, fontSize: 12),
+          ),
+          OutlinedButton(
+            key: const ValueKey('calendar-jump-cycle-end'),
+            onPressed: date == end ? null : () => onJump(end),
+            child: const Text('跳到周期末'),
+          ),
+          if (date != today)
+            TextButton(
+              onPressed: () => onJump(today),
+              child: const Text('回到今天'),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+String _plannedCoverage(PlannerData data) {
+  if (data.blocks.isEmpty) return '暂无每日安排';
+  var first = data.blocks.first.date;
+  var last = data.blocks.first.date;
+  for (final block in data.blocks) {
+    if (block.date.compareTo(first) < 0) first = block.date;
+    if (block.date.compareTo(last) > 0) last = block.date;
+  }
+  return '$first 至 $last';
+}
+
+/// 空白日的原因：休息/容量为 0、滚动窗口之外、或确实没有待安排内容。
+String _emptyDayReason(PlannerData data, String date) {
+  if (day_ops.calendarDay(data, date).capacity <= 0) {
+    return '休息或固定占用，未安排学习事项';
+  }
+  if (isFullPeriodPlan(data.planning)) {
+    return '当天没有剩余工作量，未安排学习事项';
+  }
+  final until = data.planning?['detailed_until'];
+  if (until is String && until.isNotEmpty && date.compareTo(until) > 0) {
+    return '滚动计划尚未细化到该日期，可在今日页补全本周期安排';
+  }
+  return '尚未安排学习事项';
 }
 
 class _CalendarTaskRow extends ConsumerWidget {

@@ -11,6 +11,7 @@ import 'package:sjtu_study_planner_client/core/sync/planner_coordinator.dart';
 import 'package:sjtu_study_planner_client/core/sync/sync_api.dart';
 import 'package:sjtu_study_planner_client/features/planner/application/study_timer.dart';
 import 'package:sjtu_study_planner_client/features/planner/domain/study_day.dart';
+import 'package:sjtu_study_planner_client/features/planner/domain/task_editing.dart';
 import 'package:sjtu_study_planner_client/shared/models/planner_models.dart';
 
 import '../support/planner_fixture.dart';
@@ -67,7 +68,7 @@ class _PlannerStore extends MemoryStorageRepository {
 
 class _OfflineApi implements SyncApi {
   @override
-  Future<RemoteSnapshot> pull() async => throw const OfflineFailure();
+  Future<RemoteSnapshot> pull({int? revision}) async => throw const OfflineFailure();
 
   @override
   Future<RemoteSnapshot> push(
@@ -501,7 +502,11 @@ void main() {
         throwsStateError,
       );
       expect(timer.elapsedFor(id, date), const Duration(seconds: 65));
-      expect(coordinator.data!.logs.single.minutes, 2);
+      // The 1-minute arrangement is capped as scheduled; further seconds of the
+      // same task/day are recorded as extra study, so they never inflate the
+      // original-plan execution while every elapsed second stays counted.
+      expect(taskDayMinutes(coordinator.data!, id, date), 2);
+      expect(coordinator.data!.logs, hasLength(2));
       expect(timer.lastSessionFor(id, date)!.id, first.id);
       plannerStore.fail = false;
       await timer.discardLastSession(id, date, expectedSessionId: second.id);
@@ -558,7 +563,7 @@ void main() {
         const Duration(minutes: 91, seconds: 1),
       );
       expect(timer.lastSessionFor(id, date)!.id, legacy.id);
-      expect(timerStore.values[timer.storageKey]!['version'], 2);
+      expect(timerStore.values[timer.storageKey]!['version'], 3);
       await timer.discardLastSession(id, date, expectedSessionId: legacy.id);
       expect(timer.elapsedFor(id, date), const Duration(minutes: 90));
       expect(coordinator.data!.logs, [manual]);
@@ -798,5 +803,286 @@ void main() {
     expect((await store.load('api-one:user-a'))!['elapsed'], 12345);
     expect((await store.load('api-one:user-b'))!['elapsed'], 9000);
     expect(await store.load('api-two:user-a'), isNull);
+  });
+
+  group('learning relations', () {
+    List<TimeLog> logsFor(String taskId) => [
+      for (final log in coordinator.data!.logs)
+        if (log.taskId == taskId) log,
+    ]..sort((a, b) => a.startedAt.compareTo(b.startedAt));
+
+    test(
+      'a scheduled interval is capped by its quota and overflows into extra',
+      () async {
+        final id = taskId();
+        coordinator.data = coordinator.data!.copyWith(
+          blocks: [
+            coordinator.data!.blocks.single.copyWith(durationMinutes: 60),
+          ],
+        );
+        await timer.start(id, date);
+        expect(timer.activeRelation, TimeLogRelation.scheduled);
+        clock.advance(const Duration(minutes: 90));
+        await timer.pause();
+
+        final logs = logsFor(id);
+        expect(logs, hasLength(2));
+        final scheduled = logs.singleWhere(
+          (log) => log.relation == TimeLogRelation.scheduled,
+        );
+        final extra = logs.singleWhere(
+          (log) => log.relation == TimeLogRelation.extra,
+        );
+        expect(scheduled.minutes, 60);
+        expect(scheduled.quotaMinutes, 60);
+        expect(extra.minutes, 30);
+        expect(extra.quotaMinutes, isNull);
+        expect(scheduled.sessionId, isNotNull);
+        expect(extra.sessionId, scheduled.sessionId, reason: '同一会话不重复计秒');
+        expect(taskDayMinutes(coordinator.data!, id, date), 90);
+        // Original-plan execution stays at the quota; extra never inflates it.
+        expect(scheduledMinutesForTaskDay(coordinator.data!, id, date), 60);
+        expect(extraMinutesForTaskDay(coordinator.data!, id, date), 30);
+        final block = coordinator.data!.blocks.single;
+        expect(block.actualMinutes, 60);
+        expect(block.status, BlockStatus.completed);
+      },
+    );
+
+    test('startExtra needs no today block and keeps the original task id', () async {
+      final id = taskId();
+      final future = coordinator.data!.tasks.single.copyWith(
+        id: 'future-task',
+        title: '线性代数第三章',
+        earliestDate: '2026-12-01',
+      );
+      coordinator.data = coordinator.data!.copyWith(
+        tasks: [...coordinator.data!.tasks, future],
+        blocks: [
+          coordinator.data!.blocks.single.copyWith(durationMinutes: 60),
+        ],
+      );
+      await timer.start(id, date);
+      clock.advance(const Duration(seconds: 70));
+      await timer.startExtra('future-task');
+      expect(timer.activeTaskId, 'future-task');
+      expect(timer.activeRelation, TimeLogRelation.extra);
+      clock.advance(const Duration(seconds: 80));
+      await timer.pause();
+
+      final logs = coordinator.data!.logs
+          .where((log) => log.taskId == 'future-task')
+          .toList();
+      expect(logs, hasLength(1));
+      expect(logs.single.relation, TimeLogRelation.extra);
+      expect(logs.single.minutes, 1);
+      expect(logs.single.sessionId, isNotNull);
+      expect(
+        coordinator.data!.blocks.any((block) => block.taskId == 'future-task'),
+        isFalse,
+        reason: '加学不为今天伪造日程块',
+      );
+      expect(logsFor(id).single.relation, TimeLogRelation.scheduled);
+    });
+
+    test(
+      'Shanghai midnight re-evaluates the relation and keeps the session link',
+      () async {
+        final id = taskId();
+        coordinator.data = coordinator.data!.copyWith(
+          blocks: [
+            coordinator.data!.blocks.single.copyWith(durationMinutes: 60),
+          ],
+        );
+        clock.wall = DateTime.parse('2026-10-17T15:59:00Z');
+        await timer.start(id, date);
+        clock.advance(const Duration(minutes: 3));
+        await timer.pause();
+
+        final dayOne = coordinator.data!.logs.singleWhere(
+          (log) => log.date == date,
+        );
+        final dayTwo = coordinator.data!.logs.singleWhere(
+          (log) => log.date == '2026-10-18',
+        );
+        expect(dayOne.relation, TimeLogRelation.scheduled);
+        expect(dayOne.quotaMinutes, 60);
+        expect(dayOne.minutes, 1);
+        expect(dayTwo.relation, TimeLogRelation.extra);
+        expect(dayTwo.quotaMinutes, isNull);
+        expect(dayTwo.minutes, 2);
+        expect(dayTwo.sessionId, dayOne.sessionId);
+      },
+    );
+
+    test('a new scheduled day gets its own quota instead of yesterday quota', () async {
+      final id = taskId();
+      final block = coordinator.data!.blocks.single.copyWith(
+        durationMinutes: 60,
+      );
+      coordinator.data = coordinator.data!.copyWith(
+        blocks: [
+          block,
+          block.copyWith(id: 'block-day-two', date: '2026-10-18', durationMinutes: 30),
+        ],
+      );
+      clock.wall = DateTime.parse('2026-10-17T15:59:00Z');
+      await timer.start(id, date);
+      clock.advance(const Duration(minutes: 20));
+      await timer.pause();
+
+      final dayOne = coordinator.data!.logs.singleWhere(
+        (log) => log.date == date,
+      );
+      final dayTwo = coordinator.data!.logs.singleWhere(
+        (log) => log.date == '2026-10-18',
+      );
+      expect(dayOne.relation, TimeLogRelation.scheduled);
+      expect(dayOne.quotaMinutes, 60);
+      expect(dayTwo.relation, TimeLogRelation.scheduled);
+      expect(dayTwo.quotaMinutes, 30, reason: '新日期重新判定额度');
+      expect(dayTwo.minutes, 19);
+      expect(dayTwo.sessionId, dayOne.sessionId);
+    });
+
+    test(
+      'temporary learning starts by name, reuses the entity and fabricates nothing',
+      () async {
+        await timer.startAdHoc(title: '  摄影构图  ');
+        expect(timer.activeAdHocId, isNotNull);
+        expect(timer.activeTaskId, isNull);
+        expect(timer.activeRelation, TimeLogRelation.adHoc);
+        final entity = coordinator.data!.adHocLearnings.single;
+        expect(entity.title, '摄影构图');
+        expect(entity.archived, isFalse);
+        expect(coordinator.data!.tasks, hasLength(1));
+        expect(coordinator.data!.blocks, hasLength(1));
+
+        clock.advance(const Duration(minutes: 20));
+        await timer.pause();
+        final log = coordinator.data!.logs.singleWhere(
+          (log) => log.adHocId == entity.id,
+        );
+        expect(log.taskId, isNull);
+        expect(log.relation, TimeLogRelation.adHoc);
+        expect(log.minutes, 20);
+        expect(log.sessionId, isNotNull);
+        expect(log.quotaMinutes, isNull);
+        expect(log.blockId, isNull);
+
+        await timer.startAdHoc(title: '摄影构图');
+        expect(coordinator.data!.adHocLearnings, hasLength(1));
+        expect(timer.activeAdHocId, entity.id);
+        clock.advance(const Duration(minutes: 5));
+        await timer.pause();
+        expect(adHocMinutesOnDate(coordinator.data!, date), 25);
+        final entries = adHocLearningEntries(coordinator.data!, date: date);
+        expect(entries.single.todayMinutes, 25);
+      },
+    );
+
+    test('a completed task can be reviewed as extra without reopening it', () async {
+      final id = taskId();
+      await coordinator.edit(
+        (data) => data.copyWith(
+          tasks: [
+            data.tasks.single.copyWith(
+              status: TaskStatus.completed,
+              completedMinutes: data.tasks.single.estimatedMinutes,
+            ),
+          ],
+        ),
+      );
+      await timer.startExtra(id);
+      expect(timer.activeRelation, TimeLogRelation.extra);
+      clock.advance(const Duration(minutes: 2));
+      await timer.pause();
+
+      final task = coordinator.data!.tasks.single;
+      expect(task.status, TaskStatus.completed, reason: '复习不重新打开事项');
+      final log = coordinator.data!.logs.single;
+      expect(log.relation, TimeLogRelation.extra);
+      expect(log.minutes, 2);
+      expect(coordinator.data!.blocks.single.status, BlockStatus.planned);
+      expect(scheduledMinutesForTaskDay(coordinator.data!, id, date), 0);
+    });
+
+    test('discarding an ad-hoc session removes only its minutes', () async {
+      await timer.startAdHoc(title: '阅读计划外文章');
+      clock.advance(const Duration(minutes: 7));
+      await timer.pause();
+      final entity = coordinator.data!.adHocLearnings.single;
+      final session = timer.lastSessionForAdHoc(entity.id, date)!;
+      expect(dayStats(coordinator.data!, date).actual, 7);
+      await timer.discardLastAdHocSession(
+        entity.id,
+        date,
+        expectedSessionId: session.id,
+      );
+      expect(
+        coordinator.data!.logs.where((log) => log.adHocId == entity.id),
+        isEmpty,
+      );
+      expect(coordinator.data!.adHocLearnings, hasLength(1));
+      expect(adHocMinutesOnDate(coordinator.data!, date), 0);
+    });
+
+    test('converting ad-hoc to a task keeps the log and timer attribution', () async {
+      await timer.startAdHoc(title: '摄影构图');
+      clock.advance(const Duration(minutes: 25));
+      await timer.pause();
+      final entity = coordinator.data!.adHocLearnings.single;
+      final original = coordinator.data!.logs.singleWhere(
+        (log) => log.adHocId == entity.id,
+      );
+      await coordinator.edit((data) {
+        final draft = TaskDraft.blank(data, date).copyWith(
+          title: '摄影构图',
+          subjectId: data.subjects.single.id,
+          estimatedMinutes: 120,
+        );
+        return convertAdHocToTask(
+          data,
+          entity.id,
+          draft,
+          taskId: 'converted-task',
+        ).data;
+      });
+      await timer.adoptAdHocConversion(entity.id, 'converted-task');
+      await timer.checkpoint();
+      await timer.checkpoint();
+
+      final converted = coordinator.data!;
+      final log = converted.logs.singleWhere((item) => item.id == original.id);
+      expect(log.taskId, 'converted-task');
+      expect(log.adHocId, entity.id, reason: '历史临时关系仍可解释');
+      expect(log.relation, TimeLogRelation.adHoc);
+      expect(log.sessionId, original.sessionId);
+      expect(log.minutes, 25);
+      expect(
+        converted.logs.fold<int>(0, (sum, item) => sum + item.minutes),
+        25,
+        reason: '转换不复制分钟',
+      );
+      expect(converted.adHocLearnings.single.archived, isTrue);
+      expect(converted.adHocLearnings.single.convertedTaskId, 'converted-task');
+      expect(
+        converted.tasks.singleWhere((task) => task.id == 'converted-task'),
+        isNotNull,
+      );
+    });
+
+    test('reviewing a completed task is rejected when it is archived', () async {
+      final id = taskId();
+      await coordinator.edit(
+        (data) => data.copyWith(
+          tasks: [
+            data.tasks.single.copyWith(status: TaskStatus.archived),
+          ],
+        ),
+      );
+      await expectLater(timer.startExtra(id), throwsStateError);
+      expect(timer.activeTaskId, isNull);
+    });
   });
 }

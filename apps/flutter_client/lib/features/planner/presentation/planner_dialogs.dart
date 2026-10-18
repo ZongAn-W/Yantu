@@ -8,6 +8,7 @@ import '../../../shared/models/planner_models.dart';
 import '../application/planner_session.dart';
 import '../application/study_timer.dart';
 import '../domain/planner_format.dart';
+import '../domain/planning_feedback.dart';
 import '../domain/scheduler/planner_scheduler.dart' as scheduler;
 import '../domain/study_day.dart' as day_ops;
 import '../domain/study_day.dart' show unscheduledTaskMinutes;
@@ -41,6 +42,8 @@ class MoveTaskDayDialog extends ConsumerStatefulWidget {
 }
 
 class _MoveTaskDayDialogState extends ConsumerState<MoveTaskDayDialog> {
+  late final List<String> _blockIds;
+  late final String _sourceDate;
   late String _date;
   String? _error;
   bool _saving = false;
@@ -48,31 +51,26 @@ class _MoveTaskDayDialogState extends ConsumerState<MoveTaskDayDialog> {
   @override
   void initState() {
     super.initState();
-    _date = widget.blocks.first.date;
+    _sourceDate = widget.blocks.first.date;
+    _date = _sourceDate;
+    _blockIds = [for (final block in widget.blocks) block.id];
   }
 
-  Future<void> _save() async {
-    if (_saving) return;
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-    try {
-      await ref.read(plannerSessionProvider).moveTaskDay(widget.blocks, _date);
-      if (mounted) Navigator.pop(context);
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _saving = false;
-          _error = error is StateError ? error.message : '$error';
-        });
-      }
-    }
+  /// Current authoritative records resolved by stable id.
+  ///
+  /// The dialog only carries move intent and record identifiers; the snapshot it
+  /// opened with is not treated as the current plan.
+  List<ScheduleBlock> _currentBlocks(PlannerData data) {
+    final byId = {for (final block in data.blocks) block.id: block};
+    return [
+      for (final id in _blockIds)
+        if (byId[id] != null) byId[id]!,
+    ];
   }
 
-  bool get _movable {
-    final data = ref.read(plannerSessionProvider).data;
-    final first = widget.blocks.first;
+  bool _movable(PlannerData data, List<ScheduleBlock> blocks) {
+    if (blocks.length != _blockIds.length) return false;
+    final first = blocks.first;
     final timer = ref.read(studyTimerProvider);
     if (timer.isRunning(first.taskId, first.date) ||
         timer.elapsedFor(first.taskId, first.date) > Duration.zero) {
@@ -83,7 +81,7 @@ class _MoveTaskDayDialogState extends ConsumerState<MoveTaskDayDialog> {
         .firstOrNull;
     if (task == null || task.status == TaskStatus.archived) return false;
     if (day_ops.taskDayMinutes(data, task.id, first.date) > 0) return false;
-    return widget.blocks.every(
+    return blocks.every(
       (block) =>
           !block.isFixed &&
           block.status != BlockStatus.completed &&
@@ -96,13 +94,39 @@ class _MoveTaskDayDialogState extends ConsumerState<MoveTaskDayDialog> {
     );
   }
 
+  Future<void> _save() async {
+    if (_saving) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await ref
+          .read(plannerSessionProvider)
+          .moveTaskDayByIds(_blockIds, _date, sourceDate: _sourceDate);
+      if (mounted) Navigator.pop(context);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = error is StateError ? error.message : '$error';
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = ref.watch(plannerSessionProvider).data;
+    final blocks = _currentBlocks(data);
+    final missing = blocks.length != _blockIds.length;
+    final changed = blocks.any((block) => block.date != _sourceDate);
+    final movable = !missing && !changed && _movable(data, blocks);
+    final display = blocks.isEmpty ? widget.blocks : blocks;
     final task = data.tasks
-        .where((item) => item.id == widget.blocks.first.taskId)
+        .where((item) => item.id == display.first.taskId)
         .firstOrNull;
-    final planned = widget.blocks.fold<int>(
+    final planned = display.fold<int>(
       0,
       (sum, block) => sum + block.durationMinutes,
     );
@@ -122,7 +146,7 @@ class _MoveTaskDayDialogState extends ConsumerState<MoveTaskDayDialog> {
             DateField(
               label: '安排日期',
               value: _date,
-              enabled: _movable && !_saving,
+              enabled: movable && !_saving,
               onChanged: (value) => setState(() => _date = value),
             ),
             const SizedBox(height: 8),
@@ -130,7 +154,19 @@ class _MoveTaskDayDialogState extends ConsumerState<MoveTaskDayDialog> {
               '只调整日期，不指定学习开始时间。',
               style: TextStyle(color: PlannerColors.muted, fontSize: 12),
             ),
-            if (!_movable) ...[
+            if (missing) ...[
+              const SizedBox(height: 8),
+              const PlannerNotice(
+                '部分安排已不存在，请关闭后在最新计划上重新移动。',
+                tone: PlannerNoticeTone.error,
+              ),
+            ] else if (changed) ...[
+              const SizedBox(height: 8),
+              const PlannerNotice(
+                '安排已更新，请关闭后重新打开移动窗口。',
+                tone: PlannerNoticeTone.warning,
+              ),
+            ] else if (!movable) ...[
               const SizedBox(height: 8),
               const Text(
                 '计时中、已有学习用时、已完成或固定的计划保留在原日期。',
@@ -150,7 +186,7 @@ class _MoveTaskDayDialogState extends ConsumerState<MoveTaskDayDialog> {
           child: const Text('取消'),
         ),
         FilledButton.icon(
-          onPressed: !_movable || _saving ? null : _save,
+          onPressed: !movable || _saving ? null : _save,
           icon: const Icon(Icons.event_outlined, size: 18),
           label: const Text('保存日期'),
         ),
@@ -1358,3 +1394,930 @@ class _ReplanDialogState extends ConsumerState<ReplanDialog> {
     );
   }
 }
+
+/// 今日“开始学习”入口：把三类学习关系摆在同一处，用户无需先绕去设置或新建事项。
+///
+/// - 今日原定学习：按今天已有的安排开始计时；
+/// - 已有事项加学：今天没有安排也能学，完成后复习也走这里；
+/// - 全新临时学习：只需名称即可计时，不创建正式事项、预算、截止日期或日程。
+class StartStudyDialog extends ConsumerStatefulWidget {
+  const StartStudyDialog({super.key});
+
+  static Future<void> show(BuildContext context) => showDialog<void>(
+    context: context,
+    builder: (context) => const StartStudyDialog(),
+  );
+
+  @override
+  ConsumerState<StartStudyDialog> createState() => _StartStudyDialogState();
+}
+
+class _StartStudyDialogState extends ConsumerState<StartStudyDialog> {
+  bool _showArrangements = false;
+  bool _busy = false;
+  String? _error;
+
+  Future<void> _startArranged(String taskId, String date) async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await ref.read(studyTimerProvider).start(taskId, date);
+      if (mounted) Navigator.pop(context);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error = error is StateError ? error.message : '$error';
+        });
+      }
+    }
+  }
+
+  Future<void> _openPicker() async {
+    final started = await TaskPickerDialog.showExtraStudy(context);
+    if (started && mounted) Navigator.pop(context);
+  }
+
+  Future<void> _openAdHoc() async {
+    final started = await AdHocStudyDialog.show(context);
+    if (started && mounted) Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = ref.watch(plannerSessionProvider).data;
+    final date = shanghaiToday();
+    final timer = ref.watch(studyTimerProvider);
+    final groups = day_ops.groupDailyBlocks(
+      data.blocks.where((block) => block.date == date),
+      data.tasks,
+    );
+    final taskById = {for (final task in data.tasks) task.id: task};
+    final Widget body;
+    if (!_showArrangements) {
+      body = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (timer.activeTaskId != null || timer.activeAdHocId != null)
+            const Padding(
+              padding: EdgeInsets.only(bottom: 8),
+              child: PlannerNotice(
+                '当前已有计时在运行。选择其他学习内容会先结束当前这一段并可靠保存。',
+                tone: PlannerNoticeTone.info,
+              ),
+            ),
+          ListTile(
+            key: const Key('start-study-scheduled'),
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.event_available_outlined),
+            title: const Text('今日原定学习'),
+            subtitle: const Text('按今天的安排开始计时，按该安排的额度计入原定执行'),
+            onTap: () => setState(() => _showArrangements = true),
+          ),
+          ListTile(
+            key: const Key('start-study-extra'),
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.school_outlined),
+            title: const Text('已有事项加学'),
+            subtitle: const Text('今天没有安排也可以直接学；已完成事项在这里复习计时'),
+            onTap: _openPicker,
+          ),
+          ListTile(
+            key: const Key('start-study-adhoc'),
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.lightbulb_outline),
+            title: const Text('全新临时学习'),
+            subtitle: const Text('填写名称即可计时，不强制预算、截止日期或正式日程'),
+            onTap: _openAdHoc,
+          ),
+        ],
+      );
+    } else {
+      body = Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextButton.icon(
+            onPressed: _busy
+                ? null
+                : () => setState(() => _showArrangements = false),
+            icon: const Icon(Icons.arrow_back, size: 16),
+            label: const Text('返回选择学习关系'),
+          ),
+          if (groups.isEmpty)
+            const PlannerEmpty(
+              icon: Icons.event_busy_outlined,
+              message: '今天没有原定安排，可以选择“已有事项加学”或“全新临时学习”。',
+            ),
+          for (final group in groups)
+            () {
+              final task = taskById[group.first.taskId];
+              if (task == null) return const SizedBox.shrink();
+              final planned = group.fold<int>(
+                0,
+                (sum, block) => sum + block.durationMinutes,
+              );
+              final achieved = day_ops.scheduledMinutesForTaskDay(
+                data,
+                task.id,
+                date,
+              );
+              final done = achieved >= planned;
+              return ListTile(
+                key: Key('start-arranged-${task.id}'),
+                contentPadding: EdgeInsets.zero,
+                leading: const Icon(Icons.play_circle_outline),
+                title: Text('${subjectNameOf(data, task.subjectId)} · ${task.title}'),
+                subtitle: Text(
+                  '原定 ${duration(planned)} · 已达成 ${duration(achieved)}'
+                  '${done ? ' · 已完成' : ''}',
+                ),
+                trailing: FilledButton(
+                  onPressed: _busy ? null : () => _startArranged(task.id, date),
+                  child: Text(done ? '继续计时' : '开始计时'),
+                ),
+              );
+            }(),
+        ],
+      );
+    }
+    return AlertDialog(
+      title: const Text('开始学习'),
+      content: SizedBox(
+        width: 520,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              body,
+              if (_error != null) ...[
+                const SizedBox(height: 8),
+                PlannerNotice(_error!, tone: PlannerNoticeTone.error),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+      ],
+    );
+  }
+}
+
+/// 选择已有事项：默认突出可执行事项，支持搜索、课程与状态筛选。
+///
+/// 加学模式用于“今日没有安排的已有事项”，包括已完成事项的复习计时；
+/// 关联模式把临时学习的真实记录关联到已有事项（历史仍保留临时学习关系）。
+enum TaskPickerMode { extraStudy, linkAdHoc }
+
+class TaskPickerDialog extends ConsumerStatefulWidget {
+  const TaskPickerDialog({required this.mode, this.adHocId, super.key});
+
+  final TaskPickerMode mode;
+  final String? adHocId;
+
+  static Future<bool> showExtraStudy(BuildContext context) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (context) =>
+            const TaskPickerDialog(mode: TaskPickerMode.extraStudy),
+      ) ==
+      true;
+
+  static Future<bool> showLinkAdHoc(BuildContext context, String adHocId) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (context) => TaskPickerDialog(
+          mode: TaskPickerMode.linkAdHoc,
+          adHocId: adHocId,
+        ),
+      ) ==
+      true;
+
+  @override
+  ConsumerState<TaskPickerDialog> createState() => _TaskPickerDialogState();
+}
+
+class _TaskPickerDialogState extends ConsumerState<TaskPickerDialog> {
+  final _search = TextEditingController();
+  String _subject = 'all';
+  String _status = 'actionable';
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _search.dispose();
+    super.dispose();
+  }
+
+  List<Task> _visible(PlannerData data) {
+    final query = _search.text.trim().toLowerCase();
+    final tasks = <Task>[];
+    for (final task in data.tasks) {
+      if (task.status == TaskStatus.archived) continue;
+      if (_subject != 'all' && task.subjectId != _subject) continue;
+      switch (_status) {
+        case 'actionable':
+          if (task.status == TaskStatus.completed) continue;
+        case 'completed':
+          if (task.status != TaskStatus.completed) continue;
+        default:
+          break;
+      }
+      if (query.isNotEmpty) {
+        final haystack =
+            '${task.title} ${task.description ?? ''} '
+                    '${subjectNameOf(data, task.subjectId)}'
+                .toLowerCase();
+        if (!haystack.contains(query)) continue;
+      }
+      tasks.add(task);
+    }
+    tasks.sort((a, b) {
+      // Actionable first (in progress, then deadline), completed review last.
+      final doneA = a.status == TaskStatus.completed ? 1 : 0;
+      final doneB = b.status == TaskStatus.completed ? 1 : 0;
+      if (doneA != doneB) return doneA - doneB;
+      final byDeadline = a.deadline.compareTo(b.deadline);
+      if (byDeadline != 0) return byDeadline;
+      return b.priority.compareTo(a.priority);
+    });
+    // Avoid dumping the whole long-term list at once.
+    return tasks.length > 50 ? tasks.sublist(0, 50) : tasks;
+  }
+
+  Future<void> _pick(Task task) async {
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final timer = ref.read(studyTimerProvider);
+      if (widget.mode == TaskPickerMode.extraStudy) {
+        await timer.startExtra(task.id);
+      } else {
+        final adHocId = widget.adHocId;
+        if (adHocId == null) throw StateError('临时学习已不存在，请刷新后重试');
+        final result = await ref
+            .read(plannerSessionProvider)
+            .linkAdHocToTask(adHocId: adHocId, taskId: task.id);
+        await timer.adoptAdHocConversion(adHocId, result.taskId);
+        if (mounted) {
+          showPlannerMessage(
+            context,
+            '已关联到「${task.title}」，历史记录仍保留临时学习关系。',
+          );
+        }
+      }
+      if (mounted) Navigator.pop(context, true);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error = error is StateError ? error.message : '$error';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = ref.watch(plannerSessionProvider).data;
+    final tasks = _visible(data);
+    final today = shanghaiToday();
+    final taskById = {for (final task in data.tasks) task.id: task};
+    return AlertDialog(
+      title: Text(
+        widget.mode == TaskPickerMode.extraStudy ? '选择要加学的事项' : '关联到已有事项',
+      ),
+      content: SizedBox(
+        width: 560,
+        height: 500,
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              key: const Key('task-picker-search'),
+              controller: _search,
+              decoration: const InputDecoration(
+                labelText: '搜索事项',
+                hintText: '事项名称、说明或课程',
+                prefixIcon: Icon(Icons.search),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                DropdownButton<String>(
+                  key: const Key('task-picker-subject'),
+                  value: _subject,
+                  items: [
+                    const DropdownMenuItem(value: 'all', child: Text('全部课程')),
+                    for (final subject in data.subjects)
+                      DropdownMenuItem(
+                        value: subject.id,
+                        child: Text(subject.name),
+                      ),
+                  ],
+                  onChanged: (value) =>
+                      setState(() => _subject = value ?? 'all'),
+                ),
+                DropdownButton<String>(
+                  key: const Key('task-picker-status'),
+                  value: _status,
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'actionable',
+                      child: Text('可执行事项'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'completed',
+                      child: Text('已完成（可复习）'),
+                    ),
+                    DropdownMenuItem(value: 'all', child: Text('全部状态')),
+                  ],
+                  onChanged: (value) =>
+                      setState(() => _status = value ?? 'actionable'),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: tasks.isEmpty
+                  ? const PlannerEmpty(
+                      message: '没有匹配的事项，可以修改筛选条件；全新内容请用临时学习。',
+                      icon: Icons.search_off,
+                    )
+                  : ListView(
+                      children: [
+                        for (final task in tasks)
+                          ListTile(
+                            key: Key('task-picker-item-${task.id}'),
+                            contentPadding: EdgeInsets.zero,
+                            title: Text(
+                              '${subjectNameOf(data, task.subjectId)} · ${task.title}',
+                            ),
+                            subtitle: Text(
+                              '${statusLabels[task.status] ?? ''} · '
+                              '已学 ${duration(day_ops.taskTotalMinutes(data, task.id))} / '
+                              '预算 ${duration(task.estimatedMinutes)}'
+                              '${day_ops.taskIsPlannedOn(data, task.id, today) ? ' · 今日已安排' : ''}',
+                            ),
+                            trailing: _busy
+                                ? const SizedBox.square(
+                                    dimension: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.play_arrow),
+                            onTap: _busy ? null : () => _pick(task),
+                          ),
+                        if (taskById.isNotEmpty && tasks.length >= 50)
+                          const Padding(
+                            padding: EdgeInsets.only(top: 8),
+                            child: Text(
+                              '只显示前 50 个匹配事项，可用搜索缩小范围。',
+                              style: TextStyle(
+                                color: PlannerColors.muted,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              PlannerNotice(_error!, tone: PlannerNoticeTone.error),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.pop(context, false),
+          child: const Text('取消'),
+        ),
+      ],
+    );
+  }
+}
+
+/// 全新临时学习：名称即可开始，课程/分类可选，不伪造预算或截止日期。
+class AdHocStudyDialog extends ConsumerStatefulWidget {
+  const AdHocStudyDialog({this.initialTitle, super.key});
+
+  final String? initialTitle;
+
+  static Future<bool> show(BuildContext context, {String? initialTitle}) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (context) => AdHocStudyDialog(initialTitle: initialTitle),
+      ) ==
+      true;
+
+  @override
+  ConsumerState<AdHocStudyDialog> createState() => _AdHocStudyDialogState();
+}
+
+class _AdHocStudyDialogState extends ConsumerState<AdHocStudyDialog> {
+  late final TextEditingController _title = TextEditingController(
+    text: widget.initialTitle ?? '',
+  );
+  String _subject = '';
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void dispose() {
+    _title.dispose();
+    super.dispose();
+  }
+
+  Future<void> _start() async {
+    final title = _title.text.trim();
+    if (title.isEmpty) {
+      setState(() => _error = '请填写临时学习名称');
+      return;
+    }
+    if (_busy) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await ref.read(studyTimerProvider).startAdHoc(
+        title: title,
+        subjectId: _subject.isEmpty ? null : _subject,
+      );
+      if (mounted) Navigator.pop(context, true);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error = error is StateError ? error.message : '$error';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = ref.watch(plannerSessionProvider).data;
+    return AlertDialog(
+      title: const Text('临时学习'),
+      content: SizedBox(
+        width: 420,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              key: const Key('ad-hoc-title'),
+              controller: _title,
+              autofocus: true,
+              enabled: !_busy,
+              maxLength: 150,
+              decoration: const InputDecoration(
+                labelText: '学什么',
+                hintText: '例如：了解摄影构图',
+                counterText: '',
+              ),
+              onChanged: (_) => setState(() => _error = null),
+            ),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(
+              key: const Key('ad-hoc-subject'),
+              initialValue: _subject,
+              decoration: const InputDecoration(labelText: '课程/分类（可选）'),
+              items: [
+                const DropdownMenuItem(value: '', child: Text('不指定课程')),
+                for (final subject in data.subjects)
+                  DropdownMenuItem(value: subject.id, child: Text(subject.name)),
+              ],
+              onChanged: _busy
+                  ? null
+                  : (value) => setState(() => _subject = value ?? ''),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              '只需名称即可计时：不会创建正式事项、预算、截止日期或日程，'
+              '也不会自动进入 AI 排程。之后可以转为正式事项或关联到已有事项。',
+              style: TextStyle(color: PlannerColors.muted, fontSize: 12),
+            ),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              PlannerNotice(_error!, tone: PlannerNoticeTone.error),
+            ],
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.pop(context, false),
+          child: const Text('取消'),
+        ),
+        FilledButton.icon(
+          key: const Key('ad-hoc-start'),
+          onPressed: _busy ? null : _start,
+          icon: _busy
+              ? const SizedBox.square(
+                  dimension: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.play_arrow, size: 18),
+          label: const Text('开始计时'),
+        ),
+      ],
+    );
+  }
+}
+
+/// 记录内容进度与困难：加学/复习停止后的可选后续，绝不自动完成内容或解锁依赖。
+class ContentFeedbackDialog extends ConsumerStatefulWidget {
+  const ContentFeedbackDialog({required this.taskId, super.key});
+
+  final String taskId;
+
+  static Future<void> show(BuildContext context, String taskId) =>
+      showDialog<void>(
+        context: context,
+        builder: (context) => ContentFeedbackDialog(taskId: taskId),
+      );
+
+  @override
+  ConsumerState<ContentFeedbackDialog> createState() =>
+      _ContentFeedbackDialogState();
+}
+
+class _ContentFeedbackDialogState extends ConsumerState<ContentFeedbackDialog> {
+  final _form = GlobalKey<FormState>();
+  late String _units;
+  late bool _completed;
+  late String _difficulty;
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final data = ref.read(plannerSessionProvider).data;
+    final task = data.tasks.where((item) => item.id == widget.taskId).firstOrNull;
+    final feedback = task?.planning?['feedback'];
+    _units = feedback is Map ? '${feedback['content_units'] ?? 0}' : '0';
+    _completed = feedback is Map && feedback['content_completed'] == true;
+    _difficulty = feedback is Map
+        ? feedback['difficulty'] as String? ?? 'manageable'
+        : 'manageable';
+  }
+
+  Future<void> _save() async {
+    if (_busy || !(_form.currentState?.validate() ?? false)) return;
+    final value = double.tryParse(_units);
+    if (value == null) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      await ref.read(plannerSessionProvider).edit(
+        (data) => recordPlanningFeedback(
+          data,
+          widget.taskId,
+          contentUnits: value,
+          contentCompleted: _completed,
+          difficulty: _difficulty,
+          sampledAt: nowIso(),
+        ),
+      );
+      if (mounted) Navigator.pop(context);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error = error is StateError ? error.message : '$error';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = ref.watch(plannerSessionProvider).data;
+    final task = data.tasks.where((item) => item.id == widget.taskId).firstOrNull;
+    return AlertDialog(
+      title: const Text('记录内容进度与困难'),
+      content: SizedBox(
+        width: 420,
+        child: Form(
+          key: _form,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Text(task?.title ?? ''),
+              const SizedBox(height: 12),
+              TextFormField(
+                key: const Key('content-feedback-units'),
+                initialValue: _units,
+                enabled: !_busy,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(labelText: '累计完成内容（单位数）'),
+                validator: (value) {
+                  final number = double.tryParse(value ?? '');
+                  return number == null || !number.isFinite || number < 0
+                      ? '填写有效的非负数量'
+                      : null;
+                },
+                onChanged: (value) => _units = value,
+              ),
+              CheckboxListTile(
+                key: const Key('content-feedback-completed'),
+                contentPadding: EdgeInsets.zero,
+                title: const Text('事项内容已完成'),
+                value: _completed,
+                onChanged: _busy
+                    ? null
+                    : (value) => setState(() => _completed = value ?? false),
+              ),
+              DropdownButtonFormField<String>(
+                initialValue: _difficulty,
+                decoration: const InputDecoration(labelText: '当前难度'),
+                items: const [
+                  DropdownMenuItem(value: 'easy', child: Text('进展顺利')),
+                  DropdownMenuItem(value: 'manageable', child: Text('按预期推进')),
+                  DropdownMenuItem(value: 'hard', child: Text('遇到困难')),
+                ],
+                onChanged: _busy
+                    ? null
+                    : (value) =>
+                          setState(() => _difficulty = value ?? 'manageable'),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 8),
+                PlannerNotice(_error!, tone: PlannerNoticeTone.error),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.pop(context),
+          child: const Text('跳过'),
+        ),
+        FilledButton(
+          key: const Key('content-feedback-save'),
+          onPressed: _busy ? null : _save,
+          child: const Text('保存反馈'),
+        ),
+      ],
+    );
+  }
+}
+
+/// 把临时学习转为正式事项：确认课程/范围/估算/日期意图后，原日志与 session 标识
+/// 保持不变（不复制分钟），随后用现有“安排时间块”预览对剩余周期的影响。
+class AdHocConvertDialog extends ConsumerStatefulWidget {
+  const AdHocConvertDialog({required this.adHocId, super.key});
+
+  final String adHocId;
+
+  static Future<void> show(BuildContext context, String adHocId) =>
+      showDialog<void>(
+        context: context,
+        builder: (context) => AdHocConvertDialog(adHocId: adHocId),
+      );
+
+  @override
+  ConsumerState<AdHocConvertDialog> createState() => _AdHocConvertDialogState();
+}
+
+class _AdHocConvertDialogState extends ConsumerState<AdHocConvertDialog> {
+  late TaskDraft _draft;
+  late final TextEditingController _title;
+  late final TextEditingController _description;
+  late final TextEditingController _estimated;
+  bool _busy = false;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    final data = ref.read(plannerSessionProvider).data;
+    final entity = data.adHocLearnings
+        .where((item) => item.id == widget.adHocId)
+        .firstOrNull;
+    final today = shanghaiToday();
+    _draft = TaskDraft.blank(data, today).copyWith(
+      title: entity?.title ?? '',
+      subjectId: entity?.subjectId ?? TaskDraft.blank(data, today).subjectId,
+      deadline: data.profile.resolvedPlanEnd(today),
+      earliestDate: today,
+    );
+    _title = TextEditingController(text: _draft.title);
+    _description = TextEditingController(text: _draft.description);
+    _estimated = TextEditingController(text: '${_draft.estimatedMinutes}');
+  }
+
+  @override
+  void dispose() {
+    _title.dispose();
+    _description.dispose();
+    _estimated.dispose();
+    super.dispose();
+  }
+
+  Future<void> _save() async {
+    if (_busy) return;
+    final data = ref.read(plannerSessionProvider).data;
+    final draft = _draft.copyWith(
+      title: _title.text,
+      description: _description.text.trim(),
+      estimatedMinutes: int.tryParse(_estimated.text.trim()) ?? 0,
+    );
+    final error = validateTaskDraft(draft);
+    if (error != null) {
+      setState(() => _error = error);
+      return;
+    }
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
+    try {
+      final session = ref.read(plannerSessionProvider);
+      final result = await session.convertAdHocToTask(
+        adHocId: widget.adHocId,
+        draft: draft,
+      );
+      await ref
+          .read(studyTimerProvider)
+          .adoptAdHocConversion(widget.adHocId, result.taskId);
+      if (!mounted) return;
+      final host = Navigator.of(context);
+      final task = data.tasks
+          .where((item) => item.id == result.taskId)
+          .firstOrNull;
+      host.pop();
+      final navigatorContext = host.context;
+      if (navigatorContext.mounted) {
+        final name =
+            task?.title ??
+            ref
+                .read(plannerSessionProvider)
+                .data
+                .tasks
+                .where((item) => item.id == result.taskId)
+                .firstOrNull
+                ?.title ??
+            draft.title;
+        showPlannerMessage(
+          navigatorContext,
+          '已转为正式事项「${name.trim()}」：原计时记录和秒数保持不变。',
+        );
+        await ScheduleTaskDialog.show(navigatorContext, result.taskId);
+      }
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _error = error is StateError ? error.message : '$error';
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final data = ref.watch(plannerSessionProvider).data;
+    final entity = data.adHocLearnings
+        .where((item) => item.id == widget.adHocId)
+        .firstOrNull;
+    return AlertDialog(
+      title: const Text('转为正式事项'),
+      content: SizedBox(
+        width: 480,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              PlannerNotice(
+                entity == null
+                    ? '临时学习已不存在，请刷新后重试。'
+                    : '已记录的临时学习用时（共 ${duration(day_ops.adHocTotalMinutes(data, entity.id))}）'
+                          '会保留在历史中，只把归属更新为新事项，不会复制分钟。',
+                tone: PlannerNoticeTone.info,
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                key: const Key('ad-hoc-convert-title'),
+                controller: _title,
+                enabled: !_busy,
+                maxLength: 150,
+                decoration: const InputDecoration(
+                  labelText: '事项名称',
+                  counterText: '',
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _description,
+                enabled: !_busy,
+                maxLines: 3,
+                maxLength: 1000,
+                decoration: const InputDecoration(
+                  labelText: '学习范围与完成标准',
+                  hintText: '例如：了解曝光三要素并完成 3 组练习',
+                  counterText: '',
+                ),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                initialValue: _draft.subjectId,
+                decoration: const InputDecoration(labelText: '课程'),
+                items: [
+                  for (final subject in data.subjects)
+                    DropdownMenuItem(
+                      value: subject.id,
+                      child: Text(subject.name),
+                    ),
+                ],
+                onChanged: _busy
+                    ? null
+                    : (value) => setState(
+                        () => _draft = _draft.copyWith(subjectId: value),
+                      ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _estimated,
+                enabled: !_busy,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: const InputDecoration(
+                  labelText: '预计总时长（分钟）',
+                  helperText: '新增正式范围会占用剩余周期的容量',
+                ),
+                onChanged: (_) => setState(() => _error = null),
+              ),
+              const SizedBox(height: 8),
+              DateField(
+                label: '开始日期',
+                value: _draft.earliestDate,
+                enabled: !_busy,
+                onChanged: (value) => setState(
+                  () => _draft = _draft.copyWith(earliestDate: value),
+                ),
+              ),
+              const SizedBox(height: 8),
+              DateField(
+                label: '截止日期',
+                value: _draft.deadline,
+                enabled: !_busy,
+                firstDate: _draft.earliestDate,
+                onChanged: (value) =>
+                    setState(() => _draft = _draft.copyWith(deadline: value)),
+              ),
+              if (_error != null) ...[
+                const SizedBox(height: 8),
+                PlannerNotice(_error!, tone: PlannerNoticeTone.error),
+              ],
+            ],
+          ),
+        ),
+      ),
+      actions: [
+        TextButton(
+          onPressed: _busy ? null : () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton.icon(
+          key: const Key('ad-hoc-convert-save'),
+          onPressed: _busy || entity == null ? null : _save,
+          icon: const Icon(Icons.arrow_forward, size: 18),
+          label: const Text('转为正式事项并安排'),
+        ),
+      ],
+    );
+  }
+}
+

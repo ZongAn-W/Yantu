@@ -15,7 +15,7 @@ class _Sync implements SyncApi {
   _Sync(this.data);
   PlannerData data;
   @override
-  Future<RemoteSnapshot> pull() async => RemoteSnapshot(data, 1);
+  Future<RemoteSnapshot> pull({int? revision}) async => RemoteSnapshot(data, 1);
   @override
   Future<RemoteSnapshot> push(
     PlannerData next,

@@ -4,8 +4,10 @@ import { ActionSchema, CalendarDateSchema, FIRST_QUESTION, FIRST_QUESTION_OPTION
 import { advanceOnboarding } from "./onboarding.js";
 import { sanitizeInterviewSession } from "./onboarding-evidence.js";
 import { generateCourses, generateItems, nextInterview } from "./onboarding-ai.js";
+import { buildPlanningDocument, newPlanning } from "./planning-service.js";
 
-const aiConfig = vi.hoisted(() => ({ aiApiKey: "", aiBaseUrl: "https://ai.invalid", aiModel: "test", aiReasoningEffort: "max" }));
+const aiConfig = vi.hoisted(() => ({ aiApiKey: "", aiBaseUrl: "https://ai.invalid", aiModel: "test", aiReasoningEffort: "max",
+  aiSimpleReasoningEffort: "low", aiPlanningReasoningEffort: "high" }));
 vi.mock("./config.js", () => ({ config: aiConfig }));
 const fetchMock = vi.fn<typeof fetch>();
 const answer = (session: OnboardingSession, text: string) => advanceOnboarding(session, { type: "answer", answer: text });
@@ -361,6 +363,7 @@ describe("guided onboarding", () => {
     expect(result.profile.target_date).toBeNull();
     const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     expect(JSON.parse(request.messages[1].content).answers).toEqual(session.answers);
+    expect(request.reasoning_effort).toBe("low");
     expect(request.messages[0].content).toContain("一次只提一道问题");
     expect(request.messages[0].content).toContain("界面自动提供“其他”文字输入");
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -433,6 +436,7 @@ describe("guided onboarding", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     expect(request.messages[0].content).toContain("不要继续提问");
+    expect(request.reasoning_effort).toBe("low");
   });
 
   it("provides AI item generation the plan cycle rather than an unrelated default", async () => {
@@ -444,6 +448,7 @@ describe("guided onboarding", () => {
     const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     expect(JSON.parse(request.messages[1].content).plan_end_date).toBe("2026-11-13");
     expect(JSON.parse(request.messages[1].content).target_date).toBe("");
+    expect(request.reasoning_effort).toBe("high");
   });
 
   it("includes current manual edits in conversational revisions and rejects new course references", async () => {
@@ -453,6 +458,7 @@ describe("guided onboarding", () => {
     fetchMock.mockResolvedValue(Response.json({ choices: [{ message: { content: JSON.stringify({ courses: session.courses, summary: "修改后", assumptions: [], warnings: [] }) } }] }));
     await generateCourses(session, "保留手动课程");
     expect(JSON.parse(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).messages[1].content).courses).toEqual(session.courses);
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).reasoning_effort).toBe("low");
     fetchMock.mockResolvedValue(Response.json({ choices: [{ message: { content: JSON.stringify({ items: [{ id: "bad", course_id: "invented", title: "错误引用", estimated_minutes: 60, deadline: "2027-12-25" }], summary: "", assumptions: [], warnings: [] }) } }] }));
     await expect(generateItems(session)).rejects.toThrow("已确认的课程");
   });
@@ -465,5 +471,161 @@ describe("guided onboarding", () => {
     expect(session.stage).toBe("interview");
     aiConfig.aiApiKey = "";
     await expect(generateCourses(session, "增加一门课")).rejects.toThrow("尚未配置 AI");
+  });
+
+  it("retains the constraints draft after an AI timeout and allows the same submission to be retried", async () => {
+    const session: OnboardingSession = { ...newSession(), stage: "constraints",
+      courses: [{ id: "math", name: "高数", description: "", priority: 2 }] };
+    const before = structuredClone(session);
+    aiConfig.aiApiKey = "key";
+    fetchMock.mockRejectedValueOnce(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
+
+    await expect(confirmConstraints(session)).rejects.toThrow("已有进度已保留，请重试");
+    expect(session).toEqual(before);
+
+    fetchMock.mockResolvedValueOnce(Response.json({ choices: [{ message: { content: JSON.stringify({
+      items: [{ id: "math-1", course_id: "math", title: "极限练习", estimated_minutes: 60,
+        deadline: "2026-11-13", deadline_kind: "plan_end" }], summary: "", assumptions: [], warnings: [],
+    }) } }] }));
+    const retried = await confirmConstraints(session);
+    expect(retried).toMatchObject({ stage: "items", revision: before.revision + 1, constraints_confirmed: true });
+    expect(retried.items).toHaveLength(1);
+    expect(session).toEqual(before);
+  });
+});
+
+describe("full-period onboarding (one model response, flexible capacity)", () => {
+  const week120 = { "0": 120, "1": 120, "2": 120, "3": 120, "4": 120, "5": 120, "6": 120 };
+  const cycle = { start_date: "2026-10-17", end_date: "2026-11-13" };
+  const scheduleSession = (planning: OnboardingSession["planning"] = null): OnboardingSession => ({
+    ...newSession(), stage: "schedule",
+    start_date: cycle.start_date, end_date: cycle.end_date,
+    profile: ProfileSchema.parse({ goal_text: "线性代数复习", plan_start_date: cycle.start_date, plan_end_date: cycle.end_date }),
+    recommendations: { ...newSession().recommendations, plan_end_date: cycle.end_date, weekly_minutes: week120 },
+    courses: [{ id: "math", name: "线性代数", description: "", priority: 2 }],
+    items: [{ id: "math-1", course_id: "math", title: "矩阵章节", description: "", completion_criteria: "",
+      estimated_minutes: 120, earliest_date: cycle.start_date, deadline: cycle.end_date,
+      deadline_kind: "plan_end", priority: 2,
+      planning: { workload: { components: [{ id: "unit", label: "章", quantity: 2, unit: "章", minutes_per_unit: 60 }],
+        source: "估算", confidence: "low", calibration: "记录本次速度" }, activity: { kind: "finite" }, dependencies: [] } }],
+    planning,
+  });
+
+  it("generates the whole cycle with exactly one model response and ignores the model's rolling flag", async () => {
+    const session: OnboardingSession = { ...newSession(), stage: "constraints",
+      courses: [{ id: "math", name: "线性代数", description: "", priority: 2 }],
+      recommendations: { ...newSession().recommendations, weekly_minutes: week120, plan_end_date: cycle.end_date } };
+    aiConfig.aiApiKey = "key";
+    fetchMock.mockResolvedValueOnce(Response.json({ choices: [{ message: { content: JSON.stringify({
+      items: [{ id: "math-1", course_id: "math", title: "矩阵章节", description: "矩阵运算", completion_criteria: "完成练习",
+        estimated_minutes: 120, earliest_date: cycle.start_date, deadline: cycle.end_date, deadline_kind: "plan_end", priority: 2,
+        planning: { workload: { components: [{ id: "unit", label: "章", quantity: 2, unit: "章", minutes_per_unit: 60 }],
+          source: "估算", confidence: "low", calibration: "记录速度" }, activity: { kind: "finite" }, dependencies: [] } }],
+      planning: { version: 1, prompt_version: "model", rules_version: "model", rolling: true, detail_days: 14,
+        route: [{ id: "route", title: "完整周期路线", item_ids: ["math-1"], outcome: "完成矩阵", check: "练习通过" }],
+        milestones: [], assumptions: ["模型给出的全周期假设"], risks: [], uncovered: [] },
+      summary: "", assumptions: [], warnings: [] }) } }] }));
+
+    const items = await advanceOnboarding(session, { type: "set_constraints", ...cycle, weekly_minutes: week120 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(items.stage).toBe("items");
+    // Full mode is decided server-side from the action, not from the model's rolling flag.
+    expect(items.planning).toMatchObject({ mode: "full", rolling: false, detail_days: 28,
+      detailed_until: cycle.end_date, forecast: null });
+    expect(items.planning!.assumptions).toContain("模型给出的全周期假设");
+    const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(request.messages[0].content).toContain("全周期一次性生成");
+    expect(JSON.parse(request.messages[1].content)).toMatchObject({ plan_mode: "full", plan_horizon_days: 28 });
+    expect(JSON.parse(request.messages[1].content).capacity.basis).toBe("gross_buffer");
+
+    const schedule = await advanceOnboarding(items, { type: "confirm_items", items: items.items });
+    expect(schedule.stage).toBe("schedule");
+    const preview = await advanceOnboarding(schedule, { type: "preview_schedule", ...cycle, weekly_minutes: week120 });
+    // No repair was needed, so the normal path stayed at one planning model call.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(preview.preview!.status).toBe("ready");
+    expect(preview.preview!.mode).toBe("full");
+    expect(preview.preview!.detailed_until).toBe(cycle.end_date);
+    expect(preview.preview!.forecast_minutes).toBe(0);
+    const done = await advanceOnboarding(preview, { type: "finish", ...cycle, weekly_minutes: week120,
+      preview_token: preview.preview!.token as string });
+    expect(done.stage).toBe("complete");
+    expect(done.planning).toMatchObject({ mode: "full", rolling: false, detailed_until: cycle.end_date, forecast: null });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps generating the full cycle when materials and speed are unknown (fallback estimates stay visible)", async () => {
+    const session: OnboardingSession = { ...newSession(), stage: "constraints",
+      courses: [{ id: "photo", name: "摄影", description: "", priority: 2 }],
+      recommendations: { ...newSession().recommendations, weekly_minutes: week120, plan_end_date: cycle.end_date } };
+    const items = await advanceOnboarding(session, { type: "set_constraints", ...cycle, weekly_minutes: week120 });
+    expect(items.stage).toBe("items");
+    expect(items.planning!.mode).toBe("full");
+    expect(items.planning!.detail_days).toBe(28);
+    expect(items.items.length).toBeGreaterThan(0);
+    expect(items.items.every(item => item.planning?.workload?.confidence === "low")).toBe(true);
+    expect(items.items.every(item => Boolean(item.planning?.workload?.calibration))).toBe(true);
+    const schedule = await advanceOnboarding(items, { type: "confirm_items", items: items.items });
+    const preview = await advanceOnboarding(schedule, { type: "preview_schedule", ...cycle, weekly_minutes: week120 });
+    expect(preview.preview!.mode).toBe("full");
+    expect(preview.preview!.detailed_until).toBe(cycle.end_date);
+    expect((preview.preview as { capacity: { weeks: Array<{ monday: string }> } }).capacity.weeks.at(-1)!.monday).toBe("2026-11-09");
+    const done = await advanceOnboarding(preview, { type: "finish", ...cycle, weekly_minutes: week120,
+      preview_token: preview.preview!.token as string });
+    expect(done.stage).toBe("complete");
+    expect(done.planning).toMatchObject({ mode: "full", detailed_until: cycle.end_date, forecast: null });
+  });
+
+  it("accepts a net plan with only a weekly baseline/range and no detail_days, while old payloads still work", async () => {
+    expect(ActionSchema.safeParse({ type: "finish", ...cycle, weekly_minutes: week120 }).success).toBe(true);
+    const netAction = { type: "finish" as const, ...cycle, capacity_basis: "net" as const,
+      weekly_baseline_minutes: 210, weekly_range_min_minutes: 150, weekly_range_max_minutes: 300,
+      week_capacity_overrides: { "2026-10-19": { total_minutes: 120 } },
+      date_capacity_overrides: { "2026-10-18": 0 } };
+    expect(ActionSchema.safeParse(netAction).success).toBe(true);
+    const prepared = await advanceOnboarding(scheduleSession(), netAction);
+    expect(prepared.stage).toBe("complete");
+    expect(prepared.profile.capacity_basis).toBe("net");
+    expect(prepared.profile.weekly_baseline_minutes).toBe(210);
+    expect(prepared.profile.weekly_range_min_minutes).toBe(150);
+    expect(prepared.profile.week_capacity_overrides).toEqual({ "2026-10-19": { total_minutes: 120 } });
+    expect(prepared.profile.date_capacity_overrides).toEqual({ "2026-10-18": 0 });
+    const built = buildPlanningDocument(prepared);
+    expect(built.document.profile.capacity_basis).toBe("net");
+    expect(built.document.profile.weekly_baseline_minutes).toBe(210);
+    // The user confirmed no daily template, so the program distributes the weekly baseline instead
+    // of persisting an all-zero template as if the user had confirmed every day.
+    expect(built.document.profile.weekly_minutes).toBeUndefined();
+    expect(built.document.blocks.length).toBeGreaterThan(0);
+    expect(built.document.planning!.mode).toBe("full");
+  });
+
+  it("rejects invalid week/date override keys and inverted capacity ranges", async () => {
+    const base = { type: "finish" as const, ...cycle, capacity_basis: "net" as const, weekly_baseline_minutes: 210 };
+    await expect(advanceOnboarding(scheduleSession(), { ...base,
+      week_capacity_overrides: { "2026-10-20": { total_minutes: 60 } } })).rejects.toThrow("周一");
+    await expect(advanceOnboarding(scheduleSession(), { ...base,
+      date_capacity_overrides: { "2026-02-30": 30 } })).rejects.toThrow("有效日期");
+    await expect(advanceOnboarding(scheduleSession(), { ...base,
+      weekly_range_min_minutes: 300, weekly_range_max_minutes: 100 })).rejects.toThrow("最小值不能大于最大值");
+    await expect(advanceOnboarding(scheduleSession(), { ...base,
+      weekly_range_max_minutes: 100 })).rejects.toThrow("不能高于");
+  });
+
+  it("keeps an inherited rolling plan rolling unless the caller explicitly upgrades it", async () => {
+    const rolling: OnboardingSession["planning"] = { ...newPlanning(), mode: "rolling", rolling: true, detail_days: 14 };
+    const preview = await advanceOnboarding(scheduleSession(rolling), { type: "preview_schedule", ...cycle, weekly_minutes: week120 });
+    expect(preview.planning).toMatchObject({ mode: "rolling", rolling: true, detail_days: 14,
+      detailed_until: "2026-10-30" });
+    expect(preview.preview!.mode).toBe("rolling");
+    expect(preview.planning!.forecast).toMatchObject({ from: "2026-10-31", to: cycle.end_date });
+    const done = await advanceOnboarding(preview, { type: "finish", ...cycle, weekly_minutes: week120,
+      preview_token: preview.preview!.token as string });
+    expect(done.planning).toMatchObject({ mode: "rolling", rolling: true, detail_days: 14 });
+    // An explicit upgrade request switches the same draft to full-cycle coverage.
+    const upgraded = await advanceOnboarding(scheduleSession(rolling), { type: "preview_schedule", ...cycle,
+      weekly_minutes: week120, mode: "full" });
+    expect(upgraded.planning).toMatchObject({ mode: "full", rolling: false, detail_days: 28,
+      detailed_until: cycle.end_date, forecast: null });
   });
 });

@@ -1,7 +1,48 @@
 import 'dart:math' as math;
 
 import '../../../../shared/models/planner_models.dart';
+import '../capacity.dart' as capacity_core;
 import 'planner_scheduler.dart' as base;
+
+/// 灵活容量排程中一个自然周的持续练习计划。
+class _FlexibleWeekPlan {
+  _FlexibleWeekPlan({
+    required this.task,
+    required this.weekStart,
+    required this.sessions,
+    required this.oldSessions,
+    required this.dates,
+  });
+
+  final Task task;
+  final String weekStart;
+  final int sessions;
+  final int oldSessions;
+  final List<String> dates;
+  final List<_FlexibleSession> sessions_ = [];
+  int placedNew = 0;
+
+  List<_FlexibleSession> get pending => sessions_
+      .where((session) => !session.placed)
+      .toList();
+}
+
+class _FlexibleSession {
+  _FlexibleSession({
+    required this.index,
+    required this.instance,
+    required this.needed,
+    required this.preferred,
+    required this.preferredIndex,
+  });
+
+  final int index;
+  final String instance;
+  final int needed;
+  final String preferred;
+  final int preferredIndex;
+  bool placed = false;
+}
 
 JsonMap? activityOf(Task task) {
   final value = task.planning?['activity'];
@@ -30,13 +71,21 @@ String? strategyExecutionError(PlannerData data, Task task, String date) {
     final prior = data.tasks
         .where((item) => item.id == dependency['task_id'])
         .firstOrNull;
-    final content = prior?.planning?['content_progress'];
     if (prior == null ||
         prior.userId != task.userId ||
-        prior.status == TaskStatus.archived ||
-        prior.status != TaskStatus.completed &&
-            !(content is Map && content['confirmed'] == true)) {
+        prior.status == TaskStatus.archived) {
       return '前置内容${prior == null ? '' : '「${prior.title}」'}尚未确认完成，请先核对内容进度';
+    }
+    // Execution never accepts a forecast: only real content confirmation unlocks timing.
+    if (!base.dependencySatisfied(
+      prior: prior,
+      dependency: dependency,
+      priorBlocks: const [],
+      date: date,
+      remaining: 0,
+      allowForecast: false,
+    )) {
+      return '前置内容「${prior.title}」尚未确认完成，请先核对内容进度';
     }
   }
   return null;
@@ -88,17 +137,6 @@ int _days(String start, String end) =>
     1;
 String _monday(String date) =>
     base.addDays(date, -((base.weekdayIndex(date) + 6) % 7));
-
-int _occupiedMinutes(List<List<int>> intervals, {int from = 0, int to = 1440}) {
-  var total = 0, last = from;
-  for (final interval in [...intervals]..sort((a, b) => a[0].compareTo(b[0]))) {
-    final start = math.max(from, interval[0]), end = math.min(to, interval[1]);
-    if (end <= start) continue;
-    total += math.max(0, end - math.max(start, last));
-    last = math.max(last, end);
-  }
-  return total;
-}
 
 /// Monday weeks and ceil(frequency * active calendar days / 7) for partial weeks.
 List<JsonMap> recurringDemand(Task task, String from, String to) {
@@ -161,35 +199,8 @@ StrategyResult scheduleStrategy(
   final stamp = runtime.timestamp(),
       byId = {for (final task in data.tasks) task.id: task};
   var added = 0, scheduled = 0, unscheduled = 0;
-  int actual(ScheduleBlock block) => math.max(
-    block.actualMinutes,
-    data.logs
-        .where((log) => log.blockId == block.id)
-        .fold<int>(0, (sum, log) => sum + math.max(0, log.minutes)),
-  );
-  int completed(Task task) => math.max(
-    task.completedMinutes,
-    data.logs
-        .where((log) => log.taskId == task.id)
-        .fold<int>(0, (sum, log) => sum + math.max(0, log.minutes)),
-  );
-  int remaining(Task task) => math.max(
-    0,
-    task.estimatedMinutes -
-        completed(task) -
-        blocks
-            .where(
-              (block) =>
-                  block.taskId == task.id &&
-                  block.date.compareTo(from) >= 0 &&
-                  block.status != BlockStatus.completed,
-            )
-            .fold<int>(
-              0,
-              (sum, block) =>
-                  sum + math.max(0, block.durationMinutes - actual(block)),
-            ),
-  );
+  int remaining(Task task) =>
+      base.forecastRemainingMinutes(task, data.logs, blocks, from: from);
   int room(Task task, String date) {
     final day = blocks.where((block) => block.date == date).toList();
     final orphanLogs = data.logs.where(
@@ -197,45 +208,28 @@ StrategyResult scheduleStrategy(
           log.date == date &&
           (log.blockId == null || !day.any((block) => block.id == log.blockId)),
     );
-    int load(ScheduleBlock block) =>
-        block.status == BlockStatus.completed && actual(block) > 0
-        ? actual(block)
-        : math.max(block.durationMinutes, actual(block));
-    final timed = data.profile.planningMode == PlanningMode.timed;
-    List<List<int>> blockIntervals(Iterable<ScheduleBlock> source) => [
-      for (final block in source)
-        [
-          block.startMinute,
-          block.startMinute + math.max(block.durationMinutes, actual(block)),
-        ],
-    ];
     final courseBlocks = day.where(
       (block) => byId[block.taskId]?.subjectId == task.subjectId,
     );
-    final occupied = timed
-        ? _occupiedMinutes(
-            [
-              for (final event in data.fixedEvents.where(
-                (event) => base.eventOccursOn(event, date),
-              ))
-                [event.startMinute, event.startMinute + event.durationMinutes],
-              ...blockIntervals(day),
-            ],
-            from: data.profile.studyStartMinute,
-            to: data.profile.studyEndMinute,
-          )
-        : base.fixedEventMinutesForDate(data.fixedEvents, date) +
-              day.fold<int>(0, (sum, block) => sum + load(block));
-    final courseOccupied = timed
-        ? _occupiedMinutes(
-            blockIntervals(courseBlocks),
-            from: data.profile.studyStartMinute,
-            to: data.profile.studyEndMinute,
-          )
-        : courseBlocks.fold<int>(0, (sum, block) => sum + load(block));
+    // The same occupancy accounting is used by manual placement: overlapping timed
+    // records and events count once and are clipped to the study window.
+    final dailyOccupied = base.occupiedDayMinutes(
+      profile: data.profile,
+      fixedEvents: data.fixedEvents,
+      dayBlocks: day,
+      logs: data.logs,
+      date: date,
+    );
+    final courseOccupied = base.occupiedDayMinutes(
+      profile: data.profile,
+      fixedEvents: const [],
+      dayBlocks: courseBlocks.toList(),
+      logs: data.logs,
+      date: date,
+    );
     final daily =
         base.dailyStudyBudget(data.profile, date) -
-        occupied -
+        dailyOccupied -
         orphanLogs.fold<int>(0, (sum, log) => sum + math.max(0, log.minutes));
     final course =
         math.min(240, data.profile.subjectLimitMinutes) -
@@ -250,23 +244,17 @@ StrategyResult scheduleStrategy(
     if (room(task, date) < duration) return false;
     var start = 0;
     if (data.profile.planningMode == PlanningMode.timed) {
-      final intervals = <List<int>>[
-        for (final event in data.fixedEvents.where(
-          (event) => base.eventOccursOn(event, date),
-        ))
-          [event.startMinute, event.startMinute + event.durationMinutes],
+      final intervals = <(int, int)>[
+        ...base.fixedEventOccupiedIntervals(data.fixedEvents, date),
         for (final block in blocks.where((block) => block.date == date))
-          [
-            block.startMinute,
-            block.startMinute + math.max(block.durationMinutes, actual(block)),
-          ],
-      ]..sort((a, b) => a[0].compareTo(b[0]));
-      final quantum = math.max(30, data.profile.granularityMinutes);
+          base.blockOccupiedInterval(block, data.logs),
+      ]..sort((a, b) => a.$1.compareTo(b.$1));
+      final quantum = capacity_core.schedulingQuantum(data.profile);
       start = (data.profile.studyStartMinute / quantum).ceil() * quantum;
       for (final interval in intervals) {
-        if (start + duration <= interval[0]) break;
-        if (interval[1] > start) {
-          start = (interval[1] / quantum).ceil() * quantum;
+        if (start + duration <= interval.$1) break;
+        if (interval.$2 > start) {
+          start = (interval.$2 / quantum).ceil() * quantum;
         }
       }
       if (start + duration > data.profile.studyEndMinute) return false;
@@ -333,16 +321,13 @@ StrategyResult scheduleStrategy(
     if (invalid.contains(task.id)) return false;
     return dependenciesOf(task).every((dependency) {
       final prior = byId[dependency['task_id']]!;
-      final content = prior.planning?['content_progress'];
-      if (prior.status == TaskStatus.completed ||
-          content is Map && content['confirmed'] == true) {
-        return true;
-      }
-      if (dependency['mode'] == 'confirmed') return false;
-      final priorBlocks = blocks.where((block) => block.taskId == prior.id);
-      return remaining(prior) == 0 &&
-          priorBlocks.isNotEmpty &&
-          priorBlocks.every((block) => block.date.compareTo(date) < 0);
+      return base.dependencySatisfied(
+        prior: prior,
+        dependency: dependency,
+        priorBlocks: blocks.where((block) => block.taskId == prior.id).toList(),
+        date: date,
+        remaining: remaining(prior),
+      );
     });
   }
 
@@ -352,9 +337,7 @@ StrategyResult scheduleStrategy(
             task.userId == data.profile.userId &&
             task.status != TaskStatus.completed &&
             task.status != TaskStatus.archived &&
-            (task.planning?['content_progress'] is! Map ||
-                (task.planning!['content_progress'] as Map)['confirmed'] !=
-                    true) &&
+            !base.contentConfirmed(task) &&
             activityOf(task)?['state'] != 'paused' &&
             activityOf(task)?['state'] != 'ended',
       )
@@ -377,13 +360,21 @@ StrategyResult scheduleStrategy(
         !unlocked(task, date)) {
       return;
     }
-    final quantum = math.max(30, data.profile.granularityMinutes);
+    final quantum = capacity_core.schedulingQuantum(data.profile);
+    final lightweight = capacity_core.supportsLightweightScheduling(
+      data.profile,
+    );
     while (remaining(task) > 0 && room(task, date) > 0) {
       final amount = math.min(
         quantum,
         math.min(remaining(task), room(task, date)),
       );
-      if (amount < quantum && remaining(task) > amount) break;
+      if (lightweight) {
+        // 净容量允许最终分块短于常规粒度，但不少于 10 分钟。
+        if (amount < capacity_core.lightweightMinimumMinutes) break;
+      } else if (amount < quantum && remaining(task) > amount) {
+        break;
+      }
       if (!add(task, date, amount)) break;
     }
   }
@@ -408,10 +399,169 @@ StrategyResult scheduleStrategy(
     }
   }
 
-  for (final task in active.where(
-    (task) => activityOf(task)?['kind'] == 'recurring',
-  )) {
-    preparePredecessors(task);
+  final finite = active
+      .where((task) => activityOf(task)?['kind'] != 'recurring')
+      .toList();
+  final flexibleCapacity = capacity_core.usesFlexibleCapacity(data.profile);
+
+  /// 新容量语义：按依赖/优先级顺序把“有限工作”和“持续练习会话”放进同一个
+  /// 每日循环竞争容量，不再预先为低优先级持续练习保留整周容量。
+  ///
+  /// 未能在首选日期安排的练习会话，会在同一自然周的其余日期按“离首选最近优先”
+  /// 重试一次；仍无法安排时如实报告缺口。旧 gross 数据不进入该分支。
+  void scheduleFlexible() {
+    final recurringTasks = active
+        .where((task) => activityOf(task)?['kind'] == 'recurring')
+        .toList();
+    final plans = <_FlexibleWeekPlan>[];
+    for (final task in recurringTasks) {
+      preparePredecessors(task);
+      final size = activityOf(task)?['session_minutes'] as int? ?? 30;
+      for (final week in recurringDemand(
+        task,
+        data.profile.planStartDate.isEmpty ? from : data.profile.planStartDate,
+        data.profile.planEndDate.isEmpty ? to : data.profile.planEndDate,
+      )) {
+        final first = week['start'] as String, last = week['end'] as String;
+        if (last.compareTo(from) < 0 || first.compareTo(to) > 0) continue;
+        final weekStart = week['week'] as String,
+            sessions = week['sessions'] as int;
+        final orphanWork = data.logs
+            .where(
+              (log) =>
+                  log.taskId == task.id &&
+                  log.date.compareTo(first) >= 0 &&
+                  log.date.compareTo(last) <= 0 &&
+                  !blocks.any(
+                    (block) =>
+                        block.taskId == task.id && block.date == log.date,
+                  ),
+            )
+            .fold<int>(0, (sum, log) => sum + math.max(0, log.minutes));
+        final oldSessions =
+            blocks
+                .where(
+                  (block) =>
+                      block.taskId == task.id &&
+                      block.date.compareTo(first) >= 0 &&
+                      block.date.compareTo(last) <= 0 &&
+                      block.activityInstanceId == null,
+                )
+                .map((block) => block.date)
+                .toSet()
+                .length +
+            orphanWork ~/ size;
+        final credit = orphanWork % size;
+        final dates = List.generate(
+          _days(first, last),
+          (i) => base.addDays(first, i),
+        );
+        final plan = _FlexibleWeekPlan(
+          task: task,
+          weekStart: weekStart,
+          sessions: sessions,
+          oldSessions: oldSessions,
+          dates: dates,
+        );
+        for (var i = 0; i < sessions; i++) {
+          final instance = '${task.id}:$weekStart:$i';
+          if (i < oldSessions ||
+              blocks.any((block) => block.activityInstanceId == instance)) {
+            continue;
+          }
+          final preferredIndex = ((i + .5) * dates.length / sessions).floor();
+          final preferred = dates[preferredIndex];
+          if (preferred.compareTo(to) > 0) continue;
+          plan.sessions_.add(
+            _FlexibleSession(
+              index: i,
+              instance: instance,
+              needed: size - (i == oldSessions ? credit : 0),
+              preferred: preferred,
+              preferredIndex: preferredIndex,
+            ),
+          );
+        }
+        plans.add(plan);
+      }
+    }
+
+    bool place(_FlexibleWeekPlan plan, _FlexibleSession session, String date) {
+      if (session.placed) return false;
+      if (date.compareTo(from) < 0 || date.compareTo(to) > 0) return false;
+      if (blocks.any(
+        (block) => block.taskId == plan.task.id && block.date == date,
+      )) {
+        return false;
+      }
+      if (!unlocked(plan.task, date)) return false;
+      if (!add(plan.task, date, session.needed, session.instance)) return false;
+      session.placed = true;
+      plan.placedNew++;
+      return true;
+    }
+
+    final activeOrdered = ordered.where(active.contains).toList();
+    for (
+      var date = from;
+      date.compareTo(to) <= 0;
+      date = base.addDays(date, 1)
+    ) {
+      for (final task in activeOrdered) {
+        if (activityOf(task)?['kind'] == 'recurring') {
+          for (final plan in plans.where((plan) => plan.task.id == task.id)) {
+            for (final session in plan.sessions_) {
+              if (session.preferred == date) place(plan, session, date);
+            }
+          }
+        } else {
+          fillFinite(task, date);
+        }
+      }
+    }
+    for (final plan in plans) {
+      final unplaced = plan.pending;
+      if (unplaced.isEmpty) continue;
+      for (final session in unplaced) {
+        final candidates = [...plan.dates]
+          ..sort((a, b) {
+            final left = (plan.dates.indexOf(a) - session.preferredIndex).abs();
+            final right = (plan.dates.indexOf(b) - session.preferredIndex).abs();
+            return left != right ? left.compareTo(right) : a.compareTo(b);
+          });
+        for (final date in candidates) {
+          if (place(plan, session, date)) break;
+        }
+      }
+      final stillUnplaced = plan.pending;
+      if (stillUnplaced.isEmpty) continue;
+      unscheduled += stillUnplaced.fold<int>(
+        0,
+        (sum, session) => sum + session.needed,
+      );
+      issues.add(
+        StrategyIssue(
+          invalid.contains(plan.task.id)
+              ? 'DEPENDENCY_INVALID'
+              : 'RECURRENCE_SHORTFALL',
+          plan.task.id,
+          plan.sessions,
+          plan.oldSessions + plan.placedNew,
+          '每周练习尚缺一次（${activityOf(plan.task)?['session_minutes'] as int? ?? 30}分钟）；'
+              '请核对可用时间、有效日期和前置条件',
+          plan.weekStart,
+        ),
+      );
+    }
+  }
+
+  if (flexibleCapacity) {
+    scheduleFlexible();
+  } else {
+    for (final task in active.where(
+      (task) => activityOf(task)?['kind'] == 'recurring',
+    )) {
+      preparePredecessors(task);
     final size = activityOf(task)?['session_minutes'] as int? ?? 30;
     for (final week in recurringDemand(
       task,
@@ -509,12 +659,10 @@ StrategyResult scheduleStrategy(
       }
     }
   }
-  final finite = active
-      .where((task) => activityOf(task)?['kind'] != 'recurring')
-      .toList();
-  for (var date = from; date.compareTo(to) <= 0; date = base.addDays(date, 1)) {
-    for (final task in finite) {
-      fillFinite(task, date);
+    for (var date = from; date.compareTo(to) <= 0; date = base.addDays(date, 1)) {
+      for (final task in finite) {
+        fillFinite(task, date);
+      }
     }
   }
   for (final task in finite) {

@@ -32,16 +32,157 @@
 
   <title>不白学 · 学习执行台</title>
   <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#f5f7fa">
+  <style>
+    html, body { margin: 0; min-height: 100%; background: #f5f7fa; }
+    #planner-startup {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      box-sizing: border-box;
+      display: grid;
+      place-items: center;
+      overflow: auto;
+      padding: 32px 24px;
+      color: #20334a;
+      background: #f5f7fa;
+      font: 16px/1.6 "Microsoft YaHei", "PingFang SC", sans-serif;
+      letter-spacing: 0;
+    }
+    .startup-content { width: min(100%, 360px); padding-block: 24px; }
+    .startup-brand h1 { margin: 0; font-size: 24px; line-height: 1.4; font-weight: 700; }
+    .startup-subtitle { margin: 4px 0 0; color: #5b6b7d; font-size: 14px; }
+    .startup-state { margin-top: 40px; }
+    #startup-status { margin: 0; font-size: 18px; font-weight: 600; }
+    .startup-progress {
+      position: relative;
+      height: 4px;
+      margin-top: 16px;
+      overflow: hidden;
+      background: #dce3eb;
+      border-radius: 2px;
+    }
+    .startup-progress::after {
+      content: "";
+      position: absolute;
+      inset-block: 0;
+      width: 35%;
+      background: #275e91;
+      animation: startup-progress 1.8s ease-in-out infinite;
+    }
+    @keyframes startup-progress {
+      from { transform: translateX(-100%); }
+      to { transform: translateX(390%); }
+    }
+    #startup-detail { margin: 14px 0 0; color: #5b6b7d; font-size: 14px; }
+    #startup-retry {
+      min-height: 44px;
+      margin-top: 24px;
+      padding: 9px 20px;
+      border: 1px solid #275e91;
+      border-radius: 6px;
+      color: #fff;
+      background: #275e91;
+      font: inherit;
+      cursor: pointer;
+    }
+    #startup-retry:hover { background: #1d4c78; }
+    #startup-retry:focus-visible { outline: 3px solid #a85c14; outline-offset: 3px; }
+    #startup-retry:disabled { cursor: wait; opacity: 0.7; }
+    #planner-startup[data-state="error"] .startup-progress { display: none; }
+    #planner-startup[data-state="error"] #startup-status { color: #9b3a32; }
+    #planner-startup [hidden] { display: none; }
+    #planner-startup ::selection { color: #fff; background: #275e91; }
+    @media (prefers-reduced-motion: reduce) {
+      .startup-progress::after { animation: none; width: 100%; opacity: 0.6; }
+    }
+    @media (forced-colors: active) {
+      .startup-progress { border: 1px solid CanvasText; }
+      .startup-progress::after { background: Highlight; }
+    }
+  </style>
 </head>
 <body>
-  <!--
-    You can customize the "flutter_bootstrap.js" script.
-    This is useful to provide a custom configuration to the Flutter loader
-    or to give the user feedback during the initialization process.
+  <main id="planner-startup" aria-label="正在打开学习执行台">
+    <div class="startup-content">
+      <div class="startup-brand">
+        <h1>不白学</h1>
+        <p class="startup-subtitle">学习执行台</p>
+      </div>
+      <div class="startup-state" role="status" aria-live="polite" aria-atomic="true">
+        <p id="startup-status">正在打开学习执行台</p>
+        <div class="startup-progress" aria-hidden="true"></div>
+        <p id="startup-detail">正在加载，请稍候。</p>
+      </div>
+      <button id="startup-retry" type="button" hidden>重新加载</button>
+      <noscript><p>请启用浏览器的 JavaScript 后重新打开页面。</p></noscript>
+    </div>
+  </main>
+  <script>
+    (() => {
+      const shell = document.getElementById('planner-startup');
+      const status = document.getElementById('startup-status');
+      const detail = document.getElementById('startup-detail');
+      const retry = document.getElementById('startup-retry');
+      let complete = false;
+      let failed = false;
+      let slow = false;
 
-    For more details:
-    * https://docs.flutter.dev/platform-integration/web/initialization
-  -->
+      function fail(error) {
+        if (complete || failed) return;
+        failed = true;
+        shell.dataset.state = 'error';
+        status.textContent = '页面未能加载';
+        detail.textContent = navigator.onLine
+          ? '加载遇到问题，请重新加载。'
+          : '网络已断开，请连接网络后重新加载。';
+        retry.hidden = false;
+        console.error('Planner startup failed:', error);
+      }
+
+      function resourceError(event) {
+        if (event.target instanceof HTMLScriptElement || event instanceof ErrorEvent) {
+          fail(event.error || new Error('A startup script could not load.'));
+        }
+      }
+
+      function rejection(event) { fail(event.reason); }
+      function offline() { fail(new Error('The browser is offline.')); }
+      const slowTimer = window.setTimeout(() => {
+        if (complete || failed) return;
+        slow = true;
+        detail.textContent = '加载时间较长，正在继续加载。也可以检查网络后重试。';
+        retry.hidden = false;
+      }, 15000);
+
+      retry.addEventListener('click', () => {
+        retry.disabled = true;
+        retry.textContent = '正在重新加载';
+        window.location.reload();
+      });
+      window.addEventListener('error', resourceError, true);
+      window.addEventListener('unhandledrejection', rejection);
+      window.addEventListener('offline', offline);
+      window.addEventListener('flutter-first-frame', () => {
+        complete = true;
+        window.clearTimeout(slowTimer);
+        window.removeEventListener('error', resourceError, true);
+        window.removeEventListener('unhandledrejection', rejection);
+        window.removeEventListener('offline', offline);
+        shell.remove();
+      }, { once: true });
+
+      window.plannerStartup = {
+        stage(message, description) {
+          if (complete || failed) return;
+          status.textContent = message;
+          if (!slow) detail.textContent = description;
+        },
+        fail,
+      };
+      if (!navigator.onLine) offline();
+    })();
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

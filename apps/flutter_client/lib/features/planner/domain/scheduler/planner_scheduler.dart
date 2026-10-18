@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import '../../../../shared/models/planner_models.dart';
+import '../capacity.dart' as capacity_core;
 import 'strategy_scheduler.dart' as strategy;
 
 typedef IdGenerator = String Function();
@@ -110,6 +111,151 @@ int _blockPending(ScheduleBlock block, List<TimeLog> logs) =>
     ? 0
     : math.max(0, block.durationMinutes - _blockActual(block, logs));
 
+// ---------------------------------------------------------------------------
+// Shared scheduling semantics.
+//
+// The automatic strategy scheduler (strategy_scheduler.dart) and the manual
+// placement validator below must agree on prerequisites and capacity. These
+// helpers are the single implementation of both rules in this language.
+// ---------------------------------------------------------------------------
+
+/// Real content confirmation: completed status or an explicit planning confirmation.
+bool contentConfirmed(Task task) {
+  if (task.status == TaskStatus.completed) return true;
+  final content = task.planning?['content_progress'];
+  return content is Map && content['confirmed'] == true;
+}
+
+/// Minutes a block reserves for capacity: recorded work when known, otherwise the
+/// planned duration. A completed block without actual history still holds its slot.
+int _blockOccupiedMinutes(ScheduleBlock block, List<TimeLog> logs) {
+  final actual = _blockActual(block, logs);
+  return block.status == BlockStatus.completed && actual > 0
+      ? actual
+      : math.max(block.durationMinutes, actual);
+}
+
+/// Half-open interval a block occupies; an actual overrun extends the interval.
+(int, int) blockOccupiedInterval(ScheduleBlock block, List<TimeLog> logs) => (
+  block.startMinute,
+  block.startMinute +
+      math.max(block.durationMinutes, _blockActual(block, logs)),
+);
+
+/// Length of the union of half-open intervals clipped to [from, to].
+int _occupiedUnionMinutes(
+  Iterable<(int, int)> intervals, {
+  int from = 0,
+  int to = 1440,
+}) {
+  var total = 0;
+  var last = from;
+  final sorted = intervals.toList()..sort((a, b) => a.$1.compareTo(b.$1));
+  for (final interval in sorted) {
+    final start = math.max(from, interval.$1);
+    final end = math.min(to, interval.$2);
+    if (end <= start) continue;
+    total += math.max(0, end - math.max(start, last));
+    last = math.max(last, end);
+  }
+  return total;
+}
+
+/// Occupied intervals of every fixed event on [date], clamped to the day.
+List<(int, int)> fixedEventOccupiedIntervals(
+  List<FixedEvent> events,
+  String date,
+) {
+  final intervals = <(int, int)>[];
+  for (final event in events.where((event) => eventOccursOn(event, date))) {
+    final start = event.startMinute.clamp(0, 1440);
+    final end = (event.startMinute + _finite(event.durationMinutes)).clamp(
+      0,
+      1440,
+    );
+    if (end > start) intervals.add((start, end));
+  }
+  intervals.sort((a, b) => a.$1.compareTo(b.$1));
+  return intervals;
+}
+
+/// Capacity occupied on one day, shared by automatic scheduling and manual placement.
+///
+/// Fixed events always count as their union. Timed plans clip the union of events and
+/// block intervals to the study window; daily plans add the per-block occupied load.
+int occupiedDayMinutes({
+  required Profile profile,
+  required List<FixedEvent> fixedEvents,
+  required List<ScheduleBlock> dayBlocks,
+  required List<TimeLog> logs,
+  required String date,
+}) {
+  if (profile.planningMode != PlanningMode.timed) {
+    return fixedEventMinutesForDate(fixedEvents, date) +
+        dayBlocks.fold<int>(
+          0,
+          (sum, block) => sum + _blockOccupiedMinutes(block, logs),
+        );
+  }
+  return _occupiedUnionMinutes(
+    [
+      ...fixedEventOccupiedIntervals(fixedEvents, date),
+      for (final block in dayBlocks) blockOccupiedInterval(block, logs),
+    ],
+    from: profile.studyStartMinute,
+    to: profile.studyEndMinute,
+  );
+}
+
+/// Minutes of [task] not covered by confirmed time or blocks scheduled on/after [from].
+///
+/// The automatic scheduler scopes this to its window because protected history is kept
+/// outside it; manual placement validates one date and considers every placed block.
+int forecastRemainingMinutes(
+  Task task,
+  List<TimeLog> logs,
+  List<ScheduleBlock> blocks, {
+  String? from,
+}) {
+  final completed = taskCompletedMinutes(task, logs);
+  final pending = blocks
+      .where(
+        (block) =>
+            block.taskId == task.id &&
+            block.status != BlockStatus.completed &&
+            (from == null || block.date.compareTo(from) >= 0),
+      )
+      .fold<int>(
+        0,
+        (sum, block) =>
+            sum +
+            math.max(0, block.durationMinutes - _blockActual(block, logs)),
+      );
+  return math.max(0, _finite(task.estimatedMinutes) - completed - pending);
+}
+
+/// Three-state prerequisite rule reused by automatic scheduling, manual placement and
+/// execution (see [strategyExecutionError] which passes [allowForecast] false):
+///
+/// 1. completed status or explicit content confirmation satisfies any dependency;
+/// 2. a "planned" dependency may also be met by a forecast: the predecessor's remaining
+///    minutes are zero and every one of its blocks is before the target date;
+/// 3. merely exhausting the estimated time never confirms content.
+bool dependencySatisfied({
+  required Task prior,
+  required JsonMap dependency,
+  required List<ScheduleBlock> priorBlocks,
+  required String date,
+  required int remaining,
+  bool allowForecast = true,
+}) {
+  if (contentConfirmed(prior)) return true;
+  if (dependency['mode'] == 'confirmed' || !allowForecast) return false;
+  return remaining == 0 &&
+      priorBlocks.isNotEmpty &&
+      priorBlocks.every((block) => block.date.compareTo(date) < 0);
+}
+
 class _Limits {
   const _Limits({
     required this.daily,
@@ -133,17 +279,12 @@ int weekdayIndex(String date) {
   return parsed.weekday % 7;
 }
 
-/// 某一自然日的可用学习预算：使用一周七天的实际值，而不是全周最大值。
+/// 某一自然日的可用学习预算（应用净/总口径后，未扣固定事件）。
 ///
-/// 旧数据没有一周七天时退回每日上限，所以两者的默认结果一致。
-int dailyStudyBudget(Profile profile, String date) {
-  final week = profile.weekMinutes;
-  final raw = _finite(week['${weekdayIndex(date)}'] ?? 0);
-  return math.max(
-    0,
-    math.min(480, raw) - math.max(30, _finite(profile.bufferMinutes)),
-  );
-}
+/// 单一入口由 [capacity_core.resolveDayCapacity] 提供：具体日期覆盖、特定周、
+/// 默认模板/周基线共用同一套规则，页面与调度器因此不会各算一份。
+int dailyStudyBudget(Profile profile, String date) =>
+    capacity_core.resolveDayCapacity(profile, date).minutes;
 
 _Limits _limits(Profile profile) => _Limits(
   daily: math.max(
@@ -256,18 +397,27 @@ String? _placementError(
           candidate.date.compareTo(activity!['ends_on'] as String) > 0)) {
     return '时间块超出活动有效日期';
   }
-  if (strategy
-      .dependenciesOf(task)
-      .any(
-        (dependency) =>
-            dependency['mode'] == 'confirmed' &&
-            input.tasks
-                    .where((prior) => prior.id == dependency['task_id'])
-                    .firstOrNull
-                    ?.status !=
-                TaskStatus.completed,
-      )) {
-    return '前置内容尚未确认完成';
+  for (final dependency in strategy.dependenciesOf(task)) {
+    final prior = input.tasks
+        .where((item) => item.id == dependency['task_id'])
+        .firstOrNull;
+    if (prior == null ||
+        prior.userId != task.userId ||
+        prior.status == TaskStatus.archived) {
+      return '前置内容尚未确认完成';
+    }
+    final priorBlocks = input.blocks
+        .where((block) => block.taskId == prior.id)
+        .toList();
+    if (!dependencySatisfied(
+      prior: prior,
+      dependency: dependency,
+      priorBlocks: priorBlocks,
+      date: candidate.date,
+      remaining: forecastRemainingMinutes(prior, input.logs, priorBlocks),
+    )) {
+      return '前置内容尚未确认完成';
+    }
   }
   final dayBlocks = blocks
       .where((block) => block.date == candidate.date)
@@ -303,37 +453,36 @@ String? _placementError(
         (log.blockId == null ||
             !dayBlocks.any((block) => block.id == log.blockId)),
   );
-  final load = dayBlocks.fold<int>(0, (sum, block) {
-    final amount = block.status == BlockStatus.completed
-        ? _blockActual(block, input.logs)
-        : math.max(block.durationMinutes, _blockActual(block, input.logs));
-    return sum + amount;
-  });
-  final eventLoad = fixedEventMinutesForDate(
-    input.fixedEvents,
-    candidate.date,
-    includeRest: !timed,
+  // The same occupancy accounting is shared with the automatic strategy scheduler:
+  // fixed events count as their union, timed plans clip to the study window, and a
+  // completed block without actual history still reserves its planned slot.
+  final dailyOccupied = occupiedDayMinutes(
+    profile: input.profile,
+    fixedEvents: input.fixedEvents,
+    dayBlocks: dayBlocks,
+    logs: input.logs,
+    date: candidate.date,
   );
-  if (load +
-          eventLoad +
+  if (dailyOccupied +
           orphanLogs.fold<int>(0, (sum, log) => sum + _finite(log.minutes)) +
           candidate.durationMinutes >
       dailyStudyBudget(input.profile, candidate.date)) {
-    return '超出当天可用的学习时间（每日上限），须保留至少30分钟机动时间';
+    return capacity_core.supportsLightweightScheduling(input.profile)
+        ? '超出当天可用的净学习时间，请调整当天安排或设置该日期的容量'
+        : '超出当天可用的学习时间（每日上限），须保留至少30分钟机动时间';
   }
-  final subjectLoad = dayBlocks
-      .where((block) {
-        final blockTask = input.tasks
-            .where((item) => item.id == block.taskId)
-            .firstOrNull;
-        return blockTask?.subjectId == task.subjectId;
-      })
-      .fold<int>(0, (sum, block) {
-        final amount = block.status == BlockStatus.completed
-            ? _blockActual(block, input.logs)
-            : math.max(block.durationMinutes, _blockActual(block, input.logs));
-        return sum + amount;
-      });
+  final subjectOccupied = occupiedDayMinutes(
+    profile: input.profile,
+    fixedEvents: const [],
+    dayBlocks: dayBlocks.where((block) {
+      final blockTask = input.tasks
+          .where((item) => item.id == block.taskId)
+          .firstOrNull;
+      return blockTask?.subjectId == task.subjectId;
+    }).toList(),
+    logs: input.logs,
+    date: candidate.date,
+  );
   final orphanSubjectLoad = orphanLogs
       .where((log) {
         final logTask = input.tasks
@@ -342,7 +491,7 @@ String? _placementError(
         return logTask?.subjectId == task.subjectId;
       })
       .fold<int>(0, (sum, log) => sum + _finite(log.minutes));
-  if (subjectLoad + orphanSubjectLoad + candidate.durationMinutes >
+  if (subjectOccupied + orphanSubjectLoad + candidate.durationMinutes >
       capacity.subject) {
     return '同一科目每天最多安排4小时';
   }
@@ -995,9 +1144,25 @@ PlannerData recordTaskDayMinutes(
   final task = data.tasks.where((item) => item.id == taskId).firstOrNull;
   if (task == null) throw StateError('请先创建并选择事项');
   final stamp = runtime.timestamp();
-  final logs = data.logs
-      .where((log) => log.taskId != taskId || log.date != date)
-      .toList();
+  // 只重建“当天合计分钟数”这一条 manual 语义的记录，其余真实记录必须保留：
+  // - 计时器写入的日志（任何 relation）是真实时间事实，保留，避免下次 checkpoint
+  //   重新补写时与新记录重复计数；
+  // - 已有事项加学/临时学习关系（extra/ad_hoc）保留，不能被“记录今天时长”删除；
+  // - 旧数据缺 relation 且来源是 manual 的日志，视为可重建的当天合计记录
+  //   （与历史行为一致，旧 golden 不变）。
+  final logs = <TimeLog>[];
+  for (final log in data.logs) {
+    final sameTaskDay = log.taskId == taskId && log.date == date;
+    if (!sameTaskDay) {
+      logs.add(log);
+      continue;
+    }
+    final timerOwned = log.source == LogSource.timer;
+    final extraRelation =
+        log.relation == TimeLogRelation.extra ||
+        log.relation == TimeLogRelation.adHoc;
+    if (timerOwned || extraRelation) logs.add(log);
+  }
   final blocks = data.blocks
       .where((block) => block.taskId == taskId && block.date == date)
       .toList();
@@ -1036,6 +1201,9 @@ PlannerData recordTaskDayMinutes(
       ),
     );
   }
+  bool scheduledCoverage(TimeLog log) =>
+      log.relation == TimeLogRelation.scheduled ||
+      log.relation == TimeLogRelation.legacyUnknown;
   final total = logs
       .where((log) => log.taskId == taskId)
       .fold<int>(0, (sum, log) => sum + log.minutes);
@@ -1062,8 +1230,12 @@ PlannerData recordTaskDayMinutes(
         .map(
           (block) => block.taskId == taskId && block.date == date
               ? block.copyWith(
+                  // 原定达成只由 scheduled/legacy 推断覆盖，加学记录不冒充原定执行。
                   actualMinutes: logs
-                      .where((log) => log.blockId == block.id)
+                      .where(
+                        (log) =>
+                            log.blockId == block.id && scheduledCoverage(log),
+                      )
                       .fold<int>(0, (sum, log) => sum + log.minutes),
                   updatedAt: stamp,
                 )

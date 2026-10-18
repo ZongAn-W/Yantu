@@ -32,7 +32,14 @@ PaceCalibration calibratePace(Task task, Iterable<TimeLog> logs) {
   final samples = logs.where((log) {
     final start = DateTime.tryParse(log.startedAt);
     final end = DateTime.tryParse(log.endedAt);
+    // Extra study and temporary learning are real minutes, but they are not
+    // evidence of this item's content pace: only scheduled (or legacy
+    // unclassified) timer intervals calibrate the content speed.
+    final countsForContent =
+        log.relation == TimeLogRelation.scheduled ||
+        log.relation == TimeLogRelation.legacyUnknown;
     return log.taskId == task.id &&
+        countsForContent &&
         log.source == LogSource.timer &&
         log.minutes > 0 &&
         start != null &&

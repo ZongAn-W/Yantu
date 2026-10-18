@@ -11,12 +11,22 @@ class SubjectWeekStat {
     required this.planned,
     required this.actual,
     required this.totalActual,
+    this.scheduled = 0,
+    this.extra = 0,
+    this.adHoc = 0,
   });
 
   final Subject subject;
   final int planned;
   final int actual;
   final int totalActual;
+
+  /// Original-plan execution achieved this week (capped per task/day).
+  final int scheduled;
+
+  /// Active extra study and temporary learning recorded this week.
+  final int extra;
+  final int adHoc;
 }
 
 /// One cell of the monthly heat map.
@@ -28,6 +38,9 @@ class HeatCell {
     required this.rate,
     required this.level,
     required this.past,
+    this.scheduled = 0,
+    this.extra = 0,
+    this.adHoc = 0,
   });
 
   final String date;
@@ -38,6 +51,9 @@ class HeatCell {
   /// 0 for no recorded time, otherwise 1..4 by 120 minute steps.
   final int level;
   final bool past;
+  final int scheduled;
+  final int extra;
+  final int adHoc;
 }
 
 /// Remaining work per subject, used by the progress overview.
@@ -65,6 +81,10 @@ class ProgressMetrics {
     required this.date,
     required this.week,
     required this.totalActual,
+    required this.scheduledActual,
+    required this.extraActual,
+    required this.adHocActual,
+    required this.goalActual,
     required this.remainingMinutes,
     required this.overallMinutes,
     required this.targetDate,
@@ -86,6 +106,16 @@ class ProgressMetrics {
   final String date;
   final List<String> week;
   final int totalActual;
+
+  /// Total actual minutes split by learning relation. Each valid minute appears
+  /// exactly once; content completion stays expressed by [subjectProgress].
+  final int scheduledActual;
+  final int extraActual;
+  final int adHocActual;
+
+  /// Task-attributed actual minutes used for the goal pace forecast. Temporary
+  /// learning has no task, so it never speeds up a course goal on its own.
+  final int goalActual;
   final int remainingMinutes;
   final int overallMinutes;
 
@@ -123,6 +153,31 @@ ProgressMetrics progressMetrics(
       .toList();
 
   final totalActual = data.logs.fold<int>(0, (sum, log) => sum + log.minutes);
+  var extraActual = 0, adHocActual = 0;
+  for (final log in data.logs) {
+    switch (log.relation) {
+      case TimeLogRelation.extra:
+        extraActual += log.minutes;
+      case TimeLogRelation.adHoc:
+        adHocActual += log.minutes;
+      case TimeLogRelation.scheduled:
+      case TimeLogRelation.legacyUnknown:
+        break;
+    }
+  }
+  // Original-plan execution per logged day, capped per task/day; total actual
+  // minutes never stand in for it.
+  final loggedDates = data.logs.map((log) => log.date).toSet();
+  var scheduledActual = 0;
+  for (final day in loggedDates) {
+    scheduledActual += dayExecutionSummary(data, day).scheduled;
+  }
+  final activeTaskIds = {for (final task in activeTasks) task.id};
+  final goalLogs = [
+    for (final log in data.logs)
+      if (log.taskId != null && activeTaskIds.contains(log.taskId)) log,
+  ];
+  final goalActual = goalLogs.fold<int>(0, (sum, log) => sum + log.minutes);
   final remainingMinutes = activeTasks.fold<int>(
     0,
     (sum, task) =>
@@ -130,7 +185,7 @@ ProgressMetrics progressMetrics(
   );
 
   final pastLogs = [
-    for (final log in data.logs)
+    for (final log in goalLogs)
       if (log.date.compareTo(date) <= 0) log,
   ];
   var elapsed = 1;
@@ -162,17 +217,36 @@ ProgressMetrics progressMetrics(
   );
 
   final weekStats = <SubjectWeekStat>[];
+  final adHocById = {
+    for (final entity in data.adHocLearnings) entity.id: entity,
+  };
+  final scheduledBySubject = <String, int>{};
+  for (final day in week) {
+    final summary = dayExecutionSummary(data, day);
+    for (final entry in summary.scheduledByTask.entries) {
+      final subjectId = taskById[entry.key]?.subjectId;
+      if (subjectId == null) continue;
+      scheduledBySubject[subjectId] =
+          (scheduledBySubject[subjectId] ?? 0) + entry.value;
+    }
+  }
   for (final subject in data.subjects) {
-    var planned = 0, actual = 0, total = 0;
+    var planned = 0, actual = 0, total = 0, extra = 0, adHoc = 0;
     for (final block in data.blocks) {
       if (!weekSet.contains(block.date)) continue;
       if (taskById[block.taskId]?.subjectId != subject.id) continue;
       planned += block.durationMinutes;
     }
     for (final log in data.logs) {
-      if (taskById[log.taskId]?.subjectId != subject.id) continue;
+      final subjectId = log.taskId != null
+          ? taskById[log.taskId]?.subjectId
+          : (log.adHocId == null ? null : adHocById[log.adHocId!]?.subjectId);
+      if (subjectId != subject.id) continue;
       total += log.minutes;
-      if (weekSet.contains(log.date)) actual += log.minutes;
+      if (!weekSet.contains(log.date)) continue;
+      actual += log.minutes;
+      if (log.relation == TimeLogRelation.extra) extra += log.minutes;
+      if (log.relation == TimeLogRelation.adHoc) adHoc += log.minutes;
     }
     weekStats.add(
       SubjectWeekStat(
@@ -180,6 +254,9 @@ ProgressMetrics progressMetrics(
         planned: planned,
         actual: actual,
         totalActual: total,
+        scheduled: scheduledBySubject[subject.id] ?? 0,
+        extra: extra,
+        adHoc: adHoc,
       ),
     );
   }
@@ -196,10 +273,11 @@ ProgressMetrics progressMetrics(
     final day = addDate(monthStartDate, index);
     final stats = dayStats(data, day);
     final hasPlan = data.blocks.any((block) => block.date == day);
-    final hasActual = data.logs.any(
-      (log) => log.date == day && log.minutes > 0,
-    );
-    if (day.compareTo(date) <= 0 && hasPlan && !hasActual) interrupted++;
+    // A day is interrupted when its original plan was not executed at all; extra
+    // or temporary learning on that day does not hide the missing arrangement.
+    if (day.compareTo(date) <= 0 && hasPlan && stats.scheduled == 0) {
+      interrupted++;
+    }
     heatCells.add(
       HeatCell(
         date: day,
@@ -208,6 +286,9 @@ ProgressMetrics progressMetrics(
         rate: stats.rate,
         level: stats.actual == 0 ? 0 : math.min(4, (stats.actual / 120).ceil()),
         past: day.compareTo(date) <= 0,
+        scheduled: stats.scheduled,
+        extra: stats.extra,
+        adHoc: stats.adHoc,
       ),
     );
   }
@@ -246,8 +327,16 @@ ProgressMetrics progressMetrics(
       (sum, task) => sum + task.completedMinutes,
     );
     final actual = data.tasks
-        .where((task) => task.subjectId == subject.id)
-        .fold<int>(0, (sum, task) => sum + taskTotalMinutes(data, task.id));
+            .where((task) => task.subjectId == subject.id)
+            .fold<int>(0, (sum, task) => sum + taskTotalMinutes(data, task.id)) +
+        data.logs
+            .where((log) {
+              if (log.taskId != null) return false;
+              final adHocId = log.adHocId;
+              return adHocId != null &&
+                  adHocById[adHocId]?.subjectId == subject.id;
+            })
+            .fold<int>(0, (sum, log) => sum + log.minutes);
     subjectProgress.add(
       SubjectProgress(
         subject: subject,
@@ -263,6 +352,10 @@ ProgressMetrics progressMetrics(
     date: date,
     week: week,
     totalActual: totalActual,
+    scheduledActual: scheduledActual,
+    extraActual: extraActual,
+    adHocActual: adHocActual,
+    goalActual: goalActual,
     remainingMinutes: remainingMinutes,
     overallMinutes: overall,
     targetDate: data.profile.resolvedTargetDate,

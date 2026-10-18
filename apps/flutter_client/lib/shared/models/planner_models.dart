@@ -75,6 +75,19 @@ enum CompletionStatus { notStarted, partial, completed, skipped }
 
 enum LogSource { timer, manual }
 
+/// 学习发生时的执行关系；与记录方式 [LogSource] 相互独立。
+///
+/// - [scheduled]：今日原定安排中的学习，贡献按当时额度封顶；
+/// - [extra]：已有事项的主动加学/超额学习，不自动抵消其他原定安排；
+/// - [adHoc]：全新临时学习，名称即可计时；
+/// - [legacyUnknown]：旧数据缺少分类，保留未知语义，不默认归入任何一类。
+@JsonEnum(fieldRename: FieldRename.snake)
+enum TimeLogRelation { scheduled, extra, adHoc, legacyUnknown }
+
+/// 容量口径：旧数据为扣除机动时间的总预算；新数据为净学习预算。
+@JsonEnum(fieldRename: FieldRename.snake)
+enum CapacityBasis { grossBuffer, net }
+
 @JsonEnum(fieldRename: FieldRename.snake)
 enum FixedEventKind { course, exam, rest, officialExam }
 
@@ -99,6 +112,7 @@ abstract class PlannerData with _$PlannerData {
     required List<FixedEvent> fixedEvents,
     required List<ReplanRun> replanRuns,
     required List<Phase> phases,
+    @Default([]) List<AdHocLearning> adHocLearnings,
     Map<String, String>? dailyFeedback,
     JsonMap? planning,
   }) = _PlannerData;
@@ -165,6 +179,25 @@ abstract class Profile with _$Profile {
     required int studyStartMinute,
     required int studyEndMinute,
     required String foundation,
+
+    /// 容量口径；旧数据没有该字段时按扣除机动时间的原语义处理。
+    @JsonKey(name: 'capacity_basis')
+    @Default(CapacityBasis.grossBuffer)
+    CapacityBasis capacityBasis,
+
+    /// 经用户确认的每周净学习基线；为空表示没有采用周基线，沿用逐日模板。
+    @JsonKey(name: 'weekly_baseline_minutes') int? weeklyBaselineMinutes,
+
+    /// 用户给出的大致周容量范围（净分钟），用于说明较高容量情景。
+    @JsonKey(name: 'weekly_range_min_minutes') int? weeklyRangeMinMinutes,
+    @JsonKey(name: 'weekly_range_max_minutes') int? weeklyRangeMaxMinutes,
+
+    /// 特定自然周（键为上海时区周一日期）的容量覆盖。
+    @JsonKey(name: 'week_capacity_overrides')
+    Map<String, WeekCapacityOverride>? weekCapacityOverrides,
+
+    /// 特定日期的净容量覆盖；显式 0 表示该日休息，删除键表示恢复上层规则。
+    @JsonKey(name: 'date_capacity_overrides') Map<String, int>? dateCapacityOverrides,
   }) = _Profile;
   factory Profile.fromJson(JsonMap json) =>
       _$ProfileFromJson(normalizeProfileJson(json));
@@ -258,15 +291,65 @@ abstract class TimeLog with _$TimeLog {
   const factory TimeLog({
     required String id,
     required String userId,
-    required String taskId,
+
+    /// 归属事项；临时学习没有正式事项时为 null，改用 [adHocId]。
+    @JsonKey(includeIfNull: true) required String? taskId,
     @JsonKey(includeIfNull: true) required String? blockId,
     required String date,
     required int minutes,
     required String startedAt,
     required String endedAt,
     required LogSource source,
+
+    /// 计时发生时的执行关系。旧数据缺失时保留为 [TimeLogRelation.legacyUnknown]。
+    @Default(TimeLogRelation.legacyUnknown) TimeLogRelation relation,
+
+    /// 同一次开始到暂停（含跨零点拆分）的稳定会话标识。
+    @JsonKey(name: 'session_id') String? sessionId,
+
+    /// 临时学习实体引用；转为正式事项后仍保留，便于解释历史关系。
+    @JsonKey(name: 'ad_hoc_id') String? adHocId,
+
+    /// 原定学习在计时开始时可计入该事项当日达成的额度（分钟）。
+    @JsonKey(name: 'quota_minutes') int? quotaMinutes,
   }) = _TimeLog;
   factory TimeLog.fromJson(JsonMap json) => _$TimeLogFromJson(json);
+}
+
+/// 特定自然周的容量覆盖：可只给周总量，也可逐日给出明确值。
+///
+/// 只给 [totalMinutes] 时，程序按默认模板生成逐日建议（并非用户逐日确认）。
+@freezed
+abstract class WeekCapacityOverride with _$WeekCapacityOverride {
+  const factory WeekCapacityOverride({
+    @JsonKey(name: 'total_minutes') int? totalMinutes,
+
+    /// 键为 0（周日）到 6（周六）的明确日值。
+    Map<String, int>? days,
+  }) = _WeekCapacityOverride;
+  factory WeekCapacityOverride.fromJson(JsonMap json) =>
+      _$WeekCapacityOverrideFromJson(json);
+}
+
+/// 名称即可开始的临时学习实体；不参与正式排程，也不伪造预算与截止日期。
+@freezed
+abstract class AdHocLearning with _$AdHocLearning {
+  const factory AdHocLearning({
+    required String id,
+    required String userId,
+    required String title,
+
+    /// 可选分类/课程归属；临时学习不强制正式课程。
+    String? subjectId,
+    required String createdAt,
+    required String updatedAt,
+
+    /// 已转为正式事项或关联到已有事项后归档，但历史记录仍保留引用。
+    @Default(false) bool archived,
+    @JsonKey(name: 'converted_task_id') String? convertedTaskId,
+  }) = _AdHocLearning;
+  factory AdHocLearning.fromJson(JsonMap json) =>
+      _$AdHocLearningFromJson(json);
 }
 
 typedef StudyLog = TimeLog;

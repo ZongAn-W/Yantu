@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { newSession, type OnboardingSession } from "./onboarding-contracts.js";
 import { ProfileSchema } from "./contracts.js";
 import { advanceOnboarding } from "./onboarding.js";
-import { buildPlanningDocument, checkLearningStrategy, checkScheduledPlan, evaluatePlanning, frozenInputs, newPlanning, planningHash, workloadMinutes } from "./planning-service.js";
+import { buildPlanningDocument, checkLearningStrategy, checkScheduledPlan, evaluatePlanning, existingPlanMode, frozenInputs, newPlanning, normalizePlanningMetadata, planningHash, workloadMinutes } from "./planning-service.js";
 import { checkAndRepair } from "./planning-repair.js";
 
 const settings = vi.hoisted(() => ({ aiApiKey: "" }));
@@ -61,11 +61,18 @@ describe("learning budget and strategy quality", () => {
     expect(checkLearningStrategy(session).filter(issue => issue.severity === "error")).toEqual([]);
   });
 
-  it("keeps an unknown target date and 28 inclusive days, with 14 detailed days", () => {
+  it("keeps an unknown target date and generates the full 28-day cycle by default", () => {
     const session = fixture(), result = evaluatePlanning(session);
     expect(session.profile.target_date).toBeNull();
-    expect(result.preview.detailed_until).toBe("2026-10-30");
-    expect(result.preview.days.every(day => day.date >= session.start_date && day.date <= "2026-10-30")).toBe(true);
+    // New plans default to full-period coverage: never truncated at 14 days.
+    expect(result.preview.mode).toBe("full");
+    expect(result.preview.detailed_until).toBe(session.end_date);
+    expect(result.preview.detailed_until).toBe("2026-11-13");
+    expect(result.planning.mode).toBe("full");
+    expect(result.planning.rolling).toBe(false);
+    expect(result.planning.detail_days).toBe(28);
+    expect(result.planning.forecast).toBeNull();
+    expect(result.preview.days.every(day => day.date >= session.start_date && day.date <= session.end_date)).toBe(true);
     expect(result.preview.issues.some(issue => issue.severity === "error")).toBe(false);
     expect(result.preview.scheduled_minutes).toBe(120);
     expect(result.planning.route[0].outcome).toBe("可运行脚本");
@@ -232,5 +239,125 @@ describe("learning budget and strategy quality", () => {
     expect(result.preview.status).toBe("blocked");
     expect(result.preview.issues).toEqual(expect.arrayContaining([expect.objectContaining({ message: expect.stringContaining("复用了已有记录") })]));
     expect(() => buildPlanningDocument(session, current)).toThrow("真实截止日期");
+  });
+});
+
+const addDays = (date: string, days: number) => new Date(Date.parse(`${date}T00:00:00Z`) + days * 86_400_000).toISOString().slice(0, 10);
+const fullWeek = { "0": 120, "1": 120, "2": 120, "3": 120, "4": 120, "5": 120, "6": 120 };
+
+function fullFixture(days: number, profileExtra: Record<string, unknown> = {}) {
+  const start = "2026-10-17", end = addDays(start, days - 1);
+  return { ...newSession(), stage: "schedule" as const, constraints_confirmed: true, start_date: start, end_date: end,
+    profile: ProfileSchema.parse({ goal_type: "skill", goal_text: "全周期学习", weekly_minutes: fullWeek,
+      plan_start_date: start, plan_end_date: end, ...profileExtra }),
+    courses: [{ id: "course", name: "课程", description: "", priority: 2 }],
+    items: [{ id: "long", course_id: "course", title: "长期内容", description: "", completion_criteria: "",
+      estimated_minutes: Math.min(100000, days * 120), earliest_date: start, deadline: end,
+      deadline_kind: "plan_end" as const, priority: 2 }],
+    planning: newPlanning() };
+}
+
+describe("full-period planning (default mode)", () => {
+  it.each([28, 90, 431])("covers a %i-day cycle end to end without a 14/90-day truncation", days => {
+    const session = fullFixture(days);
+    const result = evaluatePlanning(session);
+    expect(result.preview.mode).toBe("full");
+    expect(result.planning.mode).toBe("full");
+    expect(result.planning.rolling).toBe(false);
+    expect(result.planning.detail_days).toBe(days);
+    expect(result.planning.detail_days!).toBeLessThanOrEqual(1095);
+    expect(result.preview.detailed_until).toBe(session.end_date);
+    expect(result.planning.detailed_until).toBe(session.end_date);
+    // Full mode has no "rest of cycle still to be detailed" interval: forecast is null, never inverted.
+    expect(result.planning.forecast).toBeNull();
+    expect(result.preview.forecast_minutes).toBe(0);
+    // The final part of the cycle really has scheduled blocks, not just the first 14 days.
+    const lastDay = result.preview.days.at(-1)!;
+    expect(lastDay.date).toBe(session.end_date);
+    expect(lastDay.minutes).toBeGreaterThan(0);
+    expect(result.preview.days.length).toBe(days);
+    const trial = buildPlanningDocument(session);
+    expect(trial.until).toBe(session.end_date);
+    expect(trial.document.planning!.mode).toBe("full");
+    expect(trial.document.planning!.forecast).toBeNull();
+    expect(trial.document.planning!.capacity).toBeTruthy();
+  });
+
+  it("does not silently upgrade an inherited rolling plan and keeps its detail window", () => {
+    const session = fullFixture(90);
+    session.planning = { ...newPlanning(), mode: "rolling", rolling: true, detail_days: 14 };
+    const result = evaluatePlanning(session);
+    expect(result.preview.mode).toBe("rolling");
+    expect(result.planning.mode).toBe("rolling");
+    expect(result.planning.rolling).toBe(true);
+    expect(result.planning.detail_days).toBe(14);
+    expect(result.preview.detailed_until).toBe(addDays(session.start_date, 13));
+    expect(result.planning.forecast).toMatchObject({ from: addDays(session.start_date, 14), to: session.end_date, confirmed: false });
+    expect((result.planning.forecast as { from: string }).from <= (result.planning.forecast as { to: string }).to).toBe(true);
+  });
+
+  it("reads the inherited mode from the current plan document for a re-interview", () => {
+    const session = fullFixture(28);
+    session.planning = null as never;
+    session.current_plan = { planning: { version: 1, rolling: true, detail_days: 14 } };
+    expect(existingPlanMode(session)).toBe("rolling");
+    expect(normalizePlanningMetadata(newPlanning(), { start_date: session.start_date, end_date: session.end_date }).mode).toBe("full");
+    expect(normalizePlanningMetadata({ ...newPlanning(), mode: "rolling", rolling: true }, { start_date: session.start_date,
+      end_date: session.end_date, requested_detail_days: 30 }).detail_days).toBe(30);
+  });
+
+  it("exposes confirmed capacity assumptions and baseline/range reachability in the preview and planning metadata", () => {
+    const session = fullFixture(28, { capacity_basis: "net", weekly_baseline_minutes: 210,
+      weekly_range_min_minutes: 180, weekly_range_max_minutes: 420,
+      weekly_minutes: { "0": 60, "1": 60, "2": 60, "3": 60, "4": 60, "5": 60, "6": 60 } });
+    session.items[0].estimated_minutes = 840;
+    const result = evaluatePlanning(session);
+    expect(result.preview.capacity.basis).toBe("net");
+    expect(result.preview.capacity.adopted_weekly_minutes).toBe(210);
+    expect(result.preview.capacity.source).toBe("baseline");
+    // The 28-day cycle intersects five natural Monday..Sunday weeks.
+    expect(result.preview.capacity.weeks).toHaveLength(5);
+    expect(result.preview.capacity.weeks.every(week => week.budget_minutes === 210 && week.estimated)).toBe(true);
+    expect(result.preview.capacity.weeks.reduce((sum, week) => sum + week.resolved_minutes, 0)).toBe(1050);
+    expect(result.preview.capacity.weekly_range_minutes).toEqual({ min: 180, max: 420 });
+    expect(result.preview.capacity.assumptions.join("\n")).toContain("基线");
+    expect(result.planning.capacity).toMatchObject({ basis: "net", adopted_weekly_minutes: 210, source: "baseline",
+      weeks_estimated: 5, partial_week_rule: "full_week_distribution_cycle_clipped" });
+  });
+
+  it("surfaces week/date capacity conflicts as structured warnings instead of silently picking a side", () => {
+    const session = fullFixture(28, { capacity_basis: "net",
+      week_capacity_overrides: { "2026-10-19": { total_minutes: 100 } },
+      date_capacity_overrides: { "2026-10-19": 150 } });
+    const result = evaluatePlanning(session);
+    expect(result.preview.status).toBe("ready");
+    const conflict = result.preview.issues.find(issue => issue.code === "WEEK_CAPACITY_CONFLICT");
+    expect(conflict).toMatchObject({ severity: "warning", date: "2026-10-19", expected: 100, actual: 150 });
+    expect(result.preview.capacity.weeks.find(week => week.monday === "2026-10-19")?.conflicts)
+      .toEqual([{ code: "WEEK_TOTAL_EXCEEDED", total: 100, resolved: 150 }]);
+    expect(result.planning.capacity).toMatchObject({ conflicts: [expect.objectContaining({ code: "WEEK_TOTAL_EXCEEDED", monday: "2026-10-19" })] });
+  });
+
+  it("reports structured capacity-change impact for protected records and real deadlines", () => {
+    const { session, current } = existingFixture();
+    // A record before the new cycle is protected history and must stay exactly as-is.
+    current.blocks[0].date = "2026-10-10";
+    current.tasks[0].deadline = "2026-10-20";
+    current.tasks[0].deadline_kind = "deadline";
+    session.end_date = "2026-12-31";
+    session.profile.plan_end_date = session.end_date;
+    session.items[0].deadline = "2026-10-20";
+    session.items[0].deadline_kind = "deadline";
+    session.profile.weekly_minutes = { "0": 0, "1": 60, "2": 0, "3": 0, "4": 0, "5": 0, "6": 0 };
+    const result = evaluatePlanning(session, current);
+    expect(result.preview.status).toBe("ready");
+    expect(result.preview.capacity_impact.kept_blocks).toBeGreaterThanOrEqual(1);
+    expect(result.preview.capacity_impact.kept_minutes).toBeGreaterThan(0);
+    expect(result.preview.capacity_impact.released_blocks).toBeGreaterThanOrEqual(0);
+    expect(result.preview.capacity_impact.added_blocks).toBeGreaterThan(0);
+    expect(result.preview.capacity_impact.unscheduled_minutes).toBeGreaterThan(0);
+    expect(result.preview.capacity_impact.deadline_at_risk).toEqual([
+      expect.objectContaining({ item_id: session.items[0].id, deadline: "2026-10-20", unscheduled_minutes: 60 }),
+    ]);
   });
 });

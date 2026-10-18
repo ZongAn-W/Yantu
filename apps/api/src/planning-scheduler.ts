@@ -1,4 +1,37 @@
+import {
+  blockQuantum,
+  hasConfirmedWeekBudget,
+  isNetCapacity,
+  minBlockMinutes,
+  resolveDayCapacity,
+  type CapacityProfile,
+} from "./capacity.js";
+
 /** Pure scheduling contract shared by the API and TypeScript reference fixtures. */
+export type {
+  CapacityBasis,
+  CapacityConflict,
+  CapacityProfile,
+  CapacitySource,
+  DayCapacity,
+  WeekCapacity,
+  WeekCapacityOverride,
+} from "./capacity.js";
+export {
+  blockQuantum,
+  distributeMinutes,
+  hasConfirmedWeekBudget,
+  isNetCapacity,
+  minBlockMinutes,
+  mondayOf,
+  resolveDayCapacity,
+  resolveRangeCapacity,
+  resolveWeekCapacity,
+  resolveWeeksInRange,
+  weekDates,
+  weekdayOf,
+} from "./capacity.js";
+
 export interface StrategyTask {
   id: string; user_id: string; subject_id: string; title: string;
   estimated_minutes: number; completed_minutes: number; priority: number;
@@ -16,11 +49,11 @@ export interface StrategyBlock {
   created_at: string; updated_at: string; activity_instance_id?: string | null;
 }
 export interface StrategyInput {
-  profile: { user_id: string; planning_mode?: "daily" | "timed"; weekly_minutes?: Record<string, number>;
+  profile: CapacityProfile & { user_id: string; planning_mode?: "daily" | "timed"; weekly_minutes?: Record<string, number>;
     daily_limit_minutes: number; buffer_minutes: number; subject_limit_minutes: number; granularity_minutes: number;
     study_start_minute: number; study_end_minute: number; plan_start_date?: string; plan_end_date?: string };
   tasks: StrategyTask[]; blocks: StrategyBlock[];
-  logs: Array<{ task_id: string; block_id: string | null; date: string; minutes: number }>;
+  logs: Array<{ task_id: string | null; block_id: string | null; date: string; minutes: number }>;
   fixed_events: Array<{ date: string; start_minute: number; duration_minutes: number; repeat: string; kind: string }>;
 }
 export interface StrategyIssue {
@@ -52,6 +85,98 @@ const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 const taskOrder = (a: StrategyTask, b: StrategyTask) => compare(a.deadline, b.deadline)
   || b.priority - a.priority || compare(a.title, b.title) || compare(a.id, b.id);
 
+/** Whether a fixed event occupies time on [date]; mirrors `eventOccursOn` in the engine. */
+export function eventOccursOnDate(event: StrategyInput["fixed_events"][number], date: string): boolean {
+  return date >= event.date && (date === event.date || event.repeat === "daily"
+    || event.repeat === "weekly" && weekday(date) === weekday(event.date));
+}
+
+/** Occupied intervals of every fixed event on a date, clamped to the calendar day. */
+export function fixedEventIntervals(events: StrategyInput["fixed_events"], date: string): number[][] {
+  return events.filter(event => eventOccursOnDate(event, date))
+    .map(event => [Math.max(0, event.start_minute), Math.min(1440, event.start_minute + event.duration_minutes)])
+    .sort((a, b) => a[0] - b[0]);
+}
+
+/** Logs and the block counter are two views of the same recorded work, never added. */
+export function blockActualMinutes(block: StrategyBlock, logs: StrategyInput["logs"]): number {
+  return Math.max(minutes(block.actual_minutes),
+    logs.filter(log => log.block_id === block.id).reduce((sum, log) => sum + minutes(log.minutes), 0));
+}
+
+/**
+ * Minutes a block reserves for capacity. Recorded work wins when it exists; a completed
+ * block without actual history still holds its planned slot instead of freeing it.
+ */
+export function blockOccupiedMinutes(block: StrategyBlock, logs: StrategyInput["logs"]): number {
+  const actual = blockActualMinutes(block, logs);
+  return block.status === "completed" && actual > 0 ? actual : Math.max(block.duration_minutes, actual);
+}
+
+/** Half-open interval a block occupies; an overrun of actual work extends the interval. */
+export function blockInterval(block: StrategyBlock, logs: StrategyInput["logs"]): [number, number] {
+  return [block.start_minute, block.start_minute + Math.max(block.duration_minutes, blockActualMinutes(block, logs))];
+}
+
+/**
+ * Capacity occupied on one day, shared by the automatic scheduler and manual placement.
+ * Fixed events always count as their union. Timed plans clip the union of events and
+ * block intervals to the study window; daily plans add the per-block occupied load.
+ */
+export function occupiedDayMinutes(profile: StrategyInput["profile"], events: StrategyInput["fixed_events"],
+  dayBlocks: StrategyBlock[], logs: StrategyInput["logs"], date: string): number {
+  if (profile.planning_mode !== "timed") {
+    return occupiedMinutes(fixedEventIntervals(events, date))
+      + dayBlocks.reduce((sum, block) => sum + blockOccupiedMinutes(block, logs), 0);
+  }
+  return occupiedMinutes([
+    ...fixedEventIntervals(events, date),
+    ...dayBlocks.map(block => blockInterval(block, logs)),
+  ], profile.study_start_minute, profile.study_end_minute);
+}
+
+/** Real content confirmation: completed status or an explicit planning confirmation. */
+export function contentConfirmed(task: StrategyTask): boolean {
+  if (task.status === "completed") return true;
+  return (task.planning?.content_progress as { confirmed?: boolean } | undefined)?.confirmed === true;
+}
+
+/**
+ * Minutes of [task] not covered by confirmed time or blocks already scheduled on/after
+ * [from]. The automatic scheduler scopes this to its window because protected history is
+ * kept outside it; manual placement validates one date and considers every block.
+ */
+export function forecastRemainingMinutes(task: StrategyTask, logs: StrategyInput["logs"],
+  blocks: StrategyBlock[], from?: string): number {
+  const completed = Math.max(minutes(task.completed_minutes),
+    logs.filter(log => log.task_id === task.id).reduce((sum, log) => sum + minutes(log.minutes), 0));
+  const pending = blocks.filter(block => block.task_id === task.id && block.status !== "completed"
+    && (!from || block.date >= from))
+    .reduce((sum, block) => sum + Math.max(0, block.duration_minutes - blockActualMinutes(block, logs)), 0);
+  return Math.max(0, minutes(task.estimated_minutes) - completed - pending);
+}
+
+/**
+ * Three-state prerequisite rule reused by scheduling, manual placement and execution:
+ * 1. completed status or explicit content confirmation satisfies any dependency;
+ * 2. a "planned" dependency may also be met by a forecast: the predecessor's remaining
+ *    minutes are zero and every one of its blocks is before the target date;
+ * 3. merely exhausting the estimated time never confirms content.
+ */
+export function dependencySatisfied(options: {
+  prior: StrategyTask;
+  dependency: { mode: "planned" | "confirmed" };
+  priorBlocks: StrategyBlock[];
+  date: string;
+  remaining: number;
+  allowForecast?: boolean;
+}): boolean {
+  const { prior, dependency, priorBlocks, date, remaining, allowForecast = true } = options;
+  if (contentConfirmed(prior)) return true;
+  if (dependency.mode === "confirmed" || !allowForecast) return false;
+  return remaining === 0 && priorBlocks.length > 0 && priorBlocks.every(block => block.date < date);
+}
+
 /** Monday weeks; partial weeks use ceil(frequency * active calendar days / 7). */
 export function recurringDemand(task: StrategyTask, from: string, to: string) {
   const a = task.planning?.activity;
@@ -78,39 +203,29 @@ export function scheduleStrategy(input: StrategyInput, from: string, to: string,
   const stamp = runtime.now().toISOString(), issues: StrategyIssue[] = [];
   const byId = new Map(input.tasks.map(task => [task.id, task]));
   let added = 0, scheduled = 0, unscheduled = 0;
-  const completed = (task: StrategyTask) => Math.max(minutes(task.completed_minutes), input.logs.filter(log => log.task_id === task.id).reduce((sum, log) => sum + minutes(log.minutes), 0));
-  const actual = (block: StrategyBlock) => Math.max(minutes(block.actual_minutes), input.logs.filter(log => log.block_id === block.id).reduce((sum, log) => sum + minutes(log.minutes), 0));
-  const pending = (task: StrategyTask) => blocks.filter(block => block.task_id === task.id && block.date >= from && block.status !== "completed")
-    .reduce((sum, block) => sum + Math.max(0, block.duration_minutes - actual(block)), 0);
-  const remaining = (task: StrategyTask) => Math.max(0, task.estimated_minutes - completed(task) - pending(task));
-  const eventIntervals = (date: string) => input.fixed_events.filter(event => date >= event.date &&
-    (date === event.date || event.repeat === "daily" || event.repeat === "weekly" && weekday(date) === weekday(event.date)))
-    .map(event => [Math.max(0, event.start_minute), Math.min(1440, event.start_minute + event.duration_minutes)]).sort((a, b) => a[0] - b[0]);
+  const remaining = (task: StrategyTask) => forecastRemainingMinutes(task, input.logs, blocks, from);
   function room(task: StrategyTask, date: string) {
-    const week = input.profile.weekly_minutes;
-    const raw = week && Object.keys(week).length === 7 ? week[String(weekday(date))] ?? 0 : input.profile.daily_limit_minutes;
     const day = blocks.filter(block => block.date === date);
     const orphanLogs = input.logs.filter(log => log.date === date && (!log.block_id || !day.some(block => block.id === log.block_id)));
-    const load = (block: StrategyBlock) => block.status === "completed" && actual(block) > 0 ? actual(block) : Math.max(block.duration_minutes, actual(block));
-    const timed = input.profile.planning_mode === "timed";
-    const blockIntervals = (source: StrategyBlock[]) => source.map(block => [block.start_minute, block.start_minute + Math.max(block.duration_minutes, actual(block))]);
     const courseBlocks = day.filter(block => byId.get(block.task_id)?.subject_id === task.subject_id);
-    // Timed records can overlap events or each other; their occupied minutes count once.
-    const occupied = timed ? occupiedMinutes([...eventIntervals(date), ...blockIntervals(day)], input.profile.study_start_minute, input.profile.study_end_minute)
-      : occupiedMinutes(eventIntervals(date)) + day.reduce((sum, block) => sum + load(block), 0);
-    const courseOccupied = timed ? occupiedMinutes(blockIntervals(courseBlocks), input.profile.study_start_minute, input.profile.study_end_minute)
-      : courseBlocks.reduce((sum, block) => sum + load(block), 0);
-    const daily = Math.min(480, minutes(raw)) - Math.max(30, minutes(input.profile.buffer_minutes)) - occupied
+    // The same occupancy accounting is used by manual placement; timed records and events
+    // that overlap each other count once and are clipped to the study window.
+    const dailyOccupied = occupiedDayMinutes(input.profile, input.fixed_events, day, input.logs, date);
+    const courseOccupied = occupiedDayMinutes(input.profile, [], courseBlocks, input.logs, date);
+    // One shared capacity resolution: gross keeps its single buffer deduction, net is the
+    // study budget itself, and weekly/date overrides always win over the default template.
+    const daily = resolveDayCapacity(input.profile, date).minutes - dailyOccupied
       - orphanLogs.reduce((sum, log) => sum + minutes(log.minutes), 0);
     const course = Math.min(240, minutes(input.profile.subject_limit_minutes)) - courseOccupied
-      - orphanLogs.filter(log => byId.get(log.task_id)?.subject_id === task.subject_id).reduce((sum, log) => sum + minutes(log.minutes), 0);
+      - orphanLogs.filter(log => log.task_id !== null && byId.get(log.task_id)?.subject_id === task.subject_id).reduce((sum, log) => sum + minutes(log.minutes), 0);
     return Math.max(0, Math.min(daily, course));
   }
   function add(task: StrategyTask, date: string, duration: number, instance?: string) {
     if (room(task, date) < duration) return false;
     let start = 0;
     if (input.profile.planning_mode === "timed") {
-      const intervals = [...eventIntervals(date), ...blocks.filter(block => block.date === date).map(block => [block.start_minute, block.start_minute + Math.max(block.duration_minutes, actual(block))])].sort((a, b) => a[0] - b[0]);
+      const intervals = [...fixedEventIntervals(input.fixed_events, date),
+        ...blocks.filter(block => block.date === date).map(block => blockInterval(block, input.logs))].sort((a, b) => a[0] - b[0]);
       const quantum = Math.max(30, input.profile.granularity_minutes);
       start = Math.ceil(input.profile.study_start_minute / quantum) * quantum;
       for (const [a, b] of intervals) {
@@ -140,24 +255,28 @@ export function scheduleStrategy(input: StrategyInput, from: string, to: string,
   for (const task of [...input.tasks].sort(taskOrder)) visit(task);
   function unlocked(task: StrategyTask, date: string) {
     if (invalid.has(task.id)) return false;
-    return (task.planning?.dependencies ?? []).every(dependency => {
-      const prior = byId.get(dependency.task_id)!;
-      if (prior.status === "completed" || (prior.planning?.content_progress as { confirmed?: boolean } | undefined)?.confirmed === true) return true;
-      if (dependency.mode === "confirmed") return false;
-      const priorBlocks = blocks.filter(block => block.task_id === prior.id);
-      return remaining(prior) === 0 && priorBlocks.length > 0 && priorBlocks.every(block => block.date < date);
-    });
+    return (task.planning?.dependencies ?? []).every(dependency => dependencySatisfied({
+      prior: byId.get(dependency.task_id)!,
+      dependency,
+      priorBlocks: blocks.filter(block => block.task_id === dependency.task_id),
+      date,
+      remaining: remaining(byId.get(dependency.task_id)!),
+    }));
   }
   const active = ordered.filter(task => task.user_id === input.profile.user_id && !["completed", "archived"].includes(task.status)
-    && (task.planning?.content_progress as { confirmed?: boolean } | undefined)?.confirmed !== true
+    && !contentConfirmed(task)
     && task.planning?.activity?.state !== "paused" && task.planning?.activity?.state !== "ended");
   function fillFinite(task: StrategyTask, date: string) {
     if (date < maxDate(task.earliest_date ?? from, task.planning?.activity?.starts_on ?? from)
       || date > minDate(task.deadline, task.planning?.activity?.ends_on ?? to) || !unlocked(task, date)) return;
-    const quantum = Math.max(30, input.profile.granularity_minutes);
+    const net = isNetCapacity(input.profile);
+    const quantum = blockQuantum(input.profile);
+    const minBlock = minBlockMinutes(input.profile);
     while (remaining(task) > 0 && room(task, date) > 0) {
       const amount = Math.min(quantum, remaining(task), room(task, date));
-      if (amount < quantum && remaining(task) > amount) break;
+      // Light net plans may place short blocks (down to the 10-minute minimum); legacy
+      // gross plans keep the old rule where only the last block of a task may be short.
+      if (net ? amount < minBlock : amount < quantum && remaining(task) > amount) break;
       if (!add(task, date, amount)) break;
     }
   }
@@ -174,36 +293,112 @@ export function scheduleStrategy(input: StrategyInput, from: string, to: string,
       }
     }
   }
-  // Recurring sessions reserve capacity before finite work and retain their logical week/ordinal identity when moved.
-  for (const task of active.filter(task => task.planning?.activity?.kind === "recurring")) {
-    preparePredecessors(task);
-    const size = task.planning!.activity!.session_minutes ?? 30;
-    for (const week of recurringDemand(task, input.profile.plan_start_date || from, input.profile.plan_end_date || to)) {
-      if (week.end < from || week.start > to) continue;
-      const existing = blocks.filter(block => block.task_id === task.id && block.date >= week.start && block.date <= week.end);
-      const orphanWork = input.logs.filter(log => log.task_id === task.id && log.date >= week.start && log.date <= week.end
-        && !existing.some(block => block.date === log.date)).reduce((sum, log) => sum + minutes(log.minutes), 0);
-      const oldSessions = new Set(existing.filter(block => !block.activity_instance_id).map(block => block.date)).size + Math.floor(orphanWork / size);
-      const credit = orphanWork % size;
-      const availableDates = Array.from({ length: daysBetween(week.start, week.end) }, (_, i) => plus(week.start, i));
-      for (let i = 0; i < week.sessions; i++) {
-        const instance = `${task.id}:${week.week}:${i}`;
-        if (i < oldSessions || blocks.some(block => block.activity_instance_id === instance)) continue;
-        const preferred = Math.floor((i + 0.5) * availableDates.length / week.sessions);
-        if (availableDates[preferred] > to) continue;
-        const needed = size - (i === oldSessions ? credit : 0);
-        const dates = availableDates.filter(date => date >= from && date <= to).sort((a, b) => Math.abs(availableDates.indexOf(a) - preferred) - Math.abs(availableDates.indexOf(b) - preferred) || a.localeCompare(b));
-        const placed = dates.some(date => !blocks.some(block => block.task_id === task.id && block.date === date)
-          && unlocked(task, date) && add(task, date, needed, instance));
-        if (!placed) { unscheduled += needed; issues.push({ code: invalid.has(task.id) ? "DEPENDENCY_INVALID" : "RECURRENCE_SHORTFALL", task_id: task.id, date: week.week,
-          expected: week.sessions, actual: oldSessions + blocks.filter(block => block.task_id === task.id && block.activity_instance_id?.startsWith(`${task.id}:${week.week}:`)).length,
-          message: `每周练习尚缺一次（${size}分钟）；请核对可用时间、有效日期和前置条件` }); }
+  const finite = active.filter(task => task.planning?.activity?.kind !== "recurring");
+  // §6.5: with the flexible capacity model the allocation is a single per-day pass in the
+  // shared dependency/priority order, so a low-priority recurring practice no longer reserves
+  // every session before finite work that is due earlier or more important. Legacy gross
+  // documents keep the historical recurring-first order so their goldens stay byte-identical.
+  const priorityMixing = isNetCapacity(input.profile) || hasConfirmedWeekBudget(input.profile)
+    || Object.keys(input.profile.week_capacity_overrides ?? {}).length > 0
+    || Object.keys(input.profile.date_capacity_overrides ?? {}).length > 0;
+  const activeSet = new Set(active.map(task => task.id));
+  if (priorityMixing) {
+    type Session = { task: StrategyTask; instance: string; needed: number; preferred: string; available: string[] };
+    const sessions: Session[] = [];
+    const weeks = new Map<string, { task: StrategyTask; week: string; expected: number; oldSessions: number; placed: number }>();
+    for (const task of active.filter(task => task.planning?.activity?.kind === "recurring")) {
+      const size = task.planning!.activity!.session_minutes ?? 30;
+      for (const week of recurringDemand(task, input.profile.plan_start_date || from, input.profile.plan_end_date || to)) {
+        if (week.end < from || week.start > to) continue;
+        const existing = blocks.filter(block => block.task_id === task.id && block.date >= week.start && block.date <= week.end);
+        const orphanWork = input.logs.filter(log => log.task_id === task.id && log.date >= week.start && log.date <= week.end
+          && !existing.some(block => block.date === log.date)).reduce((sum, log) => sum + minutes(log.minutes), 0);
+        const oldSessions = new Set(existing.filter(block => !block.activity_instance_id).map(block => block.date)).size + Math.floor(orphanWork / size);
+        const credit = orphanWork % size;
+        const availableDates = Array.from({ length: daysBetween(week.start, week.end) }, (_, i) => plus(week.start, i));
+        const record = { task, week: week.week, expected: week.sessions, oldSessions, placed: 0 };
+        weeks.set(`${task.id}:${week.week}`, record);
+        for (let i = 0; i < week.sessions; i++) {
+          const instance = `${task.id}:${week.week}:${i}`;
+          if (i < oldSessions || blocks.some(block => block.activity_instance_id === instance)) continue;
+          const preferred = availableDates[Math.floor((i + 0.5) * availableDates.length / week.sessions)];
+          if (preferred > to) continue;
+          sessions.push({ task, instance, needed: size - (i === oldSessions ? credit : 0), preferred, available: availableDates });
+        }
       }
     }
-  }
-  const finite = active.filter(task => task.planning?.activity?.kind !== "recurring");
-  for (let date = from; date <= to; date = plus(date, 1)) {
-    for (const task of finite) fillFinite(task, date);
+    // A session participates on its preferred date inside the shared priority order.
+    const byPreferred = new Map<string, Map<string, Session[]>>();
+    for (const session of sessions) {
+      const byDate = byPreferred.get(session.task.id) ?? new Map<string, Session[]>();
+      byDate.set(session.preferred, [...(byDate.get(session.preferred) ?? []), session]);
+      byPreferred.set(session.task.id, byDate);
+    }
+    const placedSessions = new Set<string>();
+    for (let date = from; date <= to; date = plus(date, 1)) {
+      for (const task of ordered) {
+        if (!activeSet.has(task.id)) continue;
+        if (task.planning?.activity?.kind === "recurring") {
+          for (const session of byPreferred.get(task.id)?.get(date) ?? []) {
+            if (placedSessions.has(session.instance)) continue;
+            if (blocks.some(block => block.task_id === task.id && block.date === date)) continue;
+            if (unlocked(task, date) && add(task, date, session.needed, session.instance)) placedSessions.add(session.instance);
+          }
+        } else fillFinite(task, date);
+      }
+    }
+    // An unplaced session retries once on the remaining dates of its own week (nearest
+    // preferred first), then reports the real weekly deficit instead of silently vanishing.
+    for (const session of sessions) {
+      if (placedSessions.has(session.instance)) continue;
+      const preferredIndex = session.available.indexOf(session.preferred);
+      const dates = session.available.filter(date => date >= from && date <= to)
+        .sort((a, b) => Math.abs(session.available.indexOf(a) - preferredIndex) - Math.abs(session.available.indexOf(b) - preferredIndex) || a.localeCompare(b));
+      const placed = dates.some(date => !blocks.some(block => block.task_id === session.task.id && block.date === date)
+        && unlocked(session.task, date) && add(session.task, date, session.needed, session.instance));
+      if (placed) placedSessions.add(session.instance);
+      else unscheduled += session.needed;
+    }
+    for (const record of weeks.values()) {
+      record.placed = sessions.filter(session => session.task.id === record.task.id && session.instance.startsWith(`${record.task.id}:${record.week}:`)
+        && placedSessions.has(session.instance)).length + record.oldSessions;
+      if (record.placed >= record.expected) continue;
+      const size = record.task.planning!.activity!.session_minutes ?? 30;
+      issues.push({ code: invalid.has(record.task.id) ? "DEPENDENCY_INVALID" : "RECURRENCE_SHORTFALL", task_id: record.task.id, date: record.week,
+        expected: record.expected, actual: record.placed,
+        message: `每周练习尚缺${Math.max(1, record.expected - record.placed)}次（${size}分钟）；请核对可用时间、有效日期和前置条件` });
+    }
+  } else {
+    // Recurring sessions reserve capacity before finite work and retain their logical week/ordinal identity when moved.
+    for (const task of active.filter(task => task.planning?.activity?.kind === "recurring")) {
+      preparePredecessors(task);
+      const size = task.planning!.activity!.session_minutes ?? 30;
+      for (const week of recurringDemand(task, input.profile.plan_start_date || from, input.profile.plan_end_date || to)) {
+        if (week.end < from || week.start > to) continue;
+        const existing = blocks.filter(block => block.task_id === task.id && block.date >= week.start && block.date <= week.end);
+        const orphanWork = input.logs.filter(log => log.task_id === task.id && log.date >= week.start && log.date <= week.end
+          && !existing.some(block => block.date === log.date)).reduce((sum, log) => sum + minutes(log.minutes), 0);
+        const oldSessions = new Set(existing.filter(block => !block.activity_instance_id).map(block => block.date)).size + Math.floor(orphanWork / size);
+        const credit = orphanWork % size;
+        const availableDates = Array.from({ length: daysBetween(week.start, week.end) }, (_, i) => plus(week.start, i));
+        for (let i = 0; i < week.sessions; i++) {
+          const instance = `${task.id}:${week.week}:${i}`;
+          if (i < oldSessions || blocks.some(block => block.activity_instance_id === instance)) continue;
+          const preferred = Math.floor((i + 0.5) * availableDates.length / week.sessions);
+          if (availableDates[preferred] > to) continue;
+          const needed = size - (i === oldSessions ? credit : 0);
+          const dates = availableDates.filter(date => date >= from && date <= to).sort((a, b) => Math.abs(availableDates.indexOf(a) - preferred) - Math.abs(availableDates.indexOf(b) - preferred) || a.localeCompare(b));
+          const placed = dates.some(date => !blocks.some(block => block.task_id === task.id && block.date === date)
+            && unlocked(task, date) && add(task, date, needed, instance));
+          if (!placed) { unscheduled += needed; issues.push({ code: invalid.has(task.id) ? "DEPENDENCY_INVALID" : "RECURRENCE_SHORTFALL", task_id: task.id, date: week.week,
+            expected: week.sessions, actual: oldSessions + blocks.filter(block => block.task_id === task.id && block.activity_instance_id?.startsWith(`${task.id}:${week.week}:`)).length,
+            message: `每周练习尚缺一次（${size}分钟）；请核对可用时间、有效日期和前置条件` }); }
+        }
+      }
+    }
+    for (let date = from; date <= to; date = plus(date, 1)) {
+      for (const task of finite) fillFinite(task, date);
+    }
   }
   for (const task of finite) {
     const left = remaining(task);

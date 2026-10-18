@@ -49,6 +49,12 @@ Future<Database> openPlannerDatabase(String path) async {
   }
 }
 
+/// 导出一份完整全库快照并原子替换 `<db>.recovery.json`。
+///
+/// 由 LocalDatabase 按时间/写入次数阈值节流调用：第一次写入、恢复类写入
+/// （recovery: true）以及关闭前的补写仍会强制执行，因此恢复文件始终是一个
+/// 可导入的完整快照；普通高频写入（例如每分钟的计时 checkpoint）不会每次都
+/// 导出整库。
 Future<void> backupPlannerDatabase(Database database) async {
   final exported = await exportDatabase(database);
   await atomicWrite(

@@ -223,4 +223,197 @@ void main() {
     expect(mondayIndex('2026-10-01'), 3);
     expect(daysInMonth('2026-10'), 31);
   });
+
+  group('learning relation statistics', () {
+    const date = '2026-10-16';
+
+    TimeLog logFor(
+      PlannerData data,
+      int minutes, {
+      required String id,
+      String? taskId,
+      String? adHocId,
+      TimeLogRelation relation = TimeLogRelation.scheduled,
+      String day = date,
+    }) => TimeLog(
+      id: id,
+      userId: data.profile.userId,
+      taskId: taskId,
+      blockId: null,
+      date: day,
+      minutes: minutes,
+      startedAt: '${day}T00:00:00.000Z',
+      endedAt: '${day}T01:00:00.000Z',
+      source: LogSource.timer,
+      relation: relation,
+      adHocId: adHocId,
+    );
+
+    test('actual minutes are split by relation and counted once', () {
+      final base = plannerFixture();
+      final task = base.tasks.single;
+      final data = base.copyWith(
+        logs: [
+          logFor(base, 60, id: 'scheduled', taskId: task.id),
+          logFor(
+            base,
+            20,
+            id: 'extra',
+            taskId: task.id,
+            relation: TimeLogRelation.extra,
+          ),
+          logFor(
+            base,
+            40,
+            id: 'ad-hoc',
+            adHocId: 'photo',
+            relation: TimeLogRelation.adHoc,
+          ),
+        ],
+        adHocLearnings: [
+          AdHocLearning(
+            id: 'photo',
+            userId: base.profile.userId,
+            title: '摄影构图',
+            createdAt: '2026-10-01T00:00:00.000Z',
+            updatedAt: '2026-10-01T00:00:00.000Z',
+          ),
+        ],
+        blocks: [base.blocks.single.copyWith(durationMinutes: 60)],
+      );
+      final metrics = progressMetrics(data, date: date, month: '2026-10');
+      expect(metrics.totalActual, 120);
+      expect(metrics.scheduledActual, 60);
+      expect(metrics.extraActual, 20);
+      expect(metrics.adHocActual, 40);
+      expect(metrics.goalActual, 80, reason: '临时学习不属于任何正式事项目标');
+      expect(
+        metrics.scheduledActual + metrics.extraActual + metrics.adHocActual,
+        metrics.totalActual,
+      );
+    });
+
+    test('temporary learning never speeds up the goal content forecast', () {
+      final base = plannerFixture();
+      final without = progressMetrics(
+        base,
+        date: date,
+        month: '2026-10',
+      );
+      final withAdHoc = progressMetrics(
+        base.copyWith(
+          logs: [
+            ...base.logs,
+            logFor(
+              base,
+              500,
+              id: 'photo-log',
+              adHocId: 'photo',
+              relation: TimeLogRelation.adHoc,
+            ),
+          ],
+          adHocLearnings: [
+            AdHocLearning(
+              id: 'photo',
+              userId: base.profile.userId,
+              title: '摄影构图',
+              createdAt: '2026-10-01T00:00:00.000Z',
+              updatedAt: '2026-10-01T00:00:00.000Z',
+            ),
+          ],
+        ),
+        date: date,
+        month: '2026-10',
+      );
+      expect(withAdHoc.totalActual, without.totalActual + 500);
+      expect(withAdHoc.goalActual, without.goalActual);
+      expect(withAdHoc.forecast, without.forecast);
+      expect(withAdHoc.paceMinutes, without.paceMinutes);
+    });
+
+    test('extra and temporary minutes reach their course attribution', () {
+      final base = plannerFixture();
+      final task = base.tasks.single;
+      final data = base.copyWith(
+        logs: [
+          logFor(base, 60, id: 'scheduled', taskId: task.id),
+          logFor(
+            base,
+            15,
+            id: 'extra',
+            taskId: task.id,
+            relation: TimeLogRelation.extra,
+          ),
+          logFor(
+            base,
+            30,
+            id: 'ad-hoc',
+            adHocId: 'photo',
+            relation: TimeLogRelation.adHoc,
+          ),
+        ],
+        adHocLearnings: [
+          AdHocLearning(
+            id: 'photo',
+            userId: base.profile.userId,
+            title: '摄影构图',
+            subjectId: task.subjectId,
+            createdAt: '2026-10-01T00:00:00.000Z',
+            updatedAt: '2026-10-01T00:00:00.000Z',
+          ),
+        ],
+        blocks: [base.blocks.single.copyWith(durationMinutes: 60)],
+      );
+      final metrics = progressMetrics(data, date: date, month: '2026-10');
+      final calculus = metrics.weekStats.single;
+      expect(calculus.planned, 60);
+      expect(calculus.actual, 105);
+      expect(calculus.scheduled, 60);
+      expect(calculus.extra, 15);
+      expect(calculus.adHoc, 30);
+      // Content completion mirrors the item field, never the total actual time.
+      expect(calculus.totalActual, 105);
+      final progress = metrics.subjectProgress.single;
+      expect(progress.completed, task.completedMinutes);
+      expect(progress.actual, 105);
+    });
+
+    test('heat cells separate relations and interruption ignores temporary time', () {
+      final base = plannerFixture();
+      final data = base.copyWith(
+        blocks: [base.blocks.single.copyWith(date: '2026-10-10')],
+        logs: [
+          logFor(
+            base,
+            30,
+            id: 'photo-log',
+            adHocId: 'photo',
+            relation: TimeLogRelation.adHoc,
+            day: '2026-10-10',
+          ),
+        ],
+        adHocLearnings: [
+          AdHocLearning(
+            id: 'photo',
+            userId: base.profile.userId,
+            title: '摄影构图',
+            createdAt: '2026-10-01T00:00:00.000Z',
+            updatedAt: '2026-10-01T00:00:00.000Z',
+          ),
+        ],
+      );
+      final metrics = progressMetrics(data, date: date, month: '2026-10');
+      final cell = metrics.heatCells
+          .where((item) => item.date == '2026-10-10')
+          .single;
+      expect(cell.actual, 30);
+      expect(cell.scheduled, 0);
+      expect(cell.adHoc, 30);
+      expect(
+        metrics.interruptedDays,
+        1,
+        reason: '临时学习不能冒充当天原定安排已执行',
+      );
+    });
+  });
 }

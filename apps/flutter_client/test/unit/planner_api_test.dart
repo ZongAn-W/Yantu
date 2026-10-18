@@ -12,6 +12,22 @@ import 'package:sjtu_study_planner_client/shared/models/api_models.dart';
 
 import '../support/http_adapter.dart';
 
+/// 旧 TypeScript 导出没有新字段；统一模型序列化时会物化“可加性旧默认键”
+/// （临时学习空列表、容量口径 gross_buffer、旧日志 relation=legacy_unknown）。
+/// 期望值补齐这些文档化默认后做全等比较，而不是放宽成子集断言。
+Map<String, dynamic> legacyExportWithModelDefaults(Map source) {
+  final expected = Map<String, dynamic>.from(source);
+  expected.putIfAbsent('ad_hoc_learnings', () => <dynamic>[]);
+  expected['profile'] = Map<String, dynamic>.from(expected['profile'] as Map)
+    ..putIfAbsent('capacity_basis', () => 'gross_buffer');
+  expected['logs'] = [
+    for (final row in expected['logs'] as List)
+      Map<String, dynamic>.from(row as Map)
+        ..putIfAbsent('relation', () => 'legacy_unknown'),
+  ];
+  return expected;
+}
+
 void main() {
   ApiClient client(Respond respond) => ApiClient(
     config: const AppConfig(apiBaseUrl: 'http://api.test'),
@@ -22,11 +38,11 @@ void main() {
   test('snapshot parses a complete existing TypeScript export', () async {
     final json = jsonDecode(
       File('test/fixtures/planner_v1.json').readAsStringSync(),
-    );
+    ) as Map;
     final http = client((_) async => jsonResponse({'data': json}));
     addTearDown(http.close);
     final data = await PlannerApi(http).snapshot();
-    expect(data!.toJson(), json);
+    expect(data!.toJson(), legacyExportWithModelDefaults(json));
   });
 
   test(

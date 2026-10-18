@@ -58,6 +58,14 @@ _PlannerData _$PlannerDataFromJson(Map<String, dynamic> json) => $checkedCreate(
             .map((e) => Phase.fromJson(e as Map<String, dynamic>))
             .toList(),
       ),
+      adHocLearnings: $checkedConvert(
+        'ad_hoc_learnings',
+        (v) =>
+            (v as List<dynamic>?)
+                ?.map((e) => AdHocLearning.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const [],
+      ),
       dailyFeedback: $checkedConvert(
         'daily_feedback',
         (v) => (v as Map<String, dynamic>?)?.map(
@@ -71,24 +79,27 @@ _PlannerData _$PlannerDataFromJson(Map<String, dynamic> json) => $checkedCreate(
   fieldKeyMap: const {
     'fixedEvents': 'fixed_events',
     'replanRuns': 'replan_runs',
+    'adHocLearnings': 'ad_hoc_learnings',
     'dailyFeedback': 'daily_feedback',
   },
 );
 
-Map<String, dynamic> _$PlannerDataToJson(_PlannerData instance) =>
-    <String, dynamic>{
-      'version': instance.version,
-      'profile': instance.profile.toJson(),
-      'subjects': instance.subjects.map((e) => e.toJson()).toList(),
-      'tasks': instance.tasks.map((e) => e.toJson()).toList(),
-      'blocks': instance.blocks.map((e) => e.toJson()).toList(),
-      'logs': instance.logs.map((e) => e.toJson()).toList(),
-      'fixed_events': instance.fixedEvents.map((e) => e.toJson()).toList(),
-      'replan_runs': instance.replanRuns.map((e) => e.toJson()).toList(),
-      'phases': instance.phases.map((e) => e.toJson()).toList(),
-      'daily_feedback': ?instance.dailyFeedback,
-      'planning': ?instance.planning,
-    };
+Map<String, dynamic> _$PlannerDataToJson(
+  _PlannerData instance,
+) => <String, dynamic>{
+  'version': instance.version,
+  'profile': instance.profile.toJson(),
+  'subjects': instance.subjects.map((e) => e.toJson()).toList(),
+  'tasks': instance.tasks.map((e) => e.toJson()).toList(),
+  'blocks': instance.blocks.map((e) => e.toJson()).toList(),
+  'logs': instance.logs.map((e) => e.toJson()).toList(),
+  'fixed_events': instance.fixedEvents.map((e) => e.toJson()).toList(),
+  'replan_runs': instance.replanRuns.map((e) => e.toJson()).toList(),
+  'phases': instance.phases.map((e) => e.toJson()).toList(),
+  'ad_hoc_learnings': instance.adHocLearnings.map((e) => e.toJson()).toList(),
+  'daily_feedback': ?instance.dailyFeedback,
+  'planning': ?instance.planning,
+};
 
 _Profile _$ProfileFromJson(Map<String, dynamic> json) => $checkedCreate(
   '_Profile',
@@ -155,6 +166,39 @@ _Profile _$ProfileFromJson(Map<String, dynamic> json) => $checkedCreate(
         (v) => (v as num).toInt(),
       ),
       foundation: $checkedConvert('foundation', (v) => v as String),
+      capacityBasis: $checkedConvert(
+        'capacity_basis',
+        (v) =>
+            $enumDecodeNullable(_$CapacityBasisEnumMap, v) ??
+            CapacityBasis.grossBuffer,
+      ),
+      weeklyBaselineMinutes: $checkedConvert(
+        'weekly_baseline_minutes',
+        (v) => (v as num?)?.toInt(),
+      ),
+      weeklyRangeMinMinutes: $checkedConvert(
+        'weekly_range_min_minutes',
+        (v) => (v as num?)?.toInt(),
+      ),
+      weeklyRangeMaxMinutes: $checkedConvert(
+        'weekly_range_max_minutes',
+        (v) => (v as num?)?.toInt(),
+      ),
+      weekCapacityOverrides: $checkedConvert(
+        'week_capacity_overrides',
+        (v) => (v as Map<String, dynamic>?)?.map(
+          (k, e) => MapEntry(
+            k,
+            WeekCapacityOverride.fromJson(e as Map<String, dynamic>),
+          ),
+        ),
+      ),
+      dateCapacityOverrides: $checkedConvert(
+        'date_capacity_overrides',
+        (v) => (v as Map<String, dynamic>?)?.map(
+          (k, e) => MapEntry(k, (e as num).toInt()),
+        ),
+      ),
     );
     return val;
   },
@@ -179,6 +223,12 @@ _Profile _$ProfileFromJson(Map<String, dynamic> json) => $checkedCreate(
     'subjectLimitMinutes': 'subject_limit_minutes',
     'studyStartMinute': 'study_start_minute',
     'studyEndMinute': 'study_end_minute',
+    'capacityBasis': 'capacity_basis',
+    'weeklyBaselineMinutes': 'weekly_baseline_minutes',
+    'weeklyRangeMinMinutes': 'weekly_range_min_minutes',
+    'weeklyRangeMaxMinutes': 'weekly_range_max_minutes',
+    'weekCapacityOverrides': 'week_capacity_overrides',
+    'dateCapacityOverrides': 'date_capacity_overrides',
   },
 );
 
@@ -205,6 +255,14 @@ Map<String, dynamic> _$ProfileToJson(_Profile instance) => <String, dynamic>{
   'study_start_minute': instance.studyStartMinute,
   'study_end_minute': instance.studyEndMinute,
   'foundation': instance.foundation,
+  'capacity_basis': _$CapacityBasisEnumMap[instance.capacityBasis]!,
+  'weekly_baseline_minutes': ?instance.weeklyBaselineMinutes,
+  'weekly_range_min_minutes': ?instance.weeklyRangeMinMinutes,
+  'weekly_range_max_minutes': ?instance.weeklyRangeMaxMinutes,
+  'week_capacity_overrides': ?instance.weekCapacityOverrides?.map(
+    (k, e) => MapEntry(k, e.toJson()),
+  ),
+  'date_capacity_overrides': ?instance.dateCapacityOverrides,
 };
 
 const _$PlanningModeEnumMap = {
@@ -218,6 +276,11 @@ const _$GoalTypeEnumMap = {
   GoalType.skill: 'skill',
   GoalType.selfStudy: 'self_study',
   GoalType.other: 'other',
+};
+
+const _$CapacityBasisEnumMap = {
+  CapacityBasis.grossBuffer: 'gross_buffer',
+  CapacityBasis.net: 'net',
 };
 
 _Subject _$SubjectFromJson(Map<String, dynamic> json) =>
@@ -426,7 +489,7 @@ _TimeLog _$TimeLogFromJson(Map<String, dynamic> json) => $checkedCreate(
     final val = _TimeLog(
       id: $checkedConvert('id', (v) => v as String),
       userId: $checkedConvert('user_id', (v) => v as String),
-      taskId: $checkedConvert('task_id', (v) => v as String),
+      taskId: $checkedConvert('task_id', (v) => v as String?),
       blockId: $checkedConvert('block_id', (v) => v as String?),
       date: $checkedConvert('date', (v) => v as String),
       minutes: $checkedConvert('minutes', (v) => (v as num).toInt()),
@@ -435,6 +498,18 @@ _TimeLog _$TimeLogFromJson(Map<String, dynamic> json) => $checkedCreate(
       source: $checkedConvert(
         'source',
         (v) => $enumDecode(_$LogSourceEnumMap, v),
+      ),
+      relation: $checkedConvert(
+        'relation',
+        (v) =>
+            $enumDecodeNullable(_$TimeLogRelationEnumMap, v) ??
+            TimeLogRelation.legacyUnknown,
+      ),
+      sessionId: $checkedConvert('session_id', (v) => v as String?),
+      adHocId: $checkedConvert('ad_hoc_id', (v) => v as String?),
+      quotaMinutes: $checkedConvert(
+        'quota_minutes',
+        (v) => (v as num?)?.toInt(),
       ),
     );
     return val;
@@ -445,6 +520,9 @@ _TimeLog _$TimeLogFromJson(Map<String, dynamic> json) => $checkedCreate(
     'blockId': 'block_id',
     'startedAt': 'started_at',
     'endedAt': 'ended_at',
+    'sessionId': 'session_id',
+    'adHocId': 'ad_hoc_id',
+    'quotaMinutes': 'quota_minutes',
   },
 );
 
@@ -458,12 +536,86 @@ Map<String, dynamic> _$TimeLogToJson(_TimeLog instance) => <String, dynamic>{
   'started_at': instance.startedAt,
   'ended_at': instance.endedAt,
   'source': _$LogSourceEnumMap[instance.source]!,
+  'relation': _$TimeLogRelationEnumMap[instance.relation]!,
+  'session_id': ?instance.sessionId,
+  'ad_hoc_id': ?instance.adHocId,
+  'quota_minutes': ?instance.quotaMinutes,
 };
 
 const _$LogSourceEnumMap = {
   LogSource.timer: 'timer',
   LogSource.manual: 'manual',
 };
+
+const _$TimeLogRelationEnumMap = {
+  TimeLogRelation.scheduled: 'scheduled',
+  TimeLogRelation.extra: 'extra',
+  TimeLogRelation.adHoc: 'ad_hoc',
+  TimeLogRelation.legacyUnknown: 'legacy_unknown',
+};
+
+_WeekCapacityOverride _$WeekCapacityOverrideFromJson(
+  Map<String, dynamic> json,
+) => $checkedCreate('_WeekCapacityOverride', json, ($checkedConvert) {
+  final val = _WeekCapacityOverride(
+    totalMinutes: $checkedConvert('total_minutes', (v) => (v as num?)?.toInt()),
+    days: $checkedConvert(
+      'days',
+      (v) => (v as Map<String, dynamic>?)?.map(
+        (k, e) => MapEntry(k, (e as num).toInt()),
+      ),
+    ),
+  );
+  return val;
+}, fieldKeyMap: const {'totalMinutes': 'total_minutes'});
+
+Map<String, dynamic> _$WeekCapacityOverrideToJson(
+  _WeekCapacityOverride instance,
+) => <String, dynamic>{
+  'total_minutes': ?instance.totalMinutes,
+  'days': ?instance.days,
+};
+
+_AdHocLearning _$AdHocLearningFromJson(Map<String, dynamic> json) =>
+    $checkedCreate(
+      '_AdHocLearning',
+      json,
+      ($checkedConvert) {
+        final val = _AdHocLearning(
+          id: $checkedConvert('id', (v) => v as String),
+          userId: $checkedConvert('user_id', (v) => v as String),
+          title: $checkedConvert('title', (v) => v as String),
+          subjectId: $checkedConvert('subject_id', (v) => v as String?),
+          createdAt: $checkedConvert('created_at', (v) => v as String),
+          updatedAt: $checkedConvert('updated_at', (v) => v as String),
+          archived: $checkedConvert('archived', (v) => v as bool? ?? false),
+          convertedTaskId: $checkedConvert(
+            'converted_task_id',
+            (v) => v as String?,
+          ),
+        );
+        return val;
+      },
+      fieldKeyMap: const {
+        'userId': 'user_id',
+        'subjectId': 'subject_id',
+        'createdAt': 'created_at',
+        'updatedAt': 'updated_at',
+        'convertedTaskId': 'converted_task_id',
+      },
+    );
+
+Map<String, dynamic> _$AdHocLearningToJson(_AdHocLearning instance) =>
+    <String, dynamic>{
+      'id': instance.id,
+      'user_id': instance.userId,
+      'title': instance.title,
+      'subject_id': ?instance.subjectId,
+      'created_at': instance.createdAt,
+      'updated_at': instance.updatedAt,
+      'archived': instance.archived,
+      'converted_task_id': ?instance.convertedTaskId,
+    };
 
 _FixedEvent _$FixedEventFromJson(Map<String, dynamic> json) => $checkedCreate(
   '_FixedEvent',

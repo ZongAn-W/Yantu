@@ -6,7 +6,7 @@ import { requestStructuredAI } from "./ai-json.js";
 import { generateItems } from "./onboarding-ai.js";
 import { ItemsSchema, newSession, type OnboardingSession } from "./onboarding-contracts.js";
 import { ProfileSchema } from "./contracts.js";
-import { evaluatePlanning, PLANNING_PROMPT_VERSION, PLANNING_RULES_VERSION } from "./planning-service.js";
+import { evaluatePlanning, newPlanning, PLANNING_PROMPT_VERSION, PLANNING_RULES_VERSION } from "./planning-service.js";
 import { checkAndRepair } from "./planning-repair.js";
 
 export const EVALUATION_CASES = [
@@ -23,7 +23,10 @@ export const EVALUATION_CASES = [
 export function evaluationSession(test: typeof EVALUATION_CASES[number]): OnboardingSession {
   const start = "2026-10-17", end = "end" in test ? test.end : test.id === "insufficient-time" ? "2026-10-30" : "2026-11-13";
   const week = Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(day => [String(day), test.id === "insufficient-time" && ![2, 6].includes(day) ? 0 : day === 0 ? 0 : test.minutes]));
+  // The evaluation exercises the production default: one full-period plan, not a 14-day draft.
+  const span = Math.round((Date.parse(`${end}T00:00:00Z`) - Date.parse(`${start}T00:00:00Z`)) / 86_400_000) + 1;
   return { ...newSession(), constraints_confirmed: true, start_date: start, end_date: end,
+    planning: { ...newPlanning(), detail_days: Math.min(1095, span) },
     answers: [{ question: "学习目标", answer: test.goal }],
     profile: ProfileSchema.parse({ goal_type: test.type, goal_text: test.goal, target_date: null,
       plan_start_date: start, plan_end_date: end, weekly_minutes: week }),

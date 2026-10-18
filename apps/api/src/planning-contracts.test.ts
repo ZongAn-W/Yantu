@@ -73,4 +73,47 @@ describe("planning metadata contracts and writer compatibility", () => {
     data.tasks[0].estimated_minutes = 3780;
     expect(PlannerDocumentSchema.safeParse(data).success).toBe(true);
   });
+  it("keeps server relation checks consistent with the client deletion rules", () => {
+    // The client removes a deletable item, cleans `planning.route[].item_ids`,
+    // drops stages left empty and invalidates quality. The cleaned document must
+    // pass the server schema, while the unsafe variants the client refuses must
+    // keep failing here too.
+    const clone = (value: unknown) => JSON.parse(JSON.stringify(value));
+    const data = fixture();
+    const deletedId = data.tasks[0].id;
+    data.tasks.push({ ...data.tasks[0], id: "second", title: "second" });
+    data.planning = {
+      ...strategy(),
+      route: [{ id: "phase", title: "phase", item_ids: [deletedId, "second"], outcome: "outcome", check: "check" }],
+      quality: { status: "pass" },
+      needs_review: false,
+    };
+    const cleaned = clone(data);
+    cleaned.tasks = cleaned.tasks.filter((task: { id: string }) => task.id !== deletedId);
+    cleaned.blocks = [];
+    cleaned.logs = [];
+    cleaned.planning.route[0].item_ids = ["second"];
+    cleaned.planning.needs_review = true;
+    cleaned.planning.quality = null;
+    expect(PlannerDocumentSchema.safeParse(cleaned).success).toBe(true);
+
+    // Removing a prerequisite from the plan while another item still depends on
+    // it would silently unlock the dependent item; the client refuses to save it.
+    const danglingDependency = clone(cleaned);
+    danglingDependency.tasks[0].planning = { dependencies: [{ task_id: deletedId, mode: "planned" }] };
+    expect(PlannerDocumentSchema.safeParse(danglingDependency).success).toBe(false);
+
+    // A stale route reference to the deleted item is rejected like before.
+    const staleRoute = clone(cleaned);
+    staleRoute.planning.route[0].item_ids = ["second", deletedId];
+    expect(PlannerDocumentSchema.safeParse(staleRoute).success).toBe(false);
+
+    // The client never emits an empty stage, and an emptied/removed route stays valid.
+    const emptiedStage = clone(cleaned);
+    emptiedStage.planning.route = [{ ...cleaned.planning.route[0], item_ids: [] }];
+    expect(PlannerDocumentSchema.safeParse(emptiedStage).success).toBe(true);
+    const noRoute = clone(cleaned);
+    noRoute.planning.route = [];
+    expect(PlannerDocumentSchema.safeParse(noRoute).success).toBe(true);
+  });
 });

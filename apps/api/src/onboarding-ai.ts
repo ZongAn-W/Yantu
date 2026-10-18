@@ -1,11 +1,12 @@
 import { z } from "zod";
-import { requestStructuredAI as model } from "./ai-json.js";
+import { AI_REQUEST_TIMEOUT_MS, requestStructuredAI as model } from "./ai-json.js";
+import { compactPlanContext } from "./onboarding-plan-context.js";
 import { attachExamResearch } from "./exam-research.js";
 import { buildLearningContext, knownStudySubjects, LEARNER_FIELDS, LearnerUpdateSchema, SubjectUpdateSchema, missingLearnerFields, questionFields } from "./learning-context.js";
 import { config } from "./config.js";
 import { ProfileSchema, type GoalType } from "./contracts.js";
 import { PlanPlanningSchema } from "./planning-contracts.js";
-import { newPlanning, PLANNING_PROMPT_VERSION, PLANNING_RULES_VERSION } from "./planning-service.js";
+import { newPlanning, PLANNING_PROMPT_VERSION, PLANNING_RULES_VERSION, effectivePlanMode, inclusiveDaySpan, summarizePlanCapacity } from "./planning-service.js";
 import { CoursesSchema, FIRST_QUESTION, ItemsSchema, QuestionOptionsSchema, QuestionTypeSchema, RecommendationsSchema, normalizeQuestionOptions, normalizeQuestionPresentation, type OnboardingRecommendations, type OnboardingSession, validateReferences } from "./onboarding-contracts.js";
 import {
   analyzeInterview, asksForExamIdentity, buildSafeInterview, deriveInterviewProfile, findUngroundedMentions,
@@ -135,7 +136,8 @@ export async function recommendSchedule(session: OnboardingSession) {
   if (!config.aiApiKey) return fallbackRecommendations(prepared);
   const result = await model(z.object({ recommendations: RecommendationsSchema }), recommendationInstructions
     + '\n只返回 {"recommendations":完整推荐对象}，不要继续提问。',
-  { current_date: shanghaiDate(), answers: prepared.answers, profile: prepared.profile, learning_context: buildLearningContext(session), research: session.research, recommendations: prepared.recommendations, current_plan: session.current_plan });
+  { current_date: shanghaiDate(), answers: prepared.answers, profile: prepared.profile, learning_context: buildLearningContext(session), research: session.research, recommendations: prepared.recommendations,
+    current_plan: compactPlanContext(session, "recommendations") }, { reasoningEffort: config.aiSimpleReasoningEffort });
   return normalizeRecommendations(prepared, result.recommendations);
 }
 
@@ -188,7 +190,8 @@ export async function nextInterview(session: OnboardingSession) {
       '保留已有信息，仅依据用户回答更新。不要生成课程或计划。',
       '如果有current_plan，只结合现有课程、事项、完成进度和固定安排了解历史背景，询问变化或尚未明确的信息；不要复述旧目标为已确认信息。',
       recommendationInstructions,
-    ].join("\n"), { current_date: shanghaiDate(), answers: session.answers, profile: session.profile, learning_context: session.learning_context, missing_fields: missingLearnerFields(session), research: session.research, recommendations: session.recommendations, current_plan: session.current_plan });
+    ].join("\n"), { current_date: shanghaiDate(), answers: session.answers, profile: session.profile, learning_context: session.learning_context, missing_fields: missingLearnerFields(session), research: session.research, recommendations: session.recommendations,
+      current_plan: compactPlanContext(session, "interview") }, { reasoningEffort: config.aiSimpleReasoningEffort });
     const presentation = normalizeQuestionPresentation(result);
     const options = presentation.question_options;
     session = { ...session, learning_context: buildLearningContext(session, result.learner_updates, new Date(), result.subject_updates) };
@@ -260,7 +263,8 @@ export async function generateCourses(session: OnboardingSession, instruction = 
       "有current_plan时参考现有课程和进度；继续同一内容应复用原id，保留固定事项所属课程。",
       "同一领域的基础、练习、强化、冲刺或实践属于事项和路线阶段，不将它们拆成多门同名领域课程；例如Python课程下包含基础练习和项目成果事项。",
       '依据learning_context中的年级、各科学情、薄弱项和目标设置课程与优先级。research中reference_only=false的事实可确定公开课程范围；待核实或往年资料列入assumptions。408已核实为四门内容时可分别生成课程，仍保持课程→事项两层，不擅自确定尚未核实的英语一/二等要求。',
-    ].join("\n"), { answers: session.answers, profile: session.profile, learning_context: session.learning_context, research: session.research, courses: session.courses, current_plan: session.current_plan, instruction });
+    ].join("\n"), { answers: session.answers, profile: session.profile, learning_context: session.learning_context, research: session.research, courses: session.courses,
+      current_plan: compactPlanContext(session, "courses"), instruction }, { reasoningEffort: config.aiSimpleReasoningEffort });
     validateReferences(result.courses, []);
     if (session.profile.goal_type === "exam") {
       const unverified = findUngroundedMentions(result.courses.flatMap(course => [course.name, course.description]), session);
@@ -291,17 +295,33 @@ function fallbackItemTitles(goalType: GoalType) {
   }
 }
 
-export async function generateItems(session: OnboardingSession, instruction = "", timeout = 65_000) {
+export async function generateItems(session: OnboardingSession, instruction = "", timeout = AI_REQUEST_TIMEOUT_MS) {
   if (config.aiApiKey) {
+    const planMode = effectivePlanMode(session.planning);
+    const horizonDays = planMode === "full" && session.start_date && session.end_date
+      ? inclusiveDaySpan(session.start_date, session.end_date)
+      : Math.max(1, Math.min(1095, session.planning?.detail_days ?? 14));
+    const capacity = session.start_date && session.end_date
+      ? summarizePlanCapacity(session.profile, session.start_date, session.end_date) : null;
+    const horizonInstruction = planMode === "full"
+      ? `本次为全周期一次性生成：planning.mode="full"，rolling=false，detail_days=${horizonDays}，从 plan_start_date 到 plan_end_date 首尾完整覆盖，不按14天窗口分段，也不要求模型逐日输出时间块（程序会按结构化策略展开每日安排）。`
+      : `本次为旧版滚动计划：planning.mode="rolling"，rolling=true，detail_days=${horizonDays}，仅细化近期窗口，其余周期用于预测。`;
+    const capacityInstruction = capacity
+      ? `容量假设：口径=${capacity.basis}；每周采用${capacity.adopted_weekly_minutes ?? "默认模板"}分钟${capacity.weekly_range_minutes ? `（用户给出范围${capacity.weekly_range_minutes.min}–${capacity.weekly_range_minutes.max}分钟，仅说明较高容量情景）` : ""}；共${capacity.weeks.length}个自然周（其中${capacity.estimated_weeks}周为程序建议分配）。时间不足时明确列出范围缺口与取舍，不得篡改真实截止日期或压缩单价。`
+      : "";
     const result = await model(itemSchema, [
       '只为已确认的课程生成事项，不得增加或改变课程。返回 {"items":[{"id":"item-1","course_id":"已确认课程id","title":"可执行标题","description":"学习范围","completion_criteria":"可验证标准","estimated_minutes":600,"earliest_date":"YYYY-MM-DD","deadline":"YYYY-MM-DD","deadline_kind":"deadline","priority":2}],"summary":"依据","assumptions":[],"warnings":[]}。',
       "id唯一，priority为整数1到3，estimated_minutes为30到100000的整数分钟；最多500项。title最长200字，description最长4000字，completion_criteria最长1000字。",
       "deadline_kind 为 deadline 表示真实截止日期：可以等于、早于或晚于本期结束日期，本次只安排与规划区间相交的部分；为 plan_end 表示本期安排边界，随规划周期延展。没有真实截止日期的事项使用 plan_end，禁止给所有事项设置遥远日期。",
       "事项标题要能落到具体学习行动，避免“全面掌握”“系统提升”等空泛表述；练习、复习和实践按场景决定，不给所有目标套同一种阶段。",
       "日期不得早于今天且开始不得晚于截止。本次规划周期为 plan_start_date 到 plan_end_date；目标日期是 target_date，可以为空，且不等于规划结束日期。真实截止日期可以晚于 plan_end_date，不要为了塞进本期而缩短它。",
+      horizonInstruction,
+      capacityInstruction,
+      "全周期覆盖要求：每一项学习内容都必须有明确去向——正式安排、明确在本期范围外、用户确认的备选，或量化的容量缺口（写入 planning.uncovered / risks）。未知材料或速度用明确估算、可信度和少量诊断事项表达，仍一次生成完整计划，不要求先完成诊断才生成远期安排。",
       "有修改要求时以当前手动编辑后的事项为基础，只做用户要求的修改，保留未修改事项的id。",
       "有current_plan时，继续同一学习事项应复用原id，estimated_minutes为包含已完成用时的总预算；固定事项必须原样保留。不要恢复status为archived的事项，除非用户明确要求。",
-      `规划版本为 ${PLANNING_PROMPT_VERSION} / ${PLANNING_RULES_VERSION}。必须返回 planning:{version:1,prompt_version:"${PLANNING_PROMPT_VERSION}",rules_version:"${PLANNING_RULES_VERSION}",detail_days:14,rolling:true,route:[{id,title,start_date?,end_date?,item_ids,outcome,check}],milestones:[],assumptions:[],risks:[],uncovered:[]}。阶段根据目标选择，技能围绕成果、课程围绕章节、自学允许低强度，不套用考研阶段。`,
+      "current_plan 是精简的历史背景：archived_items 中的事项必须保持归档，除非用户明确要求恢复；recent_execution 是近期记录的汇总，不替代完整计时样本。",
+      `规划版本为 ${PLANNING_PROMPT_VERSION} / ${PLANNING_RULES_VERSION}。必须返回 planning:{version:1,prompt_version:"${PLANNING_PROMPT_VERSION}",rules_version:"${PLANNING_RULES_VERSION}",mode:"${planMode}",detail_days:${horizonDays},rolling:${planMode === "rolling"},route:[{id,title,start_date?,end_date?,item_ids,outcome,check}],milestones:[],assumptions:[],risks:[],uncovered:[]}。阶段根据目标选择，技能围绕成果、课程围绕章节、自学允许低强度，不套用考研阶段。`,
       '每个事项返回 planning:{workload:{components:[{id,label,quantity,unit,minutes_per_unit,selected:true}],source,confidence:"low"|"medium"|"high",calibration},activity:{kind:"finite"|"recurring",starts_on,ends_on,sessions_per_week?,session_minutes?,state:"active"},dependencies:[{task_id,mode:"planned"|"confirmed"}]}。数量和单价不可只写在自然语言里。组成分量相加，未选择的备选 selected:false 不计入预算；复盘与作答分开，区间可加range_min/range_max，说明所采用值是估计。',
       '有限内容 estimated_minutes 必须等于选中组成项 quantity*minutes_per_unit 向上取整的和。例如15套真题+6套模拟每套180分钟，作答就3780分钟，复盘额外计算。持续活动 workload 描述单次组成且等于session_minutes，estimated_minutes由程序按本期需求计算；不能把全年预算再按周重复计入。',
       '持续练习使用有限有效窗口、每周次数1至7、单次时长，不能先排完全部预算后消失。无真实日期不编造准确官方日期。仅引用输入中实际存在的资料，未知材料安排少量校准并声明未知；source不能声称未提供的资料已核实。',
@@ -312,9 +332,10 @@ export async function generateItems(session: OnboardingSession, instruction = ""
       current_date: shanghaiDate(), answers: session.answers, profile: session.profile, learning_context: session.learning_context, research: session.research, recommendations: session.recommendations,
       plan_start_date: session.start_date || shanghaiDate(),
       plan_end_date: session.end_date || session.recommendations.plan_end_date || session.profile.plan_end_date || "",
+      plan_mode: planMode, plan_horizon_days: horizonDays, capacity,
       target_date: session.profile.target_date ?? "",
-      courses: session.courses, items: session.items, current_plan: session.current_plan, instruction,
-    }, timeout);
+      courses: session.courses, items: session.items, current_plan: compactPlanContext(session, "items"), instruction,
+    }, { timeoutMs: timeout, reasoningEffort: config.aiPlanningReasoningEffort });
     validateReferences(session.courses, result.items);
     return { ...result, planning: result.planning ?? newPlanning() };
   }

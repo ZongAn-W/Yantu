@@ -55,8 +55,13 @@ export async function checkAndRepair(session: OnboardingSession, current?: Plann
         || revised.items.find(next => next.id === item.id)?.deadline_kind !== "deadline")))
         throw new Error("修订修改真实截止日期");
       for (const item of candidate.items) assertFrozenScope(item, revised.items.find(next => next.id === item.id)!);
+      // The repaired strategy may update route/workload, but the scheduling mode, horizon and
+      // adopted capacity model stay exactly what the session/action already decided.
       candidate = { ...candidate, ...revised, planning: { ...revised.planning,
-        detail_days: candidate.planning?.detail_days ?? 14, rolling: candidate.planning?.rolling ?? true } };
+        mode: candidate.planning?.mode, rolling: candidate.planning?.rolling ?? false,
+        detail_days: candidate.planning?.detail_days ?? 14,
+        detailed_until: candidate.planning?.detailed_until,
+        forecast: candidate.planning?.forecast } };
       result = evaluatePlanning(candidate, current, attempt);
     } catch (error) {
       const message = error instanceof Error ? error.message : "修订失败";

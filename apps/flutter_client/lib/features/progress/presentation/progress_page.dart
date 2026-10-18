@@ -5,6 +5,7 @@ import '../../../core/theme.dart';
 import '../../../core/widgets.dart';
 import '../../planner/domain/planner_format.dart';
 import '../../planner/domain/progress_metrics.dart';
+import '../../planner/domain/study_day.dart' as day_ops;
 import '../../planner/presentation/planner_page_state.dart';
 
 /// Web `/progress` — subject progress, weekly comparison, heat map and burndown.
@@ -34,9 +35,25 @@ class _ProgressPageState extends ConsumerState<ProgressPage> {
                 horizontal: 12,
                 vertical: 8,
               ),
-              child: Text(
-                '累计实际学习 ${duration(metrics.totalActual)}',
-                style: tabularFigures.copyWith(fontWeight: FontWeight.w600),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '累计实际学习 ${duration(metrics.totalActual)}',
+                    style: tabularFigures.copyWith(fontWeight: FontWeight.w600),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '原定执行 ${duration(metrics.scheduledActual)} · '
+                    '加学 ${duration(metrics.extraActual)} · '
+                    '临时学习 ${duration(metrics.adHocActual)}',
+                    key: const Key('progress-relation-breakdown'),
+                    style: const TextStyle(
+                      color: PlannerColors.muted,
+                      fontSize: 12,
+                    ),
+                  ),
+                ],
               ),
             ),
           ],
@@ -52,6 +69,9 @@ class _ProgressPageState extends ConsumerState<ProgressPage> {
                   month: _month,
                   onMonthChanged: (value) => setState(() => _month = value),
                 );
+                final history = _AdHocHistoryPanel(
+                  entries: day_ops.adHocLearningEntries(data),
+                );
                 if (!wide) {
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -60,6 +80,10 @@ class _ProgressPageState extends ConsumerState<ProgressPage> {
                       const SizedBox(height: 16),
                       heatmap,
                       const SizedBox(height: 16),
+                      if (history.entries.isNotEmpty) ...[
+                        history,
+                        const SizedBox(height: 16),
+                      ],
                       _BurnPanel(metrics: metrics),
                     ],
                   );
@@ -77,6 +101,10 @@ class _ProgressPageState extends ConsumerState<ProgressPage> {
                         Expanded(child: _BurnPanel(metrics: metrics)),
                       ],
                     ),
+                    if (history.entries.isNotEmpty) ...[
+                      const SizedBox(height: 16),
+                      history,
+                    ],
                   ],
                 );
               },
@@ -96,7 +124,7 @@ class _SubjectProgressPanel extends StatelessWidget {
   Widget build(BuildContext context) => PlannerPanel(
     title: '课程进度',
     trailing: const Text(
-      '完成量按各事项实际记录封顶后汇总',
+      '内容完成量按事项确认与记录封顶汇总，与实际用时分别表达',
       style: TextStyle(color: PlannerColors.muted, fontSize: 12),
     ),
     child: Column(
@@ -138,7 +166,7 @@ class _SubjectProgressPanel extends StatelessWidget {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  '剩余 ${duration(item.remaining)} · 完成率 '
+                  '剩余 ${duration(item.remaining)} · 预算完成率 '
                   '${(item.ratio * 100).round()}%',
                   style: const TextStyle(
                     color: PlannerColors.muted,
@@ -183,7 +211,7 @@ class _WeeklyPanel extends StatelessWidget {
               children: [
                 Container(width: 12, height: 12, color: PlannerColors.blue),
                 const SizedBox(width: 6),
-                const Text('实际完成', style: TextStyle(fontSize: 12)),
+                const Text('实际用时（含原定/加学/临时）', style: TextStyle(fontSize: 12)),
               ],
             ),
           ],
@@ -219,7 +247,11 @@ class _WeeklyPanel extends StatelessWidget {
                                 const SizedBox(width: 4),
                                 Expanded(
                                   child: Tooltip(
-                                    message: '实际 ${duration(stat.actual)}',
+                                    message:
+                                        '实际 ${duration(stat.actual)}\n'
+                                        '原定执行 ${duration(stat.scheduled)} · '
+                                        '加学 ${duration(stat.extra)} · '
+                                        '临时学习 ${duration(stat.adHoc)}',
                                     child: _Bar(
                                       ratio: stat.actual / metrics.maxWeekly,
                                       color: subjectColor(
@@ -371,11 +403,15 @@ class _HeatmapPanel extends StatelessWidget {
                     Tooltip(
                       message:
                           '${entry.date} · 实际${duration(entry.actual)} · '
-                          '完成率${entry.rate}%',
+                          '原定执行${duration(entry.scheduled)} · '
+                          '加学${duration(entry.extra)} · '
+                          '临时学习${duration(entry.adHoc)} · '
+                          '用时/计划${entry.rate}%',
                       child: Semantics(
                         label:
                             '${entry.date} 实际${duration(entry.actual)} '
-                            '完成率${entry.rate}%',
+                            '原定执行${duration(entry.scheduled)} '
+                            '用时与计划比${entry.rate}%',
                         child: Container(
                           width: cell,
                           height: cell,
@@ -443,6 +479,75 @@ class _HeatmapPanel extends StatelessWidget {
   };
 }
 
+/// 临时学习历史：名称、课程、累计用时和使用日期；转为正式事项后仍保留。
+class _AdHocHistoryPanel extends StatelessWidget {
+  const _AdHocHistoryPanel({required this.entries});
+
+  final List<day_ops.AdHocLearningEntry> entries;
+
+  @override
+  Widget build(BuildContext context) => PlannerPanel(
+    title: '临时学习记录',
+    trailing: const Text(
+      '名称即可计时，不进入正式排程；转为正式事项后历史仍然保留',
+      style: TextStyle(color: PlannerColors.muted, fontSize: 12),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        for (final entry in entries)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 10,
+                  runSpacing: 4,
+                  children: [
+                    Text(
+                      entry.learning.title,
+                      key: Key('ad-hoc-history-title-${entry.learning.id}'),
+                      style: const TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                    if (entry.learning.archived)
+                      Text(
+                        entry.learning.convertedTaskId == null
+                            ? '已归档'
+                            : '已转为正式事项/已关联',
+                        style: const TextStyle(
+                          color: PlannerColors.muted,
+                          fontSize: 12,
+                        ),
+                      ),
+                    Text(
+                      '累计 ${duration(entry.totalMinutes)} · '
+                      '最近 ${entry.lastDate}',
+                      key: Key('ad-hoc-history-total-${entry.learning.id}'),
+                      style: tabularFigures.copyWith(fontSize: 12),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  [
+                    for (final day in entry.byDate.keys.toList()..sort())
+                      '${day.substring(5)} ${duration(entry.byDate[day]!)}',
+                  ].join(' · '),
+                  style: const TextStyle(
+                    color: PlannerColors.muted,
+                    fontSize: 11,
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
+    ),
+  );
+}
+
 class _BurnPanel extends StatelessWidget {
   const _BurnPanel({required this.metrics});
   final ProgressMetrics metrics;
@@ -494,7 +599,9 @@ class _BurnPanel extends StatelessWidget {
         ),
         const SizedBox(height: 4),
         const Text(
-          '蓝线按各事项实际完成量封顶后绘制。预计完成日期使用首次记录以来的日均实际用时，尚无记录时不作预测。',
+          '蓝线按各事项实际完成量封顶后绘制。预计完成日期使用正式事项的实际用时'
+          '（不含临时学习）以来日均，尚无记录时不作预测；'
+          '内容是否学完仍以内容反馈确认，不由计时自动完成。',
           style: TextStyle(color: PlannerColors.muted, fontSize: 12),
         ),
       ],

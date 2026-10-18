@@ -58,6 +58,33 @@ const nullableDate = z.preprocess(
   date.nullable(),
 );
 
+/** 特定自然周的容量覆盖；只给周总量时由程序生成逐日建议。 */
+const WeekCapacityOverrideSchema = z
+  .object({
+    total_minutes: minutes.max(10080).optional(),
+    days: z
+      .record(z.enum(["0", "1", "2", "3", "4", "5", "6"]), minutes.max(1440))
+      .optional(),
+  })
+  .passthrough();
+
+const MondayKey = z.string().refine((value) => {
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return Number.isFinite(+parsed) && parsed.toISOString().slice(0, 10) === value
+    && parsed.getUTCDay() === 1;
+}, "容量覆盖的周标识必须是周一日期");
+
+const AdHocLearningSchema = z
+  .object({
+    ...owned,
+    ...timestamped,
+    title: z.string().min(1).max(500),
+    subject_id: id.nullable().optional(),
+    archived: z.boolean().optional(),
+    converted_task_id: id.nullable().optional(),
+  })
+  .passthrough();
+
 export const PlannerDocumentSchema = z
   .object({
     version: z.literal(1),
@@ -77,6 +104,21 @@ export const PlannerDocumentSchema = z
         plan_end_date: optionalDate,
         /** 一周七天的可用学习分钟数；缺少时退回每日上限。 */
         weekly_minutes: z.record(z.string(), z.number().int().min(0).max(1440)).optional(),
+        /** 容量口径：旧数据为扣除机动的总预算，新数据为净学习预算。 */
+        capacity_basis: z.enum(["gross_buffer", "net"]).nullable().optional(),
+        weekly_baseline_minutes: minutes.max(10080).nullable().optional(),
+        weekly_range_min_minutes: minutes.max(10080).nullable().optional(),
+        weekly_range_max_minutes: minutes.max(10080).nullable().optional(),
+        /** 特定周容量覆盖，键为上海时区周一日期；null/{} = 显式清空覆盖。 */
+        week_capacity_overrides: z
+          .record(MondayKey, WeekCapacityOverrideSchema)
+          .nullable()
+          .optional(),
+        /** 特定日期净容量覆盖；显式 0 表示休息，删除键表示恢复上层规则；null/{} = 清空。 */
+        date_capacity_overrides: z
+          .record(z.string(), minutes.max(1440))
+          .nullable()
+          .optional(),
         target_school: z.string().max(200),
         target_program: z.string().max(200),
         /** 旧字段：目标日期存在时作为镜像写入，新数据不再依赖它们排程。 */
@@ -127,18 +169,25 @@ export const PlannerDocumentSchema = z
       )
       .max(10000),
     blocks: z.array(block).max(100000),
+    ad_hoc_learnings: z.array(AdHocLearningSchema).max(10000).optional(),
     logs: z
       .array(
         z
           .object({
             ...owned,
-            task_id: id,
+            /** 归属事项；临时学习没有正式事项时为 null。 */
+            task_id: id.nullable(),
             block_id: id.nullable(),
             date,
             minutes,
             started_at: stamp,
             ended_at: stamp,
             source: z.enum(["timer", "manual"]),
+            /** 计时发生时的执行关系；旧数据缺少时保留未知语义。 */
+            relation: z.enum(["scheduled", "extra", "ad_hoc", "legacy_unknown"]).optional(),
+            session_id: id.nullable().optional(),
+            ad_hoc_id: id.nullable().optional(),
+            quota_minutes: minutes.optional(),
           })
           .passthrough(),
       )
@@ -222,6 +271,7 @@ export const PlannerDocumentSchema = z
   .passthrough()
   .superRefine((data, ctx) => {
     const owner = data.profile.user_id;
+    const adHocLearnings = data.ad_hoc_learnings ?? [];
     const collections = [
       "subjects",
       "tasks",
@@ -229,10 +279,12 @@ export const PlannerDocumentSchema = z
       "logs",
       "fixed_events",
       "replan_runs",
+      "ad_hoc_learnings",
     ] as const;
     for (const key of collections) {
+      const rows = key === "ad_hoc_learnings" ? adHocLearnings : data[key];
       const ids = new Set<string>();
-      for (const row of data[key]) {
+      for (const row of rows) {
         if (ids.has(row.id) || row.user_id !== owner)
           ctx.addIssue({
             code: "custom",
@@ -244,7 +296,17 @@ export const PlannerDocumentSchema = z
     }
     const subjects = new Set(data.subjects.map((row) => row.id));
     const tasks = new Set(data.tasks.map((row) => row.id));
+    const adHocIds = new Set(adHocLearnings.map((row) => row.id));
     const blocks = new Map(data.blocks.map((row) => [row.id, row]));
+    // 容量覆盖使用稳定落点：周覆盖键必须是周一日期，日期覆盖必须是有效日期。
+    for (const monday of Object.keys(data.profile.week_capacity_overrides ?? {})) MondayKey.parse(monday);
+    for (const day of Object.keys(data.profile.date_capacity_overrides ?? {})) date.parse(day);
+    for (const adHoc of adHocLearnings)
+      if (adHoc.subject_id && !subjects.has(adHoc.subject_id))
+        ctx.addIssue({ code: "custom", path: ["ad_hoc_learnings", adHoc.id], message: "临时学习引用的课程不存在" });
+    for (const adHoc of adHocLearnings)
+      if (adHoc.converted_task_id && !tasks.has(adHoc.converted_task_id))
+        ctx.addIssue({ code: "custom", path: ["ad_hoc_learnings", adHoc.id], message: "临时学习关联的正式事项不存在" });
     for (const task of data.tasks) {
       const workload = task.planning?.workload;
       if (data.planning && workload) {
@@ -298,17 +360,24 @@ export const PlannerDocumentSchema = z
           path: ["blocks"],
           message: "日程引用不存在的事项",
         });
-    for (const log of data.logs)
-      if (
-        !tasks.has(log.task_id) ||
-        (log.block_id &&
-          (!blocks.has(log.block_id) ||
-            blocks.get(log.block_id)!.task_id !== log.task_id))
-      )
+    for (const log of data.logs) {
+      const taskId = typeof log.task_id === "string" && log.task_id.length > 0 ? log.task_id : null;
+      const adHocId = typeof log.ad_hoc_id === "string" && log.ad_hoc_id.length > 0 ? log.ad_hoc_id : null;
+      const invalid =
+        // 每条记录必须能归属到正式事项或临时学习实体之一。
+        (!taskId && !adHocId) ||
+        (taskId !== null && !tasks.has(taskId)) ||
+        (adHocId !== null && !adHocIds.has(adHocId)) ||
+        (log.block_id !== null &&
+          (!taskId || !blocks.has(log.block_id) || blocks.get(log.block_id)!.task_id !== taskId)) ||
+        (log.relation === "ad_hoc" && !adHocId) ||
+        (log.session_id !== undefined && log.session_id !== null && log.session_id.length === 0);
+      if (invalid)
         ctx.addIssue({
           code: "custom",
-          path: ["logs"],
+          path: ["logs", log.id],
           message: "学习记录引用无效",
         });
+    }
   });
 export type PlannerDocument = z.infer<typeof PlannerDocumentSchema>;

@@ -49,8 +49,12 @@ List<TodayItem> todayItems(PlannerData data, String date) {
   }
   final actual = <String, int>{};
   for (final log in data.logs.where((log) => log.date == date)) {
+    final taskId = log.taskId;
+    // Task-less temporary learning is not a task item; it is reported by the
+    // temporary-learning entries instead of borrowing another task's identity.
+    if (taskId == null) continue;
     actual.update(
-      log.taskId,
+      taskId,
       (value) => value + log.minutes,
       ifAbsent: () => log.minutes,
     );

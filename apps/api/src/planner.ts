@@ -19,12 +19,21 @@ export type ProfileRow = {
   current_progress: string;
   weekly_minutes: Record<string, number>;
   constraints_text: string;
+  // 灵活容量投影；缺失（null）表示旧数据/未设置，显式空对象表示清空覆盖。
+  capacity_basis?: string | null;
+  weekly_baseline_minutes?: number | null;
+  weekly_range_min_minutes?: number | null;
+  weekly_range_max_minutes?: number | null;
+  week_capacity_overrides?: Record<string, unknown> | null;
+  date_capacity_overrides?: Record<string, number> | null;
   planning_metadata?: PlanPlanning | null;
 };
 export type ItemRow = { id: string; course_id: string; course_name?: string; title: string; description: string; completion_criteria: string; estimated_minutes: number; earliest_date: string | null; deadline: string; deadline_kind: string; priority: number; status: string; planning_metadata?: ItemPlanning | null };
 type DailyRow = { id: string; item_id: string; date: string; planned_minutes: number; actual_minutes: number; advice_text: string; advice_topics: string[]; completion_status: string; item_title?: string; course_name?: string; activity_instance_id?: string | null };
+type LogRow = { id: string; item_id: string | null; ad_hoc_id: string | null; daily_plan_item_id: string | null; date: string; minutes: number; relation: string | null; session_id: string | null; quota_minutes: number | null; created_at: string };
+type AdHocRow = { id: string; title: string; subject_id: string | null; archived: boolean; converted_task_id: string | null; created_at: string; updated_at: string };
 
-export const PROFILE_COLUMNS = "goal_text,goal_type,goal_subtype,target_date::text,target_date_confirmed,plan_start_date::text,plan_end_date::text,target_school,target_program,current_progress,weekly_minutes,constraints_text";
+export const PROFILE_COLUMNS = "goal_text,goal_type,goal_subtype,target_date::text,target_date_confirmed,plan_start_date::text,plan_end_date::text,target_school,target_program,current_progress,weekly_minutes,constraints_text,capacity_basis,weekly_baseline_minutes,weekly_range_min_minutes,weekly_range_max_minutes,week_capacity_overrides,date_capacity_overrides";
 const ITEM_COLUMNS = "id,course_id,title,description,completion_criteria,estimated_minutes,earliest_date::text,deadline::text,deadline_kind,priority,status,planning_metadata";
 
 export function dateAdd(date: string, days: number) {
@@ -65,6 +74,28 @@ export async function saveProfile(userId: string, profile: ProfileRow, client?: 
       profile.plan_start_date, profile.plan_end_date, profile.target_school, profile.target_program,
       profile.current_progress, JSON.stringify(profile.weekly_minutes), profile.constraints_text,
       legacyExamType(profile), profile.target_date]);
+  // 容量投影随资料写入：字段缺失=保留数据库已有值；显式 null/空对象=清空。
+  const fields = profile as Record<string, unknown>;
+  const has = (key: string) => Object.prototype.hasOwnProperty.call(profile, key);
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  const add = (column: string, json = false) => {
+    if (!has(column)) return;
+    const value = fields[column];
+    sets.push(`${column}=$${values.length + 2}`);
+    values.push(value === null || value === undefined ? null : json ? JSON.stringify(value) : value);
+  };
+  add("capacity_basis");
+  add("weekly_baseline_minutes");
+  add("weekly_range_min_minutes");
+  add("weekly_range_max_minutes");
+  add("week_capacity_overrides", true);
+  add("date_capacity_overrides", true);
+  if (sets.length)
+    await write(
+      `update profiles set ${sets.join(",")},updated_at=now() where user_id=$1`,
+      [userId, ...values],
+    );
 }
 
 export function itemToJson(row: ItemRow) {
@@ -95,9 +126,13 @@ export async function snapshot(userId: string, client?: pg.PoolClient) {
   const courses = await read<{ id: string; name: string; priority: number }>("select id,name,priority from courses where user_id=$1 order by created_at", [userId]);
   const items = await read<ItemRow>(`select ${ITEM_COLUMNS} from items where user_id=$1 order by deadline,created_at`, [userId]);
   const days = await read<DailyRow>("select d.id,d.item_id,d.date::text,d.planned_minutes,d.actual_minutes,d.advice_text,d.advice_topics,d.completion_status,d.activity_instance_id,i.title as item_title,c.name as course_name from daily_plan_items d join items i on i.id=d.item_id join courses c on c.id=i.course_id where d.user_id=$1 order by d.date,d.id", [userId]);
-  const logs = await read<{ id: string; item_id: string; daily_plan_item_id: string | null; date: string; minutes: number; created_at: string }>("select id,item_id,daily_plan_item_id,date::text,minutes,created_at from study_logs where user_id=$1 order by created_at", [userId]);
+  const logs = await read<LogRow>("select id,item_id,ad_hoc_id,daily_plan_item_id,date::text,minutes,relation,session_id,quota_minutes,created_at from study_logs where user_id=$1 order by created_at", [userId]);
+  const adHocLearnings = await read<AdHocRow>("select id,title,subject_id,archived,converted_task_id,created_at,updated_at from ad_hoc_learnings where user_id=$1 order by created_at,id", [userId]);
   const logged = new Map<string, number>();
-  for (const log of logs.rows) logged.set(log.item_id, (logged.get(log.item_id) ?? 0) + log.minutes);
+  for (const log of logs.rows) {
+    if (log.item_id === null) continue;
+    logged.set(log.item_id, (logged.get(log.item_id) ?? 0) + log.minutes);
+  }
   const now = new Date().toISOString();
   const today = dateToday();
   const boundary = profile.plan_end_date ?? profile.target_date ?? dateAdd(today, 27);
@@ -113,6 +148,13 @@ export async function snapshot(userId: string, client?: pg.PoolClient) {
       constraints: profile.constraints_text,
       // 一周七天的实际可用时间：排程的唯一来源，不能用全周最大值代替。
       weekly_minutes: normalizeWeek(profile.weekly_minutes),
+      // 容量投影：只有数据库确实存了值才输出，缺失保持缺失（旧数据语义）。
+      ...(profile.capacity_basis ? { capacity_basis: profile.capacity_basis as "gross_buffer" | "net" } : {}),
+      ...(profile.weekly_baseline_minutes !== null && profile.weekly_baseline_minutes !== undefined ? { weekly_baseline_minutes: profile.weekly_baseline_minutes } : {}),
+      ...(profile.weekly_range_min_minutes !== null && profile.weekly_range_min_minutes !== undefined ? { weekly_range_min_minutes: profile.weekly_range_min_minutes } : {}),
+      ...(profile.weekly_range_max_minutes !== null && profile.weekly_range_max_minutes !== undefined ? { weekly_range_max_minutes: profile.weekly_range_max_minutes } : {}),
+      ...(profile.week_capacity_overrides ? { week_capacity_overrides: profile.week_capacity_overrides } : {}),
+      ...(profile.date_capacity_overrides ? { date_capacity_overrides: profile.date_capacity_overrides } : {}),
       // 旧客户端读取的镜像字段：目标日期存在时才写入，避免伪造日期。
       ...(profile.target_date ? { exam_date: profile.target_date, exam_end_date: profile.target_date } : {}),
       // 仅用于展示与旧数据兜底；排程按每周配置逐日计算。
@@ -123,7 +165,13 @@ export async function snapshot(userId: string, client?: pg.PoolClient) {
     subjects: courses.rows.map((course) => ({ id: course.id, user_id: userId, name: course.name, color: "#275e91", priority: course.priority as 1 | 2 | 3 })),
     tasks: items.rows.map((item) => ({ id: item.id, user_id: userId, subject_id: item.course_id, title: item.title, description: [item.description, item.completion_criteria ? `完成标准：${item.completion_criteria}` : ""].filter(Boolean).join("\n"), estimated_minutes: item.estimated_minutes, completed_minutes: logged.get(item.id) ?? 0, priority: item.priority as 1 | 2 | 3, deadline: item.deadline, deadline_kind: item.deadline_kind ?? "deadline", earliest_date: item.earliest_date ?? undefined, is_fixed: false, status: (item.status === "archived" ? "archived" : item.status === "completed" ? "completed" : (logged.get(item.id) ?? 0) > 0 ? "in_progress" : "not_started") as "not_started" | "in_progress" | "completed" | "archived", created_at: now, updated_at: now, ...(item.planning_metadata ? { planning: item.planning_metadata } : {}) })),
     blocks: days.rows.map((day) => ({ id: day.id, user_id: userId, task_id: day.item_id, date: day.date, start_minute: 0, duration_minutes: day.planned_minutes, actual_minutes: day.actual_minutes, is_fixed: false, status: (day.completion_status === "completed" ? "completed" : "planned") as "planned" | "completed", created_at: now, updated_at: now, advice_text: day.advice_text, advice_topics: day.advice_topics, completion_status: day.completion_status, ...(day.activity_instance_id ? { activity_instance_id: day.activity_instance_id } : {}) })),
-    logs: logs.rows.map((log) => ({ id: log.id, user_id: userId, task_id: log.item_id, block_id: log.daily_plan_item_id, date: log.date, minutes: log.minutes, started_at: log.created_at, ended_at: log.created_at, source: "manual" as const })),
+    logs: logs.rows.map((log) => ({ id: log.id, user_id: userId, task_id: log.item_id, block_id: log.daily_plan_item_id, date: log.date, minutes: log.minutes, started_at: log.created_at, ended_at: log.created_at, source: "manual" as const,
+      // 旧数据/旧语义保持缺失；只有真实存在的执行关系、会话与临时学习引用才投影出来。
+      ...(log.relation && log.relation !== "legacy_unknown" ? { relation: log.relation as "scheduled" | "extra" | "ad_hoc" } : {}),
+      ...(log.session_id ? { session_id: log.session_id } : {}),
+      ...(log.ad_hoc_id ? { ad_hoc_id: log.ad_hoc_id } : {}),
+      ...(log.quota_minutes !== null && log.quota_minutes !== undefined ? { quota_minutes: log.quota_minutes } : {}) })),
+    ...(adHocLearnings.rows.length ? { ad_hoc_learnings: adHocLearnings.rows.map((row) => ({ id: row.id, user_id: userId, title: row.title, ...(row.subject_id ? { subject_id: row.subject_id } : {}), created_at: row.created_at, updated_at: row.updated_at, archived: row.archived, ...(row.converted_task_id ? { converted_task_id: row.converted_task_id } : {}) })) } : {}),
     fixed_events: [], replan_runs: [], phases: [],
   };
 }
@@ -234,9 +282,18 @@ export function replanDocument(current: PlannerDocument, session: OnboardingSess
     target_date: session.profile.target_date, target_date_confirmed: session.profile.target_date_confirmed,
     plan_start_date: session.start_date, plan_end_date: boundary,
     target_school: session.profile.target_school, target_program: session.profile.target_program, foundation: session.profile.current_progress,
+    // 访谈确认的学习限制随重新规划写回文档，否则关系表投影会用旧值覆盖刚保存的资料。
+    constraints: session.profile.constraints_text,
     // 重新访谈确认的一周配置必须写回文档，否则后续同步会退回每日上限。
     weekly_minutes: normalizeWeek(session.profile.weekly_minutes),
     daily_limit_minutes: Math.max(...Object.values(session.profile.weekly_minutes), 30),
+    // 灵活容量假设随规划确认写回文档；字段缺失表示旧会话/未修改，保留文档已有值。
+    ...(session.profile.capacity_basis !== undefined ? { capacity_basis: session.profile.capacity_basis } : {}),
+    ...(session.profile.weekly_baseline_minutes !== undefined ? { weekly_baseline_minutes: session.profile.weekly_baseline_minutes } : {}),
+    ...(session.profile.weekly_range_min_minutes !== undefined ? { weekly_range_min_minutes: session.profile.weekly_range_min_minutes } : {}),
+    ...(session.profile.weekly_range_max_minutes !== undefined ? { weekly_range_max_minutes: session.profile.weekly_range_max_minutes } : {}),
+    ...(session.profile.week_capacity_overrides !== undefined ? { week_capacity_overrides: structuredClone(session.profile.week_capacity_overrides) } : {}),
+    ...(session.profile.date_capacity_overrides !== undefined ? { date_capacity_overrides: structuredClone(session.profile.date_capacity_overrides) } : {}),
     ...(session.profile.target_date ? { exam_date: session.profile.target_date, exam_end_date: session.profile.target_date } : { exam_date: undefined, exam_end_date: undefined }),
   });
   let generatedCount = 0;

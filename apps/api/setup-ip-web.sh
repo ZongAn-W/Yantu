@@ -45,6 +45,11 @@ server {
     root $project_dir/apps/flutter_client/build/web;
     index index.html;
 
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types application/javascript application/json application/wasm application/octet-stream font/ttf font/otf;
+
     location ^~ /.well-known/acme-challenge/ {
         root $webroot;
         default_type text/plain;
@@ -52,6 +57,14 @@ server {
     }
     location ^~ /api/ {
         return 403;
+    }
+    location ^~ /canvaskit/ {
+        types {
+            application/javascript js;
+            application/wasm wasm;
+        }
+        try_files \$uri =404;
+        add_header Cache-Control "no-cache";
     }
     location / {
         try_files \$uri \$uri/ /index.html;
@@ -84,6 +97,26 @@ server {
     server_tokens off;
     root $project_dir/apps/flutter_client/build/web;
     index index.html;
+
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_types application/javascript application/json application/wasm application/octet-stream font/ttf font/otf;
+
+    location ^~ /canvaskit/ {
+        types { application/javascript js; application/wasm wasm; }
+        try_files \$uri =404;
+        add_header Cache-Control "no-cache";
+    }
+
+    location = /flutter_bootstrap.js {
+        try_files \$uri =404;
+        add_header Cache-Control "no-cache";
+    }
+    location = /main.dart.js {
+        try_files \$uri =404;
+        add_header Cache-Control "no-cache";
+    }
 
     location ^~ /api/ {
         proxy_pass http://127.0.0.1:8787;

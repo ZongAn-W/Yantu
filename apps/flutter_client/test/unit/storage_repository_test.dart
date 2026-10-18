@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sembast/sembast_memory.dart';
+import 'package:sembast/utils/sembast_import_export.dart';
 import 'package:sjtu_study_planner_client/core/storage/local_database.dart';
 import 'package:sjtu_study_planner_client/core/storage/sembast_storage_repository.dart';
 import 'package:sjtu_study_planner_client/core/storage/storage_repository.dart';
@@ -188,4 +189,143 @@ void main() {
       );
     },
   );
+  test('physical backups are throttled by write count without losing data', () async {
+    final clock = _FakeClock();
+    var backups = 0;
+    final records = StoreRef<String, int>.main();
+    final database = LocalDatabase(
+      open: () => databaseFactoryMemory.openDatabase('throttle-${sequence++}'),
+      backup: (_) async => backups++,
+      backupInterval: const Duration(minutes: 2),
+      maxWritesBetweenBackups: 20,
+      now: clock.now,
+    );
+    addTearDown(database.close);
+    for (var index = 0; index < 30; index++) {
+      clock.advance(const Duration(seconds: 1));
+      await database.write((db) => records.record('counter').put(db, index));
+    }
+    // 第 1 次写入强制备份；20 次写入阈值在第 22 次写入前再次触发：30 次写入只有 2 次备份。
+    expect(backups, 2);
+    expect(await records.record('counter').get(await database.database), 29);
+  });
+  test('physical backups are throttled by elapsed time', () async {
+    final clock = _FakeClock();
+    var backups = 0;
+    final records = StoreRef<String, int>.main();
+    final database = LocalDatabase(
+      open: () =>
+          databaseFactoryMemory.openDatabase('throttle-time-${sequence++}'),
+      backup: (_) async => backups++,
+      backupInterval: const Duration(minutes: 2),
+      maxWritesBetweenBackups: 1000,
+      now: clock.now,
+    );
+    addTearDown(database.close);
+    await database.write((db) => records.record('value').put(db, 1));
+    await database.write((db) => records.record('value').put(db, 2));
+    await database.write((db) => records.record('value').put(db, 3));
+    expect(backups, 1); // 首次写入后 2 分钟内的写入不重复备份。
+    clock.advance(const Duration(minutes: 2));
+    await database.write((db) => records.record('value').put(db, 4));
+    expect(backups, 2);
+  });
+  test('recovery writes force a backup of the original data', () async {
+    final clock = _FakeClock();
+    final observed = <int?>[];
+    final records = StoreRef<String, int>.main();
+    final database = LocalDatabase(
+      open: () => databaseFactoryMemory.openDatabase(
+        'throttle-recovery-${sequence++}',
+      ),
+      backup: (db) async =>
+          observed.add(await records.record('state').get(db)),
+      backupInterval: const Duration(hours: 1),
+      maxWritesBetweenBackups: 1000,
+      now: clock.now,
+    );
+    addTearDown(database.close);
+    await database.write((db) => records.record('state').put(db, 1));
+    await database.write((db) => records.record('state').put(db, 2));
+    await database.write(
+      (db) => records.record('state').put(db, 3),
+      recovery: true,
+    );
+    // 第一次写入与恢复写入各强制备份；恢复备份看到的是写入前的原始数据。
+    expect(observed, [null, 2]);
+    expect(await records.record('state').get(await database.database), 3);
+  });
+  test(
+    'closing flushes a throttled backup so the recovery snapshot is current',
+    () async {
+      final clock = _FakeClock();
+      final observed = <int?>[];
+      var backups = 0;
+      final records = StoreRef<String, int>.main();
+      final database = LocalDatabase(
+        open: () => databaseFactoryMemory.openDatabase(
+          'throttle-close-${sequence++}',
+        ),
+        backup: (db) async {
+          backups++;
+          observed.add(await records.record('state').get(db));
+        },
+        backupInterval: const Duration(hours: 1),
+        maxWritesBetweenBackups: 1000,
+        now: clock.now,
+      );
+      await database.write((db) => records.record('state').put(db, 1));
+      await database.write((db) => records.record('state').put(db, 2));
+      expect(backups, 1);
+      await database.close();
+      // 关闭时补一次备份，快照包含全部已落盘写入。
+      expect(backups, 2);
+      expect(observed.last, 2);
+    },
+  );
+  test(
+    'throttled backup file stays a valid snapshot and close refreshes it',
+    () async {
+      final temp = await Directory.systemTemp.createTemp('planner-throttle-');
+      final path = '${temp.path}/planner.db';
+      final clock = _FakeClock();
+      final records = StoreRef<String, int>.main();
+      final database = LocalDatabase(
+        open: () => openPlannerDatabase(path),
+        backup: backupPlannerDatabase,
+        backupInterval: const Duration(minutes: 2),
+        maxWritesBetweenBackups: 20,
+        now: clock.now,
+      );
+      await database.write((db) => records.record('a').put(db, 1));
+      await database.write((db) => records.record('b').put(db, 2));
+      final recovery = File('$path.recovery.json');
+      expect(await recovery.exists(), isTrue);
+      // 节流期间写出的恢复文件必须是可导入的完整快照。
+      final snapshot = await importDatabase(
+        jsonDecode(await recovery.readAsString()) as Map,
+        databaseFactoryMemory,
+        'throttle-validate-${sequence++}',
+      );
+      await snapshot.close();
+      await database.close();
+      // 关闭补写后恢复文件包含全部已落盘数据。
+      final refreshed = await importDatabase(
+        jsonDecode(await recovery.readAsString()) as Map,
+        databaseFactoryMemory,
+        'throttle-validate-${sequence++}',
+      );
+      expect(await records.record('a').get(refreshed), 1);
+      expect(await records.record('b').get(refreshed), 2);
+      await refreshed.close();
+    },
+  );
+}
+
+class _FakeClock {
+  DateTime _value = DateTime.utc(2026, 1, 1);
+
+  DateTime now() => _value;
+
+  void advance(Duration duration) => _value = _value.add(duration);
 }

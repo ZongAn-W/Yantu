@@ -44,9 +44,27 @@ work, paused activities and legitimate unused capacity. Recurring identities are
 Partial weeks request `ceil(sessions_per_week * active_calendar_days / 7)` sessions.
 Zero-capacity days remain unavailable and create a shortfall when necessary.
 
-The planning upgrade intentionally refreshes the older oracle: blocks with actual
-minutes or linked logs remain byte-for-byte protected, and exhausted time budgets
-never set a task's content status to completed.
+`strategy-cases.json` only describes the automatic scheduler. The cross-entry
+contract lives in `scheduler-contract-cases.json`: every case carries a full planner
+document, the expected automatic allocation, manual placement checks and (optionally)
+a replan expectation. Three independent runners consume the same file:
+
+- `packages/planner-engine/src/scheduler-contract.test.ts` — the TypeScript reference
+  engine's manual `validateBlockPlacement` plus the shared strategy scheduler.
+- `apps/api/src/planning-scheduler.test.ts` — the API production copy of the strategy
+  scheduler.
+- `apps/flutter_client/test/golden/scheduler_contract_test.dart` — the Dart mirror of
+  both the strategy scheduler and manual placement.
+
+Each runner asserts that every automatically generated block passes manual placement
+in the same occupancy state (the candidate itself is excluded, so its capacity is not
+counted twice), that manual placement accepts content-confirmed and forecast-complete
+prerequisites while rejecting mere time exhaustion, that timed occupancy clips to the
+study window and unions overlapping events/blocks, and that over-capacity protected
+records are kept and reported instead of being rewritten. The planning upgrade
+intentionally refreshes the older oracle: blocks with actual minutes or linked logs
+remain byte-for-byte protected, and exhausted time budgets never set a task's content
+status to completed.
 
 ```powershell
 npx vitest run packages/planner-engine/src/strategy.test.ts

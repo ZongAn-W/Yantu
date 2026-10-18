@@ -94,20 +94,21 @@ class AuthRepository {
   }
 
   Future<void> signOut() async {
-    if (client.usesBearer) {
-      final tokens = await client.tokenStore.read();
-      try {
+    try {
+      if (client.usesBearer) {
+        final tokens = await client.tokenStore.read();
         if (tokens != null) {
           await client.post(
             '/api/auth/token/revoke',
             data: {'refreshToken': tokens.refreshToken},
           );
         }
-      } finally {
-        await client.clearSession();
+      } else {
+        await client.post('/api/auth/logout');
       }
-    } else {
-      await client.post('/api/auth/logout');
+    } finally {
+      // The local session must end even when the server is unreachable; an
+      // offline user still gets a reliable local sign-out.
       await client.clearSession();
     }
   }

@@ -17,6 +17,11 @@ final authControllerProvider = NotifierProvider<AuthController, AuthState>(
   AuthController.new,
 );
 
+/// Runs before the account session is cleared. It must finish persisting any
+/// durable local state (for example the study timer checkpoint); a thrown error
+/// aborts an explicit sign-out so no learned time is silently lost.
+typedef SessionEndHandler = Future<void> Function();
+
 class AuthState {
   const AuthState({
     this.user,
@@ -57,6 +62,22 @@ class AuthController extends Notifier<AuthState> {
   Timer? _cooldown;
   bool _disposed = false;
   int _generation = 0;
+  Future<void>? _signingOut;
+  final Set<SessionEndHandler> _sessionEndHandlers = {};
+
+  /// Registered by durable local-state owners (currently the study timer). The
+  /// handler list is intentionally small and ordered by registration.
+  void addSessionEndHandler(SessionEndHandler handler) =>
+      _sessionEndHandlers.add(handler);
+
+  void removeSessionEndHandler(SessionEndHandler handler) =>
+      _sessionEndHandlers.remove(handler);
+
+  Future<void> _runSessionEndHandlers() async {
+    for (final handler in List<SessionEndHandler>.of(_sessionEndHandlers)) {
+      await handler();
+    }
+  }
 
   @override
   AuthState build() {
@@ -183,25 +204,69 @@ class AuthController extends Notifier<AuthState> {
 
   Future<void> expire() async {
     _generation++;
-    try {
-      await ref.read(identityStoreProvider).save(null);
-    } finally {
-      if (!_disposed) state = const AuthState();
-    }
+    final failure = await _stopLocalState();
+    if (_disposed) return;
+    state = AuthState(
+      error: failure == null
+          ? null
+          : '登录会话已失效，但本机计时记录未能保存：$failure',
+    );
   }
 
-  Future<void> signOut() async {
+  /// Stops durable local state before the session is dropped.
+  ///
+  /// Expiry cannot be cancelled, so failures are reported instead of thrown.
+  Future<Object?> _stopLocalState() async {
+    Object? failure;
+    try {
+      await _runSessionEndHandlers();
+    } catch (error) {
+      failure = error;
+    }
+    try {
+      await ref.read(identityStoreProvider).save(null);
+    } catch (error) {
+      failure ??= error;
+    }
+    return failure;
+  }
+
+  /// Explicit sign-out: persist durable local state first, then clear the local
+  /// session. The server revocation is best effort so an offline user can still
+  /// sign out after the timer checkpoint was saved.
+  Future<void> signOut() => _signingOut ??= _signOut().whenComplete(() {
+    _signingOut = null;
+  });
+
+  Future<void> _signOut() async {
+    if (state.loading) return;
+    final generation = ++_generation;
     state = state.copyWith(loading: true);
     try {
-      await ref.read(authRepositoryProvider).signOut();
-      if (!_disposed) state = const AuthState();
+      await _runSessionEndHandlers();
     } catch (error) {
-      if (!_disposed) {
+      if (!_disposed && generation == _generation) {
         state = state.copyWith(
           loading: false,
-          error: ref.read(apiClientProvider).failureFrom(error).message,
+          error: '退出前无法保存本机计时记录：$error，账号保持登录。',
         );
       }
+      return;
     }
+    if (_disposed || generation != _generation) return;
+    Object? revokeFailure;
+    try {
+      await ref.read(authRepositoryProvider).signOut();
+    } catch (error) {
+      // Local credentials were already cleared by the repository; only the
+      // server-side revocation could not complete.
+      revokeFailure = error;
+    }
+    if (_disposed || generation != _generation) return;
+    state = AuthState(
+      notice: revokeFailure == null
+          ? null
+          : '已退出登录；云端会话撤销未完成，网络恢复后会自动清理。',
+    );
   }
 }

@@ -1,4 +1,7 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+
+import 'planner_fonts.dart';
 
 /// Design tokens shared with `apps/web/src/styles.css` (`DESIGN.md`).
 abstract final class PlannerColors {
@@ -50,7 +53,8 @@ ThemeData plannerTheme() {
     error: PlannerColors.danger,
   );
   final base = ThemeData(
-    fontFamily: 'NotoSansSC',
+    fontFamily: kIsWeb ? 'NotoSansSC' : plannerFullFontFamily,
+    fontFamilyFallback: const [plannerFullFontFamily, 'NotoSansSC'],
     colorScheme: scheme,
     scaffoldBackgroundColor: PlannerColors.background,
     useMaterial3: true,

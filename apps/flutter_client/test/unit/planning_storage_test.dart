@@ -6,6 +6,8 @@ import 'package:sjtu_study_planner_client/core/storage/sembast_storage_repositor
 import 'package:sjtu_study_planner_client/core/storage/storage_repository.dart';
 import 'package:sjtu_study_planner_client/core/sync/merge_plans.dart';
 import 'package:sjtu_study_planner_client/core/sync/sync_api.dart';
+import 'package:sjtu_study_planner_client/features/planner/domain/study_day.dart'
+    as day_ops;
 import 'package:sjtu_study_planner_client/shared/models/api_models.dart';
 import 'package:sjtu_study_planner_client/shared/models/planner_models.dart';
 import '../support/planner_fixture.dart';
@@ -194,5 +196,21 @@ void main() {
       (migrated.tasks.last.planning!['dependencies'] as List).single['task_id'],
       migrated.tasks.first.id,
     );
+  });
+  test('deleting a route-referenced item exports and reloads valid JSON', () {
+    final base = strategyFixture();
+    final next = day_ops.deleteTask(base, base.tasks.single.id);
+    validatePlanner(next);
+    expect(next.tasks, isEmpty);
+    expect(next.planning!['route'], isEmpty, reason: '删空的阶段不留在元数据里');
+    expect(next.planning!['needs_review'], isTrue);
+    expect(next.planning!['quality'], isNull);
+    expect(
+      parsePlannerJson(next.toJsonString()),
+      next,
+      reason: '导出后重新读取仍通过校验',
+    );
+    final wire = plannerDocumentForSync(next, base);
+    expect(wire['planning'], isNotNull);
   });
 }

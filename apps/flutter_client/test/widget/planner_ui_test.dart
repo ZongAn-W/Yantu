@@ -12,11 +12,13 @@ import 'package:sjtu_study_planner_client/core/storage/identity_store.dart';
 import 'package:sjtu_study_planner_client/core/storage/storage_repository.dart';
 import 'package:sjtu_study_planner_client/core/storage/study_timer_store.dart';
 import 'package:sjtu_study_planner_client/core/sync/sync_state.dart';
+import 'package:sjtu_study_planner_client/features/auth/application/auth_controller.dart';
 import 'package:sjtu_study_planner_client/features/planner/application/planner_sync.dart';
 import 'package:sjtu_study_planner_client/features/planner/application/study_timer.dart';
 import 'package:sjtu_study_planner_client/features/planner/domain/planner_format.dart';
 import 'package:sjtu_study_planner_client/features/planner/domain/study_day.dart'
     as day_ops;
+import 'package:sjtu_study_planner_client/features/shell/app_shell.dart';
 import 'package:sjtu_study_planner_client/router/app_router.dart';
 import 'package:sjtu_study_planner_client/shared/models/planner_models.dart';
 
@@ -64,6 +66,8 @@ Future<ProviderContainer> signIn(
   int? revision,
   DateTime Function()? timerNow,
   Duration Function()? monotonicNow,
+  StudyTimerStore? timerStore,
+  void Function(StudyTimer timer)? onTimerCreated,
 }) async {
   final adapter = TestAdapter(respond);
   final client = ApiClient(
@@ -77,15 +81,23 @@ Future<ProviderContainer> signIn(
       identityStoreProvider.overrideWithValue(MemoryIdentityStore()),
       storageRepositoryProvider.overrideWithValue(MemoryStorageRepository()),
       syncRetryIntervalProvider.overrideWithValue(null),
-      studyTimerProvider.overrideWith(
-        (ref) => StudyTimer(
+      studyTimerProvider.overrideWith((ref) {
+        final timer = StudyTimer(
           coordinator: ref.watch(plannerSyncProvider.notifier),
-          store: _MemoryStudyTimerStore(),
+          store: timerStore ?? _MemoryStudyTimerStore(),
           now: timerNow,
           monotonicNow: monotonicNow,
           tickInterval: null,
-        ),
-      ),
+        );
+        // Mirror the production provider: sign-out and expiry persist the timer.
+        final auth = ref.read(authControllerProvider.notifier);
+        auth.addSessionEndHandler(timer.pauseForSessionEnd);
+        ref.onDispose(
+          () => auth.removeSessionEndHandler(timer.pauseForSessionEnd),
+        );
+        onTimerCreated?.call(timer);
+        return timer;
+      }),
     ],
   );
   addTearDown(container.dispose);
@@ -700,6 +712,177 @@ void main() {
     );
     expect(find.text('重新读取本机数据'), findsOneWidget);
   });
+
+  testWidgets(
+    'a failed timer checkpoint keeps the account dialog open with an error',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final store = _FailingTimerStore();
+      final server = FakeSyncServer();
+      final container = await signIn(
+        tester,
+        respond: server.respond,
+        timerStore: store,
+      );
+      final coordinator = container.read(plannerSyncProvider);
+      final taskId = coordinator.data!.tasks.first.id;
+      final date = coordinator.data!.blocks.first.date;
+      final action = find.byKey(Key('study-timer-action-$taskId-$date'));
+      await tester.ensureVisible(action);
+      await tester.tap(action);
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.text('暂停计时'), findsOneWidget);
+
+      store.fail = true;
+      await tester.tap(find.byTooltip('账号与同步'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AccountDialog), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(FilledButton, '退出登录'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byType(AccountDialog),
+        findsOneWidget,
+        reason: '计时保存失败时不能伪装成已成功退出',
+      );
+      expect(find.textContaining('无法保存本机计时记录'), findsOneWidget);
+      expect(container.read(authControllerProvider).user, isNotNull);
+      expect(
+        container.read(authControllerProvider).loading,
+        isFalse,
+        reason: '失败后按钮应恢复可用以便重试',
+      );
+
+      store.fail = false;
+      await tester.tap(find.widgetWithText(FilledButton, '退出登录'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AccountDialog), findsNothing);
+      expect(container.read(authControllerProvider).user, isNull);
+    },
+  );
+
+  testWidgets('the account dialog and sign-out controls fit a phone layout', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await signIn(tester, respond: plannerResponder(revision: 1, today: true));
+
+    await tester.tap(find.byTooltip('账号与同步'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AccountDialog), findsOneWidget);
+    expect(tester.takeException(), isNull, reason: '手机宽度下账号对话框不能溢出');
+    final signOut = find.widgetWithText(FilledButton, '退出登录');
+    expect(signOut, findsOneWidget);
+    expect(tester.widget<FilledButton>(signOut).onPressed, isNotNull);
+
+    await tester.tap(find.widgetWithText(TextButton, '关闭'));
+    await tester.pumpAndSettle();
+    expect(find.byType(AccountDialog), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('cancelling the delete confirmation keeps the item', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final server = FakeSyncServer(plan: todayFixture());
+    final container = await signIn(tester, respond: server.respond);
+    container.read(appRouterProvider).go('/tasks');
+    await tester.pumpAndSettle();
+    expect(find.text('基础一轮'), findsOneWidget);
+
+    final deleteButton = find.byTooltip('删除事项').first;
+    await tester.ensureVisible(deleteButton);
+    await tester.pumpAndSettle();
+    await tester.tap(deleteButton);
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(TextButton, '取消'));
+    await tester.pumpAndSettle();
+
+    final coordinator = container.read(plannerSyncProvider);
+    expect(coordinator.data!.tasks, hasLength(1), reason: '取消删除不改变计划');
+    expect(server.pushCount, 0, reason: '取消删除不产生同步写入');
+  });
+
+  testWidgets(
+    'deleting an item other items depend on is refused with a reason',
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final base = todayFixture();
+      final first = base.tasks.single;
+      final dependent = first.copyWith(
+        id: 'task-dependent',
+        title: '依赖演练',
+        deadline: '2027-06-30',
+        earliestDate: '2026-10-01',
+        planning: <String, dynamic>{
+          'dependencies': [
+            {'task_id': first.id, 'mode': 'planned'},
+          ],
+        },
+      );
+      final server = FakeSyncServer(
+        plan: base.copyWith(
+          tasks: [first, dependent],
+          blocks: [
+            ...base.blocks,
+            base.blocks.single.copyWith(
+              id: 'block-dependent',
+              taskId: dependent.id,
+            ),
+          ],
+          planning: <String, dynamic>{
+            'version': 1,
+            'route': [
+              {
+                'id': 'stage',
+                'title': '阶段',
+                'item_ids': [first.id, dependent.id],
+                'outcome': '完成',
+                'check': '自检',
+              },
+            ],
+            'quality': <String, dynamic>{'status': 'pass'},
+            'needs_review': false,
+          },
+        ),
+      );
+      final container = await signIn(tester, respond: server.respond);
+      container.read(appRouterProvider).go('/tasks');
+      await tester.pumpAndSettle();
+      expect(find.text('依赖演练'), findsOneWidget);
+
+      final deleteButton = find.byTooltip('删除事项').first;
+      await tester.ensureVisible(deleteButton);
+      await tester.pumpAndSettle();
+      await tester.tap(deleteButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(FilledButton, '确认删除'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+
+      expect(
+        find.textContaining('前置'),
+        findsOneWidget,
+        reason: '有依赖时必须明确阻止并说明原因',
+      );
+      final coordinator = container.read(plannerSyncProvider);
+      expect(coordinator.data!.tasks, hasLength(2));
+      expect(server.pushCount, 0);
+      expect(
+        (coordinator.data!.planning!['route'] as List).single['item_ids'],
+        [first.id, dependent.id],
+      );
+    },
+  );
 }
 
 class _MemoryStudyTimerStore implements StudyTimerStore {
@@ -710,6 +893,21 @@ class _MemoryStudyTimerStore implements StudyTimerStore {
 
   @override
   Future<void> save(String key, JsonMap value) async => _values[key] = value;
+}
+
+/// A timer store that can fail on demand, to prove sign-out is not faked.
+class _FailingTimerStore implements StudyTimerStore {
+  final _values = <String, JsonMap>{};
+  bool fail = false;
+
+  @override
+  Future<JsonMap?> load(String key) async => _values[key];
+
+  @override
+  Future<void> save(String key, JsonMap value) async {
+    if (fail) throw StateError('timer disk unavailable');
+    _values[key] = value;
+  }
 }
 
 /// A storage repository whose main record cannot be decoded.

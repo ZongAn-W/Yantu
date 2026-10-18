@@ -388,6 +388,464 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
         200, 409,
       ]);
     });
+    it("projects learning constraints into the relational profile and every read path", async () => {
+      const user = await account(),
+        data = await fixture(user.id);
+      const put = (value: any, base: any, revision: number) =>
+        app.inject({
+          method: "PUT",
+          url: "/api/planner/sync",
+          headers: user.headers,
+          payload: { data: value, base, expectedRevision: revision },
+        });
+      const pull = async () =>
+        (await app.inject({ url: "/api/planner/sync", headers: user.headers })).json();
+      const profile = async () =>
+        (await app.inject({ url: "/api/onboarding/profile", headers: user.headers })).json()
+          .profile;
+      const native = async () =>
+        (await app.inject({ url: "/api/planner/snapshot", headers: user.headers })).json()
+          .data;
+      const storedConstraints = async () =>
+        (
+          await db.query<{ constraints_text: string }>(
+            "select constraints_text from profiles where user_id=$1",
+            [user.id],
+          )
+        ).rows[0]?.constraints_text;
+      // 第一次导入：客户端设置的学习限制必须进入关系表，并被三种读取路径读到。
+      data.profile.constraints = "每周三晚上有课，22:00 后不安排";
+      const first = await put(data, null, 0);
+      expect(first.statusCode, first.body).toBe(200);
+      const firstPull = await pull();
+      expect(firstPull.data.profile.constraints).toBe("每周三晚上有课，22:00 后不安排");
+      expect((await profile()).constraints_text).toBe("每周三晚上有课，22:00 后不安排");
+      expect((await native()).profile.constraints).toBe("每周三晚上有课，22:00 后不安排");
+      expect(await storedConstraints()).toBe("每周三晚上有课，22:00 后不安排");
+
+      // 修改已有值：同步读取、资料读取、原生快照三者一致。
+      const changed = structuredClone(first.json().data);
+      changed.profile.constraints = "仅周末可安排 4 小时";
+      const second = await put(changed, first.json().data, first.json().revision);
+      expect(second.statusCode, second.body).toBe(200);
+      expect((await pull()).data.profile.constraints).toBe("仅周末可安排 4 小时");
+      expect((await profile()).constraints_text).toBe("仅周末可安排 4 小时");
+      expect((await native()).profile.constraints).toBe("仅周末可安排 4 小时");
+      expect(await storedConstraints()).toBe("仅周末可安排 4 小时");
+
+      // 显式清空：空字符串表示用户主动清空，关系表与三条读取路径同步为空。
+      const cleared = structuredClone(second.json().data);
+      cleared.profile.constraints = "";
+      const third = await put(cleared, second.json().data, second.json().revision);
+      expect(third.statusCode, third.body).toBe(200);
+      expect(await storedConstraints()).toBe("");
+      expect((await pull()).data.profile.constraints).toBe("");
+      expect((await profile()).constraints_text).toBe("");
+      expect((await native()).profile.constraints).toBe("");
+
+      // null 同样表示明确清空，读取端统一用空字符串表示，避免表示差异反复误报。
+      const nullCleared = structuredClone(third.json().data);
+      nullCleared.profile.constraints = null;
+      const fourth = await put(nullCleared, third.json().data, third.json().revision);
+      expect(fourth.statusCode, fourth.body).toBe(200);
+      expect(await storedConstraints()).toBe("");
+      expect(fourth.json().data.profile.constraints).toBe("");
+      expect((await pull()).data.profile.constraints).toBe("");
+      expect((await native()).profile.constraints).toBe("");
+
+      // 旧客户端兼容：文档缺少 constraints 字段时保留关系表已有值，不能被空值覆盖。
+      const withValue = structuredClone(fourth.json().data);
+      withValue.profile.constraints = "旧客户端不能清空的限制";
+      const fifth = await put(withValue, fourth.json().data, fourth.json().revision);
+      expect(fifth.statusCode, fifth.body).toBe(200);
+      expect(await storedConstraints()).toBe("旧客户端不能清空的限制");
+      const legacy = structuredClone(fifth.json().data);
+      delete legacy.profile.constraints;
+      const sixth = await put(legacy, fifth.json().data, fifth.json().revision);
+      expect(sixth.statusCode, sixth.body).toBe(200);
+      expect(await storedConstraints()).toBe("旧客户端不能清空的限制");
+      // 投影补回缺失字段：响应和后续读取仍然一致。
+      expect(sixth.json().data.profile.constraints).toBe("旧客户端不能清空的限制");
+      expect((await pull()).data.profile.constraints).toBe("旧客户端不能清空的限制");
+      expect((await profile()).constraints_text).toBe("旧客户端不能清空的限制");
+      expect((await native()).profile.constraints).toBe("旧客户端不能清空的限制");
+
+      // 再次同步不产生伪冲突：用刚读到的文档和 revision 原样回传必须成功。
+      const pulled = await pull();
+      const resync = await put(pulled.data, pulled.data, pulled.revision);
+      expect(resync.statusCode, resync.body).toBe(200);
+      expect(resync.json().data.profile.constraints).toBe("旧客户端不能清空的限制");
+
+      // 反向读取：通过资料接口写入后，同步文档与原生快照必须反映关系表权威值。
+      const patched = await app.inject({
+        method: "PATCH",
+        url: "/api/onboarding/profile",
+        headers: user.headers,
+        payload: { constraints_text: "资料接口写入的限制" },
+      });
+      expect(patched.statusCode, patched.body).toBe(200);
+      expect((await profile()).constraints_text).toBe("资料接口写入的限制");
+      expect((await pull()).data.profile.constraints).toBe("资料接口写入的限制");
+      expect((await native()).profile.constraints).toBe("资料接口写入的限制");
+      expect(await storedConstraints()).toBe("资料接口写入的限制");
+    });
+
+    it("returns a conditional unchanged response only while the revision matches", async () => {
+      const user = await account(),
+        data = await fixture(user.id);
+      const get = (query = "") =>
+        app.inject({ url: `/api/planner/sync${query}`, headers: user.headers });
+      const put = (value: any, base: any, revision: number) =>
+        app.inject({
+          method: "PUT",
+          url: "/api/planner/sync",
+          headers: user.headers,
+          payload: { data: value, base, expectedRevision: revision },
+        });
+      // 没有任何状态行时，完整路径与老客户端行为不变。
+      expect((await get()).json()).toEqual({ data: null, revision: 0 });
+      // 状态行存在且 revision 相等：快速路径不返回文档。
+      expect((await get("?revision=0")).json()).toEqual({ revision: 0, unchanged: true });
+
+      const first = await put(data, null, 0);
+      expect(first.statusCode, first.body).toBe(200);
+      const revision = Number(first.json().revision);
+      expect(revision).toBeGreaterThan(0);
+
+      // 无变化轮询：返回 unchanged 小响应，不再传输完整文档。
+      const unchanged = await get(`?revision=${revision}`);
+      expect(unchanged.statusCode, unchanged.body).toBe(200);
+      expect(unchanged.json()).toEqual({ revision, unchanged: true });
+      expect("data" in unchanged.json()).toBe(false);
+      expect(unchanged.body.length).toBeLessThan(100);
+
+      // 旧 revision 仍走完整路径；无参数老客户端行为完全不变；非法参数按无参数处理。
+      const stale = await get(`?revision=${revision - 1}`);
+      expect(stale.statusCode, stale.body).toBe(200);
+      expect(stale.json().revision).toBe(revision);
+      expect(stale.json().data.profile.user_id).toBe(user.id);
+      expect((await get()).json().data).toEqual(stale.json().data);
+      expect((await get("?revision=abc")).json().data.profile.user_id).toBe(user.id);
+
+      // 关系表变化（含旧兼容接口写入）会触发 revision，快速路径必须失效并返回完整文档。
+      const native = (
+        await app.inject({ url: "/api/planner/snapshot", headers: user.headers })
+      ).json().data;
+      const recorded = await app.inject({
+        method: "POST",
+        url: "/api/study-logs",
+        headers: user.headers,
+        payload: { item_id: native.tasks[0].id, date: "2026-10-16", minutes: 11 },
+      });
+      expect(recorded.statusCode, recorded.body).toBe(201);
+      const changed = await get(`?revision=${revision}`);
+      expect(changed.statusCode, changed.body).toBe(200);
+      expect(changed.json().unchanged).toBeUndefined();
+      const nextRevision = Number(changed.json().revision);
+      expect(nextRevision).toBeGreaterThan(revision);
+      expect(changed.json().data.logs.some((row: any) => row.minutes === 11)).toBe(true);
+      // 追上远端变化后再次无变化。
+      expect((await get(`?revision=${nextRevision}`)).json()).toEqual({
+        revision: nextRevision,
+        unchanged: true,
+      });
+
+      // 冲突语义不变：旧 revision/base 仍返回 409。
+      expect((await put(first.json().data, first.json().data, revision)).statusCode).toBe(409);
+      expect((await put(changed.json().data, first.json().data, nextRevision)).statusCode).toBe(409);
+      const confirmed = await put(changed.json().data, changed.json().data, nextRevision);
+      expect(confirmed.statusCode, confirmed.body).toBe(200);
+
+      // 账号隔离：另一个账号不能拿别人的 revision 换取 unchanged。
+      const other = await account();
+      const otherPull = (
+        await app.inject({
+          url: `/api/planner/sync?revision=${nextRevision}`,
+          headers: other.headers,
+        })
+      ).json();
+      expect(otherPull.unchanged).toBeUndefined();
+      expect(otherPull).toEqual({ data: null, revision: 0 });
+    });
+
+    it("only rewrites changed projection rows for a single timer checkpoint", async () => {
+      const user = await account();
+      const data = await fixture(user.id);
+      const start = Date.parse("2026-11-01T00:00:00Z");
+      const day = (index: number) =>
+        new Date(start + index * 86_400_000).toISOString().slice(0, 10);
+      const extraBlocks = Array.from({ length: 40 }, (_, index) => ({
+        ...data.blocks[0],
+        id: randomUUID(),
+        date: day(index),
+        actual_minutes: 0,
+      }));
+      const extraLogs = extraBlocks.map((block, index) => ({
+        ...data.logs[0],
+        id: randomUUID(),
+        block_id: block.id,
+        date: day(index),
+        minutes: 0,
+      }));
+      data.blocks = [...data.blocks, ...extraBlocks];
+      data.logs = [...data.logs, ...extraLogs];
+      const put = (value: any, base: any, revision: number) =>
+        app.inject({
+          method: "PUT",
+          url: "/api/planner/sync",
+          headers: user.headers,
+          payload: { data: value, base, expectedRevision: revision },
+        });
+      const first = await put(data, null, 0);
+      expect(first.statusCode, first.body).toBe(200);
+      const beforeRevision = Number(first.json().revision);
+      const next = structuredClone(first.json().data);
+      next.logs[0].minutes += 1;
+      next.blocks[0].actual_minutes += 1;
+      const checkpoint = await put(next, first.json().data, first.json().revision);
+      expect(checkpoint.statusCode, checkpoint.body).toBe(200);
+      // 一条日志 + 一个时间块的变化只能触发少数关系行写入，不能等量重写全部历史行。
+      const delta = Number(checkpoint.json().revision) - beforeRevision;
+      expect(delta).toBeLessThan(20);
+      const counts = await db.query<{ blocks: number; logs: number }>(
+        `select (select count(*)::int from daily_plan_items where user_id=$1) as blocks,
+                (select count(*)::int from study_logs where user_id=$1) as logs`,
+        [user.id],
+      );
+      expect(counts.rows[0]).toEqual({ blocks: data.blocks.length, logs: data.logs.length });
+      const pulled = (
+        await app.inject({ url: "/api/planner/sync", headers: user.headers })
+      ).json();
+      expect(pulled.data.logs.filter((row: any) => row.minutes === next.logs[0].minutes)).toHaveLength(1);
+      expect(pulled.data.blocks.filter((row: any) => row.actual_minutes === 1)).toHaveLength(1);
+    });
+
+    it("removes vanished projection rows and keeps the remaining history", async () => {
+      const user = await account(),
+        data = await fixture(user.id);
+      const extraSubject = { ...data.subjects[0], id: randomUUID(), name: "第二门课" };
+      const extraTask = {
+        ...data.tasks[0],
+        id: randomUUID(),
+        subject_id: extraSubject.id,
+        title: "第二个事项",
+      };
+      const extraBlock = { ...data.blocks[0], id: randomUUID(), task_id: extraTask.id, date: "2026-12-01" };
+      const extraLog = {
+        ...data.logs[0],
+        id: randomUUID(),
+        block_id: extraBlock.id,
+        task_id: extraTask.id,
+        date: "2026-12-01",
+      };
+      data.subjects = [...data.subjects, extraSubject];
+      data.tasks = [...data.tasks, extraTask];
+      data.blocks = [...data.blocks, extraBlock];
+      data.logs = [...data.logs, extraLog];
+      const put = (value: any, base: any, revision: number) =>
+        app.inject({
+          method: "PUT",
+          url: "/api/planner/sync",
+          headers: user.headers,
+          payload: { data: value, base, expectedRevision: revision },
+        });
+      const first = await put(data, null, 0);
+      expect(first.statusCode, first.body).toBe(200);
+      const reduced = structuredClone(first.json().data);
+      reduced.subjects = reduced.subjects.filter((row: any) => row.id !== extraSubject.id);
+      reduced.tasks = reduced.tasks.filter((row: any) => row.id !== extraTask.id);
+      reduced.blocks = reduced.blocks.filter((row: any) => row.id !== extraBlock.id);
+      reduced.logs = reduced.logs.filter((row: any) => row.id !== extraLog.id);
+      const second = await put(reduced, first.json().data, first.json().revision);
+      expect(second.statusCode, second.body).toBe(200);
+      expect(Number(second.json().revision)).toBeGreaterThan(Number(first.json().revision));
+      const counts = await db.query<{
+        subjects: number;
+        tasks: number;
+        blocks: number;
+        logs: number;
+      }>(
+        `select (select count(*)::int from courses where user_id=$1) as subjects,
+                (select count(*)::int from items where user_id=$1) as tasks,
+                (select count(*)::int from daily_plan_items where user_id=$1) as blocks,
+                (select count(*)::int from study_logs where user_id=$1) as logs`,
+        [user.id],
+      );
+      expect(counts.rows[0]).toEqual({
+        subjects: data.subjects.length - 1,
+        tasks: data.tasks.length - 1,
+        blocks: data.blocks.length - 1,
+        logs: data.logs.length - 1,
+      });
+      const pulled = (
+        await app.inject({ url: "/api/planner/sync", headers: user.headers })
+      ).json();
+      expect(pulled.data).toEqual(reduced);
+    });
+
+    it("rolls back a partially written projection when a relationship write fails", async () => {
+      const user = await account(),
+        data = await fixture(user.id);
+      const put = (value: any, base: any, revision: number) =>
+        app.inject({
+          method: "PUT",
+          url: "/api/planner/sync",
+          headers: user.headers,
+          payload: { data: value, base, expectedRevision: revision },
+        });
+      const saved = await put(data, null, 0);
+      expect(saved.statusCode, saved.body).toBe(200);
+      const savedState = saved.json();
+      const functionName = "optfix_fail_study_logs";
+      try {
+        // 注入一次真实的事务内失败：study_logs 写入抛错时，之前的 profiles/items/days 写入必须回滚。
+        await db.query(
+          `create or replace function ${functionName}() returns trigger language plpgsql as $$
+           begin
+             if NEW.user_id = '${user.id}'::uuid then
+               raise exception 'injected projection write failure';
+             end if;
+             return NEW;
+           end $$`,
+        );
+        await db.query(`drop trigger if exists ${functionName} on study_logs`);
+        await db.query(
+          `create trigger ${functionName} before insert or update on study_logs
+           for each row execute function ${functionName}()`,
+        );
+        const broken = structuredClone(savedState.data);
+        broken.tasks[0].title = "不应提交的标题";
+        broken.logs[0].minutes += 7;
+        const failed = await put(broken, savedState.data, savedState.revision);
+        expect(failed.statusCode, failed.body).toBe(500);
+      } finally {
+        await db.query(`drop trigger if exists ${functionName} on study_logs`);
+        await db.query(`drop function if exists ${functionName}()`);
+      }
+      // 事务回滚：关系表没有半套投影，同步状态与 revision 保持失败前值。
+      const stored = await db.query<{ title: string; minutes: number }>(
+        `select i.title, l.minutes from items i join study_logs l on l.item_id=i.id
+         where i.user_id=$1`,
+        [user.id],
+      );
+      expect(stored.rows[0]).toEqual({
+        title: data.tasks[0].title,
+        minutes: data.logs[0].minutes,
+      });
+      const state = (
+        await app.inject({ url: "/api/planner/sync", headers: user.headers })
+      ).json();
+      expect(state.revision).toBe(savedState.revision);
+      expect(state.data).toEqual(savedState.data);
+      // 失败清理后同一文档可以正常提交。
+      const repaired = structuredClone(savedState.data);
+      repaired.tasks[0].title = "恢复后的标题";
+      const retried = await put(repaired, savedState.data, savedState.revision);
+      expect(retried.statusCode, retried.body).toBe(200);
+    });
+
+    it("moves blocks to new dates without reusing an occupied daily plan row id", async () => {
+      const user = await account(),
+        data = await fixture(user.id);
+      const put = (value: any, base: any, revision: number) =>
+        app.inject({
+          method: "PUT",
+          url: "/api/planner/sync",
+          headers: user.headers,
+          payload: { data: value, base, expectedRevision: revision },
+        });
+      const pull = async () =>
+        (await app.inject({ url: "/api/planner/sync", headers: user.headers })).json();
+      const dayRows = async () =>
+        (
+          await db.query<{ date: string; planned_minutes: number }>(
+            "select date::text as date, planned_minutes from daily_plan_items where user_id=$1 order by date",
+            [user.id],
+          )
+        ).rows;
+      const first = await put(data, null, 0);
+      expect(first.statusCode, first.body).toBe(200);
+
+      // 问题二的服务端路径：block id 不变、只把 date 移到新日期（移动日程）。
+      const moved = structuredClone(first.json().data);
+      moved.blocks[0].date = "2026-12-20";
+      for (const log of moved.logs)
+        if (log.block_id === moved.blocks[0].id) log.date = "2026-12-20";
+      const movedResult = await put(moved, first.json().data, first.json().revision);
+      expect(movedResult.statusCode, movedResult.body).toBe(200);
+      // 新日期行正确、旧日期行移除。
+      expect(await dayRows()).toEqual([{ date: "2026-12-20", planned_minutes: 30 }]);
+      // 同步读取读到移动后的文档；原样回传不产生伪冲突。
+      const afterMove = await pull();
+      expect(afterMove.data.blocks[0].date).toBe("2026-12-20");
+      expect(afterMove.data).toEqual(movedResult.json().data);
+      const resync = await put(afterMove.data, afterMove.data, afterMove.revision);
+      expect(resync.statusCode, resync.body).toBe(200);
+      expect(await dayRows()).toEqual([{ date: "2026-12-20", planned_minutes: 30 }]);
+
+      // 移动回原日期：日行 id 选择必须稳定且可重复。
+      const back = structuredClone(resync.json().data);
+      back.blocks[0].date = "2026-10-16";
+      const backResult = await put(back, resync.json().data, resync.json().revision);
+      expect(backResult.statusCode, backResult.body).toBe(200);
+      expect(await dayRows()).toEqual([{ date: "2026-10-16", planned_minutes: 30 }]);
+      const backAgain = await put(
+        backResult.json().data,
+        backResult.json().data,
+        backResult.json().revision,
+      );
+      expect(backAgain.statusCode, backAgain.body).toBe(200);
+
+      // 多块同时移动到全新日期：每个目标日行 id 都不能复用被其他 (item,date) 占用的行 id。
+      const multi = structuredClone(backAgain.json().data);
+      multi.blocks = [
+        ...multi.blocks,
+        ...[
+          { ...multi.blocks[0], id: randomUUID(), date: "2026-10-17" },
+          { ...multi.blocks[0], id: randomUUID(), date: "2026-10-18" },
+        ],
+      ];
+      const seeded = await put(multi, backAgain.json().data, backAgain.json().revision);
+      expect(seeded.statusCode, seeded.body).toBe(200);
+      expect((await dayRows()).map((row) => row.date)).toEqual([
+        "2026-10-16",
+        "2026-10-17",
+        "2026-10-18",
+      ]);
+      const movedMulti = structuredClone(seeded.json().data);
+      movedMulti.blocks = movedMulti.blocks.map((block: any, index: number) => ({
+        ...block,
+        date: `2026-11-0${index + 1}`,
+      }));
+      const movedMultiResult = await put(
+        movedMulti,
+        seeded.json().data,
+        seeded.json().revision,
+      );
+      expect(movedMultiResult.statusCode, movedMultiResult.body).toBe(200);
+      expect((await dayRows()).map((row) => row.date)).toEqual([
+        "2026-11-01",
+        "2026-11-02",
+        "2026-11-03",
+      ]);
+      const movedMultiPull = await pull();
+      expect(
+        movedMultiPull.data.blocks.map((block: any) => block.date).sort(),
+      ).toEqual(["2026-11-01", "2026-11-02", "2026-11-03"]);
+      const multiResync = await put(
+        movedMultiPull.data,
+        movedMultiPull.data,
+        movedMultiPull.revision,
+      );
+      expect(multiResync.statusCode, multiResync.body).toBe(200);
+
+      // 账号隔离不受影响：其他账号仍是空计划。
+      const other = await account();
+      expect(
+        (await app.inject({ url: "/api/planner/sync", headers: other.headers })).json(),
+      ).toEqual({ data: null, revision: 0 });
+    });
+
     it("legacy study-log writes increase revision and preserve sidecar fields", async () => {
       const user = await account(),
         data = await fixture(user.id);

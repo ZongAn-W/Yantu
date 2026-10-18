@@ -1,10 +1,14 @@
 import "dotenv/config";
 
 const required = (name: string, fallback = "") => process.env[name]?.trim() || fallback;
-const aiReasoningEffort = required("AI_REASONING_EFFORT", "max");
+export type AIReasoningEffort = "none" | "low" | "high" | "max";
 
-if (!["none", "low", "high", "max"].includes(aiReasoningEffort)) {
-  throw new Error("AI_REASONING_EFFORT must be one of: none, low, high, max");
+function reasoningEffort(name: string, fallback: AIReasoningEffort): AIReasoningEffort {
+  const value = required(name, fallback);
+  if (!["none", "low", "high", "max"].includes(value)) {
+    throw new Error(`${name} must be one of: none, low, high, max`);
+  }
+  return value as AIReasoningEffort;
 }
 
 export const config = {
@@ -16,7 +20,9 @@ export const config = {
   aiBaseUrl: required("AI_BASE_URL", "https://api.openai.com/v1").replace(/\/$/, ""),
   aiApiKey: required("AI_API_KEY"),
   aiModel: required("AI_MODEL", "deepseek-flash"),
-  aiReasoningEffort,
+  aiReasoningEffort: reasoningEffort("AI_REASONING_EFFORT", "max"),
+  aiSimpleReasoningEffort: reasoningEffort("AI_SIMPLE_REASONING_EFFORT", "low"),
+  aiPlanningReasoningEffort: reasoningEffort("AI_PLANNING_REASONING_EFFORT", "high"),
   researchProvider: required("RESEARCH_SEARCH_PROVIDER", process.env.NODE_ENV === "test" ? "disabled" : "bing"),
   researchApiKey: required("RESEARCH_SEARCH_API_KEY"),
   smtpHost: required("SMTP_HOST", "smtp.qq.com"),

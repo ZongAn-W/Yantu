@@ -8,6 +8,7 @@ import '../../../core/theme.dart';
 import '../../../core/widgets.dart';
 import '../../../shared/models/api_models.dart';
 import '../../../shared/models/planner_models.dart';
+import '../../planner/domain/capacity.dart';
 import '../../planner/domain/planner_format.dart';
 import '../../planner/presentation/planner_dialogs.dart' show DateField;
 import '../../planner/presentation/planning_details.dart';
@@ -53,12 +54,26 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
   String? _answerError;
   int _weeklyVersion = 0;
   String? _previewConstraints;
-  int _detailDays = 14;
+
+  /// 周容量输入方式：true = 大致周容量范围（推荐），false = 默认每周模板。
+  bool _useRange = false;
+  int? _rangeMin;
+  int? _rangeMax;
+
+  /// 采用保守基线需要用户明确确认（不是逐日确认）。
+  bool _baselineConfirmed = false;
+
+  /// 旧的全量总预算口径计划（重新规划时保留旧标签与语义）。
+  bool _legacyGross = false;
+  final _rangeMinController = TextEditingController();
+  final _rangeMaxController = TextEditingController();
 
   @override
   void dispose() {
     _answer.dispose();
     _revision.dispose();
+    _rangeMinController.dispose();
+    _rangeMaxController.dispose();
     super.dispose();
   }
 
@@ -93,7 +108,30 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               ? session.recommendations.weeklyMinutes
               : session.profile.weeklyMinutes),
         };
-        _detailDays = (session.planning?['detail_days'] as num? ?? 14).toInt();
+        final currentProfileJson =
+            session.currentPlan?['profile'] is Map
+            ? JsonMap.from(session.currentPlan!['profile'] as Map)
+            : const <String, dynamic>{};
+        _legacyGross =
+            session.replanning &&
+            currentProfileJson['capacity_basis'] != 'net' &&
+            currentProfileJson['weekly_baseline_minutes'] == null &&
+            currentProfileJson['week_capacity_overrides'] == null &&
+            currentProfileJson['date_capacity_overrides'] == null;
+        _useRange =
+            currentProfileJson['weekly_range_min_minutes'] != null ||
+            currentProfileJson['weekly_range_max_minutes'] != null;
+        _rangeMin = (currentProfileJson['weekly_range_min_minutes'] as num?)
+            ?.toInt();
+        _rangeMax = (currentProfileJson['weekly_range_max_minutes'] as num?)
+            ?.toInt();
+        if (_useRange) {
+          _ensureRangeDefaults();
+        }
+        _baselineConfirmed =
+            currentProfileJson['weekly_baseline_minutes'] != null;
+        _rangeMinController.text = '${_rangeMin ?? ''}';
+        _rangeMaxController.text = '${_rangeMax ?? ''}';
         _previewConstraints = session.preview == null ? null : _constraintsKey;
         _weeklyVersion++;
       }
@@ -888,6 +926,10 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       ? {'courses': session.courses.map((c) => c.toJson()).toList()}
       : {'items': session.items.map((i) => i.toJson()).toList()};
 
+  /// 只有“大致周容量范围”模式需要用户明确确认采用的保守基线。
+  bool get _capacityNeedsConfirmation =>
+      _netCapacity && _useRange && !_baselineConfirmed;
+
   Map<String, dynamic> get _constraintsPayload => {
     'start_date': _start,
     'end_date': _end,
@@ -895,8 +937,71 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     'weekly_minutes': {
       for (var day = 0; day < 7; day++) '$day': _weekly?['$day'] ?? 0,
     },
-    'detail_days': _detailDays,
+    'capacity_basis': _netCapacity ? 'net' : 'gross_buffer',
+    if (_netCapacity && _useRange) ...{
+      'weekly_range_min_minutes': _rangeMin,
+      'weekly_range_max_minutes': _rangeMax,
+      'weekly_baseline_minutes': _adoptedBaseline,
+    },
   };
+
+  /// 新计划使用净学习时间口径；只有旧的全量总预算口径计划保留旧标签。
+  bool get _netCapacity => !_legacyGross;
+
+  /// 采用值 = 用户给出的容量范围下限（保守值），max 只用于较高容量情景说明。
+  int? get _adoptedBaseline {
+    if (!_useRange) return null;
+    final min = _rangeMin;
+    if (min == null || min <= 0) return null;
+    return min;
+  }
+
+  /// 模板模式下的周总量 = 一周七天之和，作为已确认的默认模板。
+  int get _templateTotal => [
+    for (var day = 0; day < 7; day++) _weekly?['$day'] ?? 0,
+  ].fold<int>(0, (sum, value) => sum + value);
+
+  void _ensureRangeDefaults() {
+    final total = _templateTotal;
+    final min = _rangeMin;
+    final max = _rangeMax;
+    if (min == null || min <= 0) {
+      _rangeMin = total > 0 ? (total * 0.75).round() : 300;
+    }
+    if (max == null || max <= 0) {
+      _rangeMax = total > 0 ? total : 600;
+    }
+    if ((_rangeMax ?? 0) < (_rangeMin ?? 0)) {
+      _rangeMax = _rangeMin;
+    }
+  }
+
+  /// 周期容量估算：与解析核心同一口径（净/总口径、基线与估算）。
+  int _periodCapacity(OnboardingSession session) {
+    if (_start == null || _end == null || _start!.isEmpty || _end!.isEmpty) {
+      return 0;
+    }
+    final base = Profile(
+      userId: 'onboarding-preview',
+      planStartDate: _start!,
+      planEndDate: _end!,
+      weeklyMinutes: {
+        for (var day = 0; day < 7; day++) '$day': _weekly?['$day'] ?? 0,
+      },
+      dailyLimitMinutes: 480,
+      granularityMinutes: 30,
+      bufferMinutes: 30,
+      subjectLimitMinutes: 240,
+      studyStartMinute: 480,
+      studyEndMinute: 1320,
+      foundation: '',
+      capacityBasis: _netCapacity ? CapacityBasis.net : CapacityBasis.grossBuffer,
+      weeklyBaselineMinutes: _adoptedBaseline,
+      weeklyRangeMinMinutes: _useRange ? _rangeMin : null,
+      weeklyRangeMaxMinutes: _useRange ? _rangeMax : null,
+    );
+    return summarizePeriodCapacity(base, _start!, _end!).totalMinutes;
+  }
 
   String get _constraintsKey => jsonEncode(_constraintsPayload);
 
@@ -928,16 +1033,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     final hasHardErrors = planningEntries(
       session.preview?['issues'],
     ).any((issue) => issue['severity'] == 'error');
-    var capacity = 0;
-    if (_end!.isNotEmpty && _end!.compareTo(_start!) >= 0) {
-      for (
-        var date = DateTime.parse(_start!);
-        !date.isAfter(DateTime.parse(_end!));
-        date = date.add(const Duration(days: 1))
-      ) {
-        capacity += ((_weekly!['${date.weekday % 7}'] ?? 0) - 30).clamp(0, 450);
-      }
-    }
+    final capacity = _periodCapacity(session);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -1073,87 +1169,186 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                 ),
               ],
               const SizedBox(height: 12),
-              Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  for (final (key, label) in _days)
+              SegmentedButton<bool>(
+                segments: const [
+                  ButtonSegment(value: true, label: Text('大致周容量范围')),
+                  ButtonSegment(value: false, label: Text('按天填写模板')),
+                ],
+                selected: {_useRange},
+                onSelectionChanged: busy
+                    ? null
+                    : (values) => setState(() {
+                        _useRange = values.single;
+                        if (_useRange) {
+                          _ensureRangeDefaults();
+                          _rangeMinController.text = '${_rangeMin ?? ''}';
+                          _rangeMaxController.text = '${_rangeMax ?? ''}';
+                        }
+                      }),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                _netCapacity
+                    ? '按净学习时间填写：输入的就是真正能用于学习的净预算，程序不会再机械扣除七天机动。'
+                    : '旧计划沿用总预算口径：安排前会先扣除每日机动时间。',
+                style: const TextStyle(color: PlannerColors.muted, fontSize: 12),
+              ),
+              if (_useRange) ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
                     SizedBox(
-                      width: 150,
+                      width: 200,
                       child: TextFormField(
-                        key: ValueKey('weekly-$_weeklyVersion-$key'),
-                        initialValue: '${_weekly![key] ?? 0}',
+                        key: const ValueKey('weekly-range-min'),
+                        controller: _rangeMinController,
                         enabled: !busy,
                         keyboardType: TextInputType.number,
                         inputFormatters: [
                           FilteringTextInputFormatter.digitsOnly,
                         ],
-                        decoration: InputDecoration(
-                          labelText: label,
+                        decoration: const InputDecoration(
+                          labelText: '每周最少能学',
                           suffixText: '分钟',
                         ),
                         validator: (value) {
-                          final m = int.tryParse(value ?? '');
-                          return m == null || m < 0 || m > 480
-                              ? '填写0至480分钟'
+                          final minutes = int.tryParse(value ?? '');
+                          return minutes == null ||
+                                  minutes < 0 ||
+                                  minutes > 10080
+                              ? '填写0至10080分钟'
                               : null;
                         },
                         onChanged: (value) => setState(
-                          () => _weekly![key] = int.tryParse(value) ?? 0,
+                          () => _rangeMin = int.tryParse(value) ?? _rangeMin,
                         ),
                       ),
                     ),
-                ],
-              ),
-              if (session.recommendations.weeklyMinutes.isNotEmpty)
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: TextButton.icon(
-                    onPressed: busy
-                        ? null
-                        : () => setState(() {
-                            _weekly = {
-                              ...session.recommendations.weeklyMinutes,
-                            };
-                            _weeklyVersion++;
-                          }),
-                    icon: const Icon(Icons.restore, size: 18),
-                    label: const Text('恢复推荐时间'),
-                  ),
+                    SizedBox(
+                      width: 200,
+                      child: TextFormField(
+                        key: const ValueKey('weekly-range-max'),
+                        controller: _rangeMaxController,
+                        enabled: !busy,
+                        keyboardType: TextInputType.number,
+                        inputFormatters: [
+                          FilteringTextInputFormatter.digitsOnly,
+                        ],
+                        decoration: const InputDecoration(
+                          labelText: '每周最多能学',
+                          suffixText: '分钟',
+                        ),
+                        validator: (value) {
+                          final minutes = int.tryParse(value ?? '');
+                          if (minutes == null || minutes < 0 || minutes > 10080) {
+                            return '填写0至10080分钟';
+                          }
+                          if (_rangeMin != null && minutes < _rangeMin!) {
+                            return '上限不能小于下限';
+                          }
+                          return null;
+                        },
+                        onChanged: (value) => setState(
+                          () => _rangeMax = int.tryParse(value) ?? _rangeMax,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
+                if (_adoptedBaseline != null) ...[
+                  const SizedBox(height: 8),
+                  CheckboxListTile(
+                    key: const ValueKey('weekly-baseline-confirm'),
+                    value: _baselineConfirmed,
+                    contentPadding: EdgeInsets.zero,
+                    controlAffinity: ListTileControlAffinity.leading,
+                    onChanged: busy
+                        ? null
+                        : (value) =>
+                              setState(() => _baselineConfirmed = value ?? false),
+                    title: Text(
+                      '采用保守基线 ${duration(_adoptedBaseline!)} 作为初始排程依据',
+                    ),
+                    subtitle: const Text(
+                      '取范围下限，避免高估容量导致计划无法执行；'
+                      '较高容量情景只用于说明可达范围，不用于本次排程。'
+                      '程序据此生成的每日建议不代表你逐日确认。',
+                    ),
+                  ),
+                  if (!_baselineConfirmed)
+                    const PlannerNotice(
+                      '请确认采用的周容量基线后再继续。',
+                      tone: PlannerNoticeTone.info,
+                    ),
+                ],
+              ] else ...[
+                const SizedBox(height: 12),
+                Wrap(
+                  spacing: 12,
+                  runSpacing: 12,
+                  children: [
+                    for (final (key, label) in _days)
+                      SizedBox(
+                        width: 150,
+                        child: TextFormField(
+                          key: ValueKey('weekly-$_weeklyVersion-$key'),
+                          initialValue: '${_weekly![key] ?? 0}',
+                          enabled: !busy,
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          decoration: InputDecoration(
+                            labelText: label,
+                            suffixText: _netCapacity ? '净分钟' : '分钟',
+                          ),
+                          validator: (value) {
+                            final m = int.tryParse(value ?? '');
+                            return m == null || m < 0 || m > 480
+                                ? '填写0至480分钟'
+                                : null;
+                          },
+                          onChanged: (value) => setState(
+                            () => _weekly![key] = int.tryParse(value) ?? 0,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                if (session.recommendations.weeklyMinutes.isNotEmpty)
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: busy
+                          ? null
+                          : () => setState(() {
+                              _weekly = {
+                                ...session.recommendations.weeklyMinutes,
+                              };
+                              _weeklyVersion++;
+                            }),
+                      icon: const Icon(Icons.restore, size: 18),
+                      label: const Text('恢复推荐时间'),
+                    ),
+                  ),
+              ],
             ],
           ),
         ),
-        const SizedBox(height: 16),
-        const Text(
-          '每日预留30分钟机动，单门课程每天最多4小时。',
-          style: TextStyle(color: PlannerColors.muted),
+        const SizedBox(height: 8),
+        Text(
+          _netCapacity
+              ? '只给周总量时，程序按模板比例生成每日建议，不会存成你逐日确认的分配；'
+                    '单门课程每天最多4小时。'
+              : '每日预留30分钟机动，单门课程每天最多4小时。',
+          style: const TextStyle(color: PlannerColors.muted),
         ),
-        const SizedBox(height: 16),
-        Align(
-          alignment: Alignment.centerLeft,
-          child: SizedBox(
-            width: 240,
-            child: TextFormField(
-              key: ValueKey('detail-days-${session.stage}'),
-              initialValue: '$_detailDays',
-              enabled: !busy,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(
-                labelText: '近期每日安排',
-                suffixText: '天',
-              ),
-              validator: (value) {
-                final days = int.tryParse(value ?? '');
-                return days == null || days < 1 || days > 90
-                    ? '填写 1 至 90 天'
-                    : null;
-              },
-              onChanged: (value) =>
-                  setState(() => _detailDays = int.tryParse(value) ?? 0),
-            ),
-          ),
+        const SizedBox(height: 8),
+        Text(
+          '本次将一次生成 $_start 至 $_end 的全周期每日安排（含首尾），不会只生成近期窗口。',
+          style: const TextStyle(color: PlannerColors.muted),
         ),
         if (constraints) ...[
           const SizedBox(height: 16),
@@ -1223,7 +1418,8 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
             ),
             if (!constraints)
               OutlinedButton.icon(
-                onPressed: busy
+                onPressed:
+                    busy || _capacityNeedsConfirmation
                     ? null
                     : () async {
                         if (!_form.currentState!.validate()) return;
@@ -1241,7 +1437,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               ),
             FilledButton.icon(
               onPressed:
-                  busy || (!constraints && (!previewValid || hasHardErrors))
+                  busy ||
+                      _capacityNeedsConfirmation ||
+                      (!constraints && (!previewValid || hasHardErrors))
                   ? null
                   : () async {
                       if (!_form.currentState!.validate()) return;

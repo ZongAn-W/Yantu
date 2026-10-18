@@ -40,6 +40,39 @@ flutter build web --release --dart-define=API_BASE_URL=https://47.116.63.161
 
 Nginx 的静态根目录应为 `/opt/sjtu-study-planner/apps/flutter_client/build/web`；仓库内 `setup-ip-web.sh` 使用该路径。API 端口继续仅绑定主机 `127.0.0.1`，外部请求由 Nginx 转发。API 信任紧邻的一层代理以读取真实客户端 IP；Nginx 应覆盖设置 `X-Forwarded-For`，不能让客户端直接访问容器 API。`WEB_ORIGIN` 包含 `https://47.116.63.161`，本地调试使用 `http://127.0.0.1:5180`，多个来源以逗号分隔。带 Origin 的写入请求必须来自配置白名单；Windows 和移动端使用 Bearer 会话。
 
+### 已有 Nginx 配置与白屏检查
+
+旧版服务器可能仍将网页根目录设为 `/opt/sjtu-study-planner/apps/web/dist`。升级包可以沿用该目录，但需要同时更新 Nginx 的 Flutter 资源配置，不能只替换网页文件。`setup-ip-web.sh` 不会覆盖已有的不同配置。
+
+在 HTTPS `server` 中启用压缩，避免首次加载时下载未压缩的大型 JavaScript、Wasm 和字体：
+
+```nginx
+gzip on;
+gzip_vary on;
+gzip_min_length 1024;
+gzip_types application/javascript application/json application/wasm application/octet-stream font/ttf font/otf;
+
+location ^~ /canvaskit/ {
+    types {
+        application/javascript js;
+        application/wasm wasm;
+    }
+    try_files $uri =404;
+    add_header Cache-Control "no-cache";
+}
+```
+
+`/assets/` 也应使用 `try_files $uri =404` 和 `Cache-Control: no-cache`。Flutter 资产名称并非全部包含内容哈希，不应继承旧 React 网页的 `max-age=31536000, immutable`。保留现有证书、API 代理、静态根目录及 ACME 配置；同一作用域已有的 gzip 配置应更新，避免重复添加。
+
+备份配置后执行 `nginx -t`，通过后才重新加载 Nginx。检查浏览器控制台和以下响应：
+
+```bash
+curl --fail --silent --show-error --head https://47.116.63.161/canvaskit/chromium/canvaskit.wasm
+curl --fail --silent --show-error --head -H 'Accept-Encoding: gzip' https://47.116.63.161/main.dart.js
+```
+
+Wasm 应返回 `200` 和 `Content-Type: application/wasm`；JavaScript 应返回 `Content-Encoding: gzip`。缺少 Wasm MIME 会使浏览器的 `WebAssembly.compileStreaming` 失败并导致白屏。首页和 API 健康检查返回 `200` 仍不足以说明 Flutter 已成功启动，还需在浏览器确认登录页实际显示。
+
 ## 验收
 
 - 未登录直接访问今日、事项、日历或设置，均停留在登录页。

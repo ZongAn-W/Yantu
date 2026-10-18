@@ -12,6 +12,19 @@ import 'merge_plans.dart';
 import 'sync_api.dart';
 import 'sync_state.dart';
 
+/// Applies the user's conflict decision to a component that owns durable state
+/// outside [PlannerData] (currently the study timer's persisted buckets).
+///
+/// The handlers run *before* the merged plan is persisted and before any new
+/// checkpoint is allowed to write, so an already queued checkpoint cannot put
+/// the abandoned records back. Throwing from a handler aborts the resolution and
+/// keeps the conflict, which makes a failed resolution retryable.
+typedef ConflictResolutionHandler =
+    Future<void> Function({
+      required bool useLocal,
+      required List<LogConflict> logConflicts,
+    });
+
 class PlannerCoordinator extends ChangeNotifier {
   PlannerCoordinator({
     required this.userId,
@@ -20,6 +33,8 @@ class PlannerCoordinator extends ChangeNotifier {
     required this.api,
     this.replanning = const LocalReplanning(),
     Duration? retryInterval = const Duration(seconds: 15),
+    this.uploadDebounce = const Duration(milliseconds: 500),
+    this.uploadMaxWait = const Duration(seconds: 1),
   }) {
     if (retryInterval != null) {
       _timer = Timer.periodic(retryInterval, (_) {
@@ -31,6 +46,12 @@ class PlannerCoordinator extends ChangeNotifier {
   final StorageRepository storage;
   final SyncApi api;
   final LocalReplanning replanning;
+
+  /// 连续本机编辑的合并上传窗口；窗口内的后续编辑会推迟上传。
+  final Duration uploadDebounce;
+
+  /// 合并上传的最长等待时间：连续编辑最多攒 [uploadMaxWait] 就必须上传。
+  final Duration uploadMaxWait;
   LocalReplanProposal? replanProposal;
   String get key => 'sjtu-study-planner:items-v2:$scope:cloud:$userId';
   PlannerData? data;
@@ -40,10 +61,18 @@ class PlannerCoordinator extends ChangeNotifier {
   bool blocked = false, ready = false, busy = false;
   List<String> conflicts = [];
   RemoteSnapshot? _remoteConflict;
+  List<LogConflict> _conflictLogs = const [];
+  final Set<ConflictResolutionHandler> _resolutionHandlers = {};
   Timer? _timer;
+  Timer? _uploadTimer;
+  DateTime? _uploadDeadline;
   Future<void> _writes = Future.value();
   Future<void>? _syncing;
   bool _disposed = false;
+
+  /// 服务端明确要求升级客户端（426）后暂停自动同步，避免用旧结构反复覆盖云端。
+  bool _upgradeRequired = false;
+  bool get upgradeRequired => _upgradeRequired;
   bool get pending => metadata.pending;
 
   void _notify() {
@@ -95,7 +124,7 @@ class PlannerCoordinator extends ChangeNotifier {
       message = '已保存到本机，等待同步';
       _notify();
     });
-    if (conflicts.isEmpty) unawaited(sync());
+    if (conflicts.isEmpty) _scheduleUpload();
   }
 
   /// No local persistence, pending flag, or network call until confirmation.
@@ -157,6 +186,7 @@ class PlannerCoordinator extends ChangeNotifier {
       );
       conflicts = [];
       _remoteConflict = null;
+      _conflictLogs = const [];
       message = 'JSON 已恢复到本机，等待同步';
       _notify();
     });
@@ -187,14 +217,30 @@ class PlannerCoordinator extends ChangeNotifier {
       );
       conflicts = [];
       _remoteConflict = null;
+      _conflictLogs = const [];
       message = '已从备份恢复';
     });
     await sync();
   }
 
+  /// Registers durable-state reconciliation that must run on conflict resolution.
+  void addConflictResolutionHandler(ConflictResolutionHandler handler) =>
+      _resolutionHandlers.add(handler);
+
+  void removeConflictResolutionHandler(ConflictResolutionHandler handler) =>
+      _resolutionHandlers.remove(handler);
+
   Future<void> resolve({required bool useLocal}) async {
     final remote = _remoteConflict;
     if (remote == null || data == null) return;
+    final logConflicts = List<LogConflict>.of(_conflictLogs);
+    // Outside the write queue on purpose: handlers may themselves call
+    // `edit()` (the timer flushes its own records), and waiting for that while
+    // holding the queue would deadlock. Nothing new can be merged before the
+    // handlers finish because the conflict remains active.
+    for (final handler in List<ConflictResolutionHandler>.of(_resolutionHandlers)) {
+      await handler(useLocal: useLocal, logConflicts: logConflicts);
+    }
     await _serial(() async {
       final merged = mergePlans(
         metadata.base,
@@ -213,83 +259,142 @@ class PlannerCoordinator extends ChangeNotifier {
       );
       conflicts = [];
       _remoteConflict = null;
+      _conflictLogs = const [];
     });
     await sync();
   }
 
-  Future<void> sync() => _syncing ??= _sync().whenComplete(() {
-    _syncing = null;
-  });
+  /// 立即同步：手动按钮、网络恢复、前台恢复、导入/恢复/冲突处理都会取消合并窗口。
+  Future<void> sync() {
+    _cancelScheduledUpload();
+    return _syncing ??= _sync().whenComplete(() {
+      _syncing = null;
+    });
+  }
+
+  /// 合并连续本机编辑：窗口内的后续编辑推迟上传，最长等待不超过 [uploadMaxWait]。
+  void _scheduleUpload() {
+    if (_disposed) return;
+    if (uploadDebounce <= Duration.zero) {
+      unawaited(sync());
+      return;
+    }
+    _uploadTimer?.cancel();
+    final deadline = _uploadDeadline ??= DateTime.now().add(uploadMaxWait);
+    final remaining = deadline.difference(DateTime.now());
+    if (remaining <= Duration.zero) {
+      unawaited(sync());
+      return;
+    }
+    final wait = uploadDebounce < remaining ? uploadDebounce : remaining;
+    _uploadTimer = Timer(wait, () {
+      _uploadTimer = null;
+      _uploadDeadline = null;
+      unawaited(sync());
+    });
+  }
+
+  void _cancelScheduledUpload() {
+    _uploadTimer?.cancel();
+    _uploadTimer = null;
+    _uploadDeadline = null;
+  }
+
   Future<void> _sync() async {
     if (_disposed || !ready || blocked || conflicts.isNotEmpty) return;
+    // 收到升级信号后不再自动重试：同一份旧结构数据不可能被服务端接受，
+    // 反复上传只会在“旧写入方无法表达新记录”的云文档上制造无意义的 409/426。
+    if (_upgradeRequired) return;
     busy = true;
     status = SyncStatus.syncing;
     _notify();
     try {
       for (var attempt = 0; attempt < 4; attempt++) {
-        final remote = await api.pull();
+        // 携带已知 revision 做条件读取；老服务端忽略该参数返回完整文档，照常处理。
+        var remote = await api.pull(
+          revision: data == null ? null : metadata.revision,
+        );
         if (_disposed) return;
-        await _serial(() async {
-          if (metadata.pending && data != null) {
-            final merged = mergePlans(metadata.base, data!, remote.data);
-            if (merged.conflicts.isNotEmpty) {
-              conflicts = merged.conflicts;
-              _remoteConflict = remote;
-              status = SyncStatus.conflict;
-              message = '检测到并发修改，本机数据已保留，请选择冲突处理方式';
-              return;
-            }
-            await _persist(
-              merged.data,
-              metadata.copyWith(
-                base: remote.data,
-                revision: remote.revision,
-                pending: true,
-              ),
-            );
-          } else if (remote.data != null) {
-            if (metadata.revision == remote.revision &&
-                data != null &&
-                semanticallyEqual(data!.toJson(), remote.data!.toJson())) {
-              return;
-            }
-            await _persist(
-              remote.data!,
-              StorageMetadata(
-                base: remote.data,
-                revision: remote.revision,
-                updatedAt: DateTime.now().toUtc(),
-              ),
-            );
-          } else if (data != null) {
-            conflicts = ['云端计划已删除，本机内容已保留'];
-            _remoteConflict = remote;
-            status = SyncStatus.conflict;
-            message = '云端计划已变化，请在设置中处理';
-          } else if (data == null) {
-            // A brand new account has neither a local nor a server plan. Bootstrap
-            // a minimal plan so every page has valid data to edit; the account
-            // wizard replaces it when the plan is confirmed. Persisting here also
-            // proves local storage works before anything is uploaded.
-            await _persist(
-              initialPlannerData(
-                userId: userId,
-                nextId: scheduler.newUuid,
-              ),
-              metadata.copyWith(
-                revision: remote.revision,
-                base: null,
-                pending: true,
-                updatedAt: DateTime.now().toUtc(),
-              ),
-            );
+        if (remote.unchanged && remote.revision != metadata.revision) {
+          // 不一致的 unchanged 绝不能当作“无变化”：回退一次完整拉取。
+          remote = await api.pull();
+          if (_disposed) return;
+          if (remote.unchanged) throw const ResponseFailure();
+        }
+        final snapshot = remote;
+        if (snapshot.unchanged) {
+          // 服务端确认自已知 revision 起没有变化：不合并、不持久化、不重建。
+          // 有待上传修改时 base 仍对应该 revision，可以直接进入上传。
+          if (!metadata.pending || data == null) {
+            status = SyncStatus.connected;
+            message = '云端已同步';
+            return;
           }
-        });
-        if (_disposed || conflicts.isNotEmpty) return;
-        if (!metadata.pending || data == null) {
-          status = SyncStatus.connected;
-          message = '云端已同步';
-          return;
+        } else {
+          await _serial(() async {
+            if (metadata.pending && data != null) {
+              final merged = mergePlans(metadata.base, data!, snapshot.data);
+              if (merged.conflicts.isNotEmpty) {
+                conflicts = merged.conflicts;
+                _conflictLogs = merged.logConflicts;
+                _remoteConflict = snapshot;
+                status = SyncStatus.conflict;
+                message = '检测到并发修改，本机数据已保留，请选择冲突处理方式';
+                return;
+              }
+              await _persist(
+                merged.data,
+                metadata.copyWith(
+                  base: snapshot.data,
+                  revision: snapshot.revision,
+                  pending: true,
+                ),
+              );
+            } else if (snapshot.data != null) {
+              if (metadata.revision == snapshot.revision &&
+                  data != null &&
+                  semanticallyEqual(data!.toJson(), snapshot.data!.toJson())) {
+                return;
+              }
+              await _persist(
+                snapshot.data!,
+                StorageMetadata(
+                  base: snapshot.data,
+                  revision: snapshot.revision,
+                  updatedAt: DateTime.now().toUtc(),
+                ),
+              );
+            } else if (data != null) {
+              conflicts = ['云端计划已删除，本机内容已保留'];
+              _conflictLogs = const [];
+              _remoteConflict = snapshot;
+              status = SyncStatus.conflict;
+              message = '云端计划已变化，请在设置中处理';
+            } else if (data == null) {
+              // A brand new account has neither a local nor a server plan. Bootstrap
+              // a minimal plan so every page has valid data to edit; the account
+              // wizard replaces it when the plan is confirmed. Persisting here also
+              // proves local storage works before anything is uploaded.
+              await _persist(
+                initialPlannerData(
+                  userId: userId,
+                  nextId: scheduler.newUuid,
+                ),
+                metadata.copyWith(
+                  revision: snapshot.revision,
+                  base: null,
+                  pending: true,
+                  updatedAt: DateTime.now().toUtc(),
+                ),
+              );
+            }
+          });
+          if (_disposed || conflicts.isNotEmpty) return;
+          if (!metadata.pending || data == null) {
+            status = SyncStatus.connected;
+            message = '云端已同步';
+            return;
+          }
         }
         final sent = data!, base = metadata.base, revision = metadata.revision;
         final response = await api.push(sent, base, revision);
@@ -317,8 +422,16 @@ class PlannerCoordinator extends ChangeNotifier {
       message = '云端频繁变化，本机修改已保留，可重试同步';
     } catch (error) {
       if (_disposed) return;
-      status = error is OfflineFailure ? SyncStatus.offline : SyncStatus.error;
-      message = error is AppFailure ? error.message : '同步未完成，本机数据已保留：$error';
+      if (error is ValidationFailure && error.statusCode == 426) {
+        // 云端已有旧版本无法表达的学习记录：保留本机数据、不按冲突处理，
+        // 明确提示升级；升级后可用同一 pending 数据重试。
+        _upgradeRequired = true;
+        status = SyncStatus.error;
+        message = error.message;
+      } else {
+        status = error is OfflineFailure ? SyncStatus.offline : SyncStatus.error;
+        message = error is AppFailure ? error.message : '同步未完成，本机数据已保留：$error';
+      }
     } finally {
       busy = false;
       _notify();
@@ -329,6 +442,7 @@ class PlannerCoordinator extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _timer?.cancel();
+    _cancelScheduledUpload();
     super.dispose();
   }
 }

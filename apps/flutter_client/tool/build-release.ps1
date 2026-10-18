@@ -124,7 +124,7 @@ try {
     foreach ($buildMode in $modes) {
         if ($Target -in @('Web', 'All')) {
             $arguments = [System.Collections.Generic.List[string]]::new()
-            $arguments.AddRange([string[]]@('build', 'web', '--no-pub', "--dart-define=API_BASE_URL=$ApiBaseUrl"))
+            $arguments.AddRange([string[]]@('build', 'web', '--no-pub', '--no-web-resources-cdn', "--dart-define=API_BASE_URL=$ApiBaseUrl"))
             if ($buildMode -eq 'release') { $arguments.Add('--release') } else { $arguments.Add('--debug') }
             Invoke-Flutter -FlutterArguments $arguments.ToArray()
             Add-Artifact (Join-Path $artifactRoot 'web\index.html') "Web entry ($buildMode)"

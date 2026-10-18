@@ -1,0 +1,246 @@
+{
+  "version": 1,
+  "clock": "2026-10-12T00:00:00.000Z",
+  "description": "Cross-entry scheduling contract shared by apps/api/src/planning-scheduler.ts (automatic strategy), packages/planner-engine (TypeScript reference manual placement and replan) and apps/flutter_client (Dart mirror). Each case checks that automatically generated blocks pass the manual placement validator in the same occupancy state, and that manual placement accepts/rejects the same prerequisites and capacity as the scheduler.",
+  "base_profile": {
+    "user_id": "fixture-user",
+    "planning_mode": "daily",
+    "goal_text": "",
+    "goal_type": "other",
+    "goal_subtype": "",
+    "target_date": "",
+    "target_date_confirmed": false,
+    "plan_start_date": "2026-10-12",
+    "plan_end_date": "2026-10-18",
+    "weekly_minutes": {"0": 0, "1": 120, "2": 120, "3": 120, "4": 120, "5": 120, "6": 0},
+    "constraints": "",
+    "target_school": "",
+    "target_program": "",
+    "exam_date": "",
+    "exam_end_date": "",
+    "daily_limit_minutes": 120,
+    "granularity_minutes": 30,
+    "buffer_minutes": 30,
+    "subject_limit_minutes": 240,
+    "study_start_minute": 480,
+    "study_end_minute": 1320,
+    "foundation": ""
+  },
+  "cases": [
+    {
+      "name": "explicit content confirmation unlocks both automatic and manual placement",
+      "from": "2026-10-12",
+      "to": "2026-10-12",
+      "tasks": [
+        {"id": "chapter", "estimated_minutes": 60, "completed_minutes": 0, "deadline": "2026-10-18", "planning": {"content_progress": {"confirmed": true}}},
+        {"id": "exercise", "estimated_minutes": 30, "deadline": "2026-10-18", "planning": {"dependencies": [{"task_id": "chapter", "mode": "confirmed"}]}}
+      ],
+      "expected_auto": {
+        "scheduled": 30,
+        "unscheduled": 0,
+        "issues": [],
+        "new_blocks": [
+          {"task_id": "exercise", "date": "2026-10-12", "start_minute": 0, "duration_minutes": 30}
+        ]
+      },
+      "placements": [
+        {"candidate": {"task_id": "exercise", "date": "2026-10-12", "duration_minutes": 30}, "expected": null}
+      ],
+      "replan": {
+        "today": "2026-10-12",
+        "mode": "unfinished",
+        "expected": {
+          "after": [{"task_id": "exercise", "date": "2026-10-13", "start_minute": 0, "duration_minutes": 30}],
+          "protected_block_ids": [],
+          "conflicts": []
+        }
+      }
+    },
+    {
+      "name": "timed occupancy clips to the study window and unions events with protected blocks",
+      "from": "2026-10-12",
+      "to": "2026-10-12",
+      "profile": {
+        "planning_mode": "timed",
+        "study_start_minute": 480,
+        "study_end_minute": 660,
+        "weekly_minutes": {"0": 0, "1": 210, "2": 0, "3": 0, "4": 0, "5": 0, "6": 0}
+      },
+      "tasks": [
+        {"id": "legacy", "estimated_minutes": 90, "status": "completed"},
+        {"id": "exercise", "subject_id": "other-course", "estimated_minutes": 120}
+      ],
+      "blocks": [
+        {"id": "overlap-completed", "task_id": "legacy", "date": "2026-10-12", "start_minute": 480, "duration_minutes": 60, "actual_minutes": 0, "status": "completed"},
+        {"id": "separate-completed", "task_id": "legacy", "date": "2026-10-12", "start_minute": 600, "duration_minutes": 30, "actual_minutes": 0, "status": "completed"}
+      ],
+      "fixed_events": [
+        {"id": "cross-window", "start_minute": 300, "duration_minutes": 210},
+        {"id": "overlap-block", "start_minute": 510, "duration_minutes": 60},
+        {"id": "outside-window", "start_minute": 700, "duration_minutes": 60}
+      ],
+      "expected_auto": {
+        "scheduled": 60,
+        "unscheduled": 60,
+        "issues": ["WORK_UNSCHEDULED"],
+        "new_blocks": [
+          {"task_id": "exercise", "date": "2026-10-12", "start_minute": 570, "duration_minutes": 30},
+          {"task_id": "exercise", "date": "2026-10-12", "start_minute": 630, "duration_minutes": 30}
+        ]
+      },
+      "placements": [
+        {"candidate": {"task_id": "exercise", "date": "2026-10-12", "start_minute": 570, "duration_minutes": 30}, "expected": null}
+      ]
+    },
+    {
+      "name": "completed legacy blocks without actual history reserve their planned daily load",
+      "from": "2026-10-12",
+      "to": "2026-10-12",
+      "tasks": [
+        {"id": "legacy", "estimated_minutes": 60, "status": "completed"},
+        {"id": "exercise", "subject_id": "other-course", "estimated_minutes": 60}
+      ],
+      "blocks": [
+        {"id": "legacy-completed", "task_id": "legacy", "date": "2026-10-12", "start_minute": 0, "duration_minutes": 60, "actual_minutes": 0, "status": "completed"}
+      ],
+      "expected_auto": {
+        "scheduled": 30,
+        "unscheduled": 30,
+        "issues": ["WORK_UNSCHEDULED"],
+        "new_blocks": [
+          {"task_id": "exercise", "date": "2026-10-12", "start_minute": 0, "duration_minutes": 30}
+        ]
+      },
+      "placements": [
+        {"candidate": {"task_id": "exercise", "date": "2026-10-12", "duration_minutes": 30}, "expected": null},
+        {"candidate": {"task_id": "exercise", "date": "2026-10-12", "duration_minutes": 60}, "expected": "超出当天可用的学习时间（每日上限），须保留至少30分钟机动时间"}
+      ]
+    },
+    {
+      "name": "over-capacity protected records are retained and reported instead of being rewritten",
+      "from": "2026-10-12",
+      "to": "2026-10-12",
+      "profile": {"plan_end_date": "2026-10-13"},
+      "tasks": [
+        {"id": "legacy", "estimated_minutes": 120, "status": "completed"},
+        {"id": "exercise", "estimated_minutes": 30, "deadline": "2026-10-18"}
+      ],
+      "blocks": [
+        {"id": "today", "task_id": "exercise", "date": "2026-10-12", "start_minute": 0, "duration_minutes": 30},
+        {"id": "protected", "task_id": "legacy", "date": "2026-10-13", "start_minute": 0, "duration_minutes": 120, "actual_minutes": 0, "status": "completed"}
+      ],
+      "placements": [
+        {"candidate": {"task_id": "exercise", "date": "2026-10-13", "duration_minutes": 30}, "expected": "超出当天可用的学习时间（每日上限），须保留至少30分钟机动时间"}
+      ],
+      "replan": {
+        "today": "2026-10-12",
+        "mode": "unfinished",
+        "expected": {
+          "after": [{"task_id": "legacy", "date": "2026-10-13", "start_minute": 0, "duration_minutes": 120}],
+          "protected_block_ids": ["protected"],
+          "conflicts": [{"task_id": "exercise", "minutes": 30}]
+        }
+      }
+    },
+    {
+      "name": "planned prerequisite forecast unlocks both automatic and manual placement",
+      "from": "2026-10-12",
+      "to": "2026-10-18",
+      "tasks": [
+        {"id": "chapter", "estimated_minutes": 30},
+        {"id": "assessment", "estimated_minutes": 30, "planning": {"dependencies": [{"task_id": "chapter", "mode": "planned"}]}}
+      ],
+      "expected_auto": {
+        "scheduled": 60,
+        "unscheduled": 0,
+        "issues": [],
+        "new_blocks": [
+          {"task_id": "chapter", "date": "2026-10-12", "start_minute": 0, "duration_minutes": 30},
+          {"task_id": "assessment", "date": "2026-10-13", "start_minute": 0, "duration_minutes": 30}
+        ]
+      },
+      "post_schedule_placements": [
+        {"candidate": {"task_id": "assessment", "date": "2026-10-12", "duration_minutes": 30}, "expected": "前置内容尚未确认完成"},
+        {"candidate": {"task_id": "assessment", "date": "2026-10-13", "duration_minutes": 30}, "expected": null}
+      ]
+    },
+    {
+      "name": "time exhaustion alone never confirms content or a planned forecast",
+      "from": "2026-10-12",
+      "to": "2026-10-18",
+      "tasks": [
+        {"id": "chapter", "estimated_minutes": 30, "completed_minutes": 30, "status": "in_progress"},
+        {"id": "assessment", "estimated_minutes": 30, "planning": {"dependencies": [{"task_id": "chapter", "mode": "confirmed"}]}},
+        {"id": "reading", "estimated_minutes": 30, "completed_minutes": 30, "status": "in_progress"},
+        {"id": "homework", "estimated_minutes": 30, "planning": {"dependencies": [{"task_id": "reading", "mode": "planned"}]}}
+      ],
+      "expected_auto": {
+        "scheduled": 0,
+        "unscheduled": 60,
+        "issues": ["DEPENDENCY_UNCONFIRMED", "WORK_UNSCHEDULED"],
+        "new_blocks": []
+      },
+      "placements": [
+        {"candidate": {"task_id": "assessment", "date": "2026-10-12", "duration_minutes": 30}, "expected": "前置内容尚未确认完成"},
+        {"candidate": {"task_id": "homework", "date": "2026-10-12", "duration_minutes": 30}, "expected": "前置内容尚未确认完成"}
+      ]
+    },
+    {
+      "name": "timed subject cap counts overlapping course blocks once for both entries",
+      "from": "2026-10-12",
+      "to": "2026-10-12",
+      "profile": {
+        "planning_mode": "timed",
+        "study_start_minute": 480,
+        "study_end_minute": 900,
+        "subject_limit_minutes": 120,
+        "weekly_minutes": {"0": 0, "1": 480, "2": 480, "3": 480, "4": 480, "5": 480, "6": 0}
+      },
+      "tasks": [
+        {"id": "legacy-one", "estimated_minutes": 60},
+        {"id": "legacy-two", "estimated_minutes": 60},
+        {"id": "exercise", "estimated_minutes": 30}
+      ],
+      "blocks": [
+        {"id": "course-one", "task_id": "legacy-one", "date": "2026-10-12", "start_minute": 480, "duration_minutes": 60},
+        {"id": "course-two", "task_id": "legacy-two", "date": "2026-10-12", "start_minute": 510, "duration_minutes": 60}
+      ],
+      "expected_auto": {
+        "scheduled": 30,
+        "unscheduled": 0,
+        "issues": [],
+        "new_blocks": [
+          {"task_id": "exercise", "date": "2026-10-12", "start_minute": 570, "duration_minutes": 30}
+        ]
+      },
+      "placements": [
+        {"candidate": {"task_id": "exercise", "date": "2026-10-12", "start_minute": 600, "duration_minutes": 30}, "expected": null}
+      ]
+    },
+    {
+      "name": "net capacity: high-priority finite work wins the day and low-priority recurring practice moves within the week",
+      "from": "2026-10-12",
+      "to": "2026-10-18",
+      "profile": {
+        "capacity_basis": "net",
+        "weekly_minutes": {"0": 0, "1": 0, "2": 0, "3": 0, "4": 60, "5": 30, "6": 0},
+        "daily_limit_minutes": 480,
+        "buffer_minutes": 30
+      },
+      "tasks": [
+        {"id": "exam", "estimated_minutes": 60, "priority": 3, "deadline": "2026-10-15"},
+        {"id": "practice", "estimated_minutes": 60, "priority": 1, "deadline": "2026-10-18", "planning": {"activity": {"kind": "recurring", "starts_on": "2026-10-12", "ends_on": "2026-10-18", "sessions_per_week": 2, "session_minutes": 30}}}
+      ],
+      "expected_auto": {
+        "scheduled": 90,
+        "unscheduled": 30,
+        "issues": ["RECURRENCE_SHORTFALL"],
+        "new_blocks": [
+          {"task_id": "exam", "date": "2026-10-15", "start_minute": 0, "duration_minutes": 30},
+          {"task_id": "exam", "date": "2026-10-15", "start_minute": 0, "duration_minutes": 30},
+          {"task_id": "practice", "date": "2026-10-16", "start_minute": 0, "duration_minutes": 30}
+        ]
+      }
+    }
+  ]
+}

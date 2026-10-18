@@ -32,7 +32,7 @@ class _FixtureSync implements SyncApi {
   int revision = 1;
 
   @override
-  Future<RemoteSnapshot> pull() async => RemoteSnapshot(data, revision);
+  Future<RemoteSnapshot> pull({int? revision}) async => RemoteSnapshot(data, this.revision);
 
   @override
   Future<RemoteSnapshot> push(

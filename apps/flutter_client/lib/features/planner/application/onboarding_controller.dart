@@ -5,6 +5,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../shared/models/api_models.dart';
 import '../../../shared/models/planner_models.dart';
 import '../../auth/application/auth_controller.dart';
+import '../domain/capacity.dart' as capacity;
 import '../domain/planner_format.dart';
 import 'planner_snapshot.dart';
 
@@ -86,6 +87,12 @@ class ProfileSettingsDraft {
     required this.studyStartMinute,
     required this.studyEndMinute,
     required this.priorities,
+    this.capacityBasis = CapacityBasis.grossBuffer,
+    this.weeklyBaselineMinutes,
+    this.weeklyRangeMinMinutes,
+    this.weeklyRangeMaxMinutes,
+    this.weekCapacityOverrides,
+    this.dateCapacityOverrides,
   });
 
   final String goalText;
@@ -108,6 +115,18 @@ class ProfileSettingsDraft {
   final int studyEndMinute;
   final Map<String, int> priorities;
 
+  /// 容量口径与灵活时间覆盖；旧数据保持 [CapacityBasis.grossBuffer] 旧语义。
+  final CapacityBasis capacityBasis;
+
+  /// 经用户确认的每周净学习基线（周总量）。
+  final int? weeklyBaselineMinutes;
+
+  /// 用户给出的大致周容量范围，仅用于说明较高容量情景。
+  final int? weeklyRangeMinMinutes;
+  final int? weeklyRangeMaxMinutes;
+  final Map<String, WeekCapacityOverride>? weekCapacityOverrides;
+  final Map<String, int>? dateCapacityOverrides;
+
   static ProfileSettingsDraft from(Profile profile, {required String today}) =>
       ProfileSettingsDraft(
         goalText: profile.goalText,
@@ -129,6 +148,12 @@ class ProfileSettingsDraft {
         studyStartMinute: profile.studyStartMinute,
         studyEndMinute: profile.studyEndMinute,
         priorities: const {},
+        capacityBasis: profile.capacityBasis,
+        weeklyBaselineMinutes: profile.weeklyBaselineMinutes,
+        weeklyRangeMinMinutes: profile.weeklyRangeMinMinutes,
+        weeklyRangeMaxMinutes: profile.weeklyRangeMaxMinutes,
+        weekCapacityOverrides: profile.weekCapacityOverrides,
+        dateCapacityOverrides: profile.dateCapacityOverrides,
       );
 
   ProfileSettingsDraft copyWith({
@@ -151,6 +176,12 @@ class ProfileSettingsDraft {
     int? studyStartMinute,
     int? studyEndMinute,
     Map<String, int>? priorities,
+    CapacityBasis? capacityBasis,
+    int? weeklyBaselineMinutes,
+    int? weeklyRangeMinMinutes,
+    int? weeklyRangeMaxMinutes,
+    Map<String, WeekCapacityOverride>? weekCapacityOverrides,
+    Map<String, int>? dateCapacityOverrides,
   }) => ProfileSettingsDraft(
     goalText: goalText ?? this.goalText,
     goalType: goalType ?? this.goalType,
@@ -171,6 +202,17 @@ class ProfileSettingsDraft {
     studyStartMinute: studyStartMinute ?? this.studyStartMinute,
     studyEndMinute: studyEndMinute ?? this.studyEndMinute,
     priorities: priorities ?? this.priorities,
+    capacityBasis: capacityBasis ?? this.capacityBasis,
+    weeklyBaselineMinutes:
+        weeklyBaselineMinutes ?? this.weeklyBaselineMinutes,
+    weeklyRangeMinMinutes:
+        weeklyRangeMinMinutes ?? this.weeklyRangeMinMinutes,
+    weeklyRangeMaxMinutes:
+        weeklyRangeMaxMinutes ?? this.weeklyRangeMaxMinutes,
+    weekCapacityOverrides:
+        weekCapacityOverrides ?? this.weekCapacityOverrides,
+    dateCapacityOverrides:
+        dateCapacityOverrides ?? this.dateCapacityOverrides,
   );
 
   /// 每日上限取一周最大值，仅用于展示；排程按每天的单独预算计算。
@@ -224,7 +266,75 @@ String? validateSettingsDraft(ProfileSettingsDraft draft) {
   if (!draft.weeklyMinutes.values.any((value) => value > 30)) {
     return '请至少设置一天超过30分钟的可用时间，预留30分钟机动';
   }
+  final baselineError = _validateCapacityDraft(draft);
+  if (baselineError != null) return baselineError;
   return null;
+}
+
+/// 灵活容量字段校验：范围、基线、特定周/日期覆盖。
+String? _validateCapacityDraft(ProfileSettingsDraft draft) {
+  final min = draft.weeklyRangeMinMinutes;
+  final max = draft.weeklyRangeMaxMinutes;
+  final baseline = draft.weeklyBaselineMinutes;
+  for (final (label, value) in [
+    ('周容量范围下限', min),
+    ('周容量范围上限', max),
+    ('采用周容量基线', baseline),
+  ]) {
+    if (value != null && (value < 0 || value > 10080)) {
+      return '$label需要在 0 至 10080 分钟（一周）之间';
+    }
+  }
+  if (min != null && max != null && min > max) {
+    return '周容量范围下限不能大于上限';
+  }
+  if (baseline != null && max != null && baseline > max) {
+    return '采用的周容量基线不能超过用户给出的范围上限';
+  }
+  final weeks = draft.weekCapacityOverrides ?? const {};
+  for (final entry in weeks.entries) {
+    final monday = DateTime.tryParse('${entry.key}T00:00:00Z');
+    if (monday == null || monday.weekday != DateTime.monday) {
+      return '特定周必须使用周一日期：${entry.key}';
+    }
+    final total = entry.value.totalMinutes;
+    if (total != null && (total < 0 || total > 10080)) {
+      return '特定周（${entry.key}）的总量需要在 0 至 10080 分钟之间';
+    }
+    for (final day in (entry.value.days ?? const {}).entries) {
+      if (day.value < 0 || day.value > 1440) {
+        return '特定周（${entry.key}）的日容量需要在 0 至 1440 分钟之间';
+      }
+    }
+  }
+  for (final entry in (draft.dateCapacityOverrides ?? const {}).entries) {
+    if (DateTime.tryParse('${entry.key}T00:00:00Z') == null) {
+      return '特定日期格式无效：${entry.key}';
+    }
+    if (entry.value < 0 || entry.value > 1440) {
+      return '特定日期（${entry.key}）的容量需要在 0 至 1440 分钟之间';
+    }
+  }
+  return null;
+}
+
+/// 净容量口径下，每日上限取基线分配结果与模板峰值的较大者。
+int _netDailyLimit(
+  int weeklyPeak,
+  int? baseline,
+  Map<String, int> weeklyMinutes,
+) {
+  if (baseline == null || baseline <= 0) return weeklyPeak;
+  final weights = {
+    for (var day = 0; day < 7; day++)
+      day: weeklyMinutes['$day'] ?? 0,
+  };
+  final distributed = capacity.distributeWeeklyTotal(baseline, weights);
+  var peak = weeklyPeak;
+  for (final value in distributed.values) {
+    if (value > peak) peak = value;
+  }
+  return peak;
 }
 
 /// Applies the local settings to the current plan without touching tasks.
@@ -253,12 +363,27 @@ PlannerData applySettings(PlannerData data, ProfileSettingsDraft draft) {
         for (var day = 0; day < 7; day++)
           '$day': draft.weeklyMinutes['$day'] ?? 0,
       },
-      dailyLimitMinutes: draft.weeklyPeakMinutes,
+      dailyLimitMinutes: draft.capacityBasis == CapacityBasis.net
+          ? _netDailyLimit(
+              draft.weeklyPeakMinutes,
+              draft.weeklyBaselineMinutes,
+              {
+                for (var day = 0; day < 7; day++)
+                  '$day': draft.weeklyMinutes['$day'] ?? 0,
+              },
+            )
+          : draft.weeklyPeakMinutes,
       granularityMinutes: draft.granularityMinutes,
       bufferMinutes: draft.bufferMinutes,
       subjectLimitMinutes: draft.subjectLimitMinutes,
       studyStartMinute: draft.studyStartMinute,
       studyEndMinute: draft.studyEndMinute,
+      capacityBasis: draft.capacityBasis,
+      weeklyBaselineMinutes: draft.weeklyBaselineMinutes,
+      weeklyRangeMinMinutes: draft.weeklyRangeMinMinutes,
+      weeklyRangeMaxMinutes: draft.weeklyRangeMaxMinutes,
+      weekCapacityOverrides: draft.weekCapacityOverrides,
+      dateCapacityOverrides: draft.dateCapacityOverrides,
     ),
     subjects: [
       for (final subject in data.subjects)
@@ -290,5 +415,50 @@ bool settingsAffectSchedule(PlannerData data, ProfileSettingsDraft draft) {
           draft.studyEndMinute != current.studyEndMinute)) {
     return true;
   }
+  if (draft.capacityBasis != current.capacityBasis) return true;
+  if (draft.weeklyBaselineMinutes != current.weeklyBaselineMinutes) return true;
+  if (draft.weeklyRangeMinMinutes != current.weeklyRangeMinMinutes) return true;
+  if (draft.weeklyRangeMaxMinutes != current.weeklyRangeMaxMinutes) return true;
+  if (!_sameOverrides(
+    draft.weekCapacityOverrides,
+    current.weekCapacityOverrides,
+  )) {
+    return true;
+  }
+  if (!_sameIntMap(
+    draft.dateCapacityOverrides,
+    current.dateCapacityOverrides,
+  )) {
+    return true;
+  }
   return false;
+}
+
+bool _sameOverrides(
+  Map<String, WeekCapacityOverride>? a,
+  Map<String, WeekCapacityOverride>? b,
+) {
+  final left = a ?? const <String, WeekCapacityOverride>{};
+  final right = b ?? const <String, WeekCapacityOverride>{};
+  if (left.length != right.length) return false;
+  for (final entry in left.entries) {
+    final other = right[entry.key];
+    if (other == null) return false;
+    if (entry.value.totalMinutes != other.totalMinutes) return false;
+    final daysLeft = entry.value.days ?? const <String, int>{};
+    final daysRight = other.days ?? const <String, int>{};
+    if (daysLeft.length != daysRight.length) return false;
+    for (final day in daysLeft.entries) {
+      if (daysRight[day.key] != day.value) return false;
+    }
+  }
+  return true;
+}
+
+bool _sameIntMap(Map<String, int>? a, Map<String, int>? b) {
+  if ((a?.length ?? 0) != (b?.length ?? 0)) return false;
+  for (final entry in (a ?? const <String, int>{}).entries) {
+    if ((b ?? const <String, int>{})[entry.key] != entry.value) return false;
+  }
+  return true;
 }

@@ -70,8 +70,47 @@ void main() {
       await tester.pumpAndSettle();
       expect(action!['type'], 'set_constraints');
       expect((action!['weekly_minutes'] as Map)['0'], 0);
-      expect(action!['detail_days'], 14);
+      // 新计划使用净容量口径；旧的 detail_days 主流程字段不再发送。
+      expect(action!['capacity_basis'], 'net');
+      expect(action!.containsKey('detail_days'), isFalse);
       expect(action!['end_date'], isNotEmpty);
+    },
+  );
+
+  testWidgets(
+    'weekly capacity range requires confirming the adopted conservative baseline',
+    (tester) async {
+      tester.view.physicalSize = const Size(1200, 1600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final session = onboardingFixture(stage: 'constraints');
+      Map? action;
+      await mount(tester, session, (value) => action = value);
+      await tester.ensureVisible(find.text('大致周容量范围'));
+      await tester.tap(find.text('大致周容量范围'));
+      await tester.pumpAndSettle();
+      expect(find.byKey(const ValueKey('weekly-range-min')), findsOneWidget);
+      expect(find.byKey(const ValueKey('weekly-baseline-confirm')), findsOneWidget);
+      // 未确认保守基线时不能提交。
+      final submit = find.text('确认条件，生成事项');
+      await tester.ensureVisible(submit);
+      expect(
+        tester.widget<FilledButton>(find.widgetWithText(FilledButton, '确认条件，生成事项')).onPressed,
+        isNull,
+      );
+      await tester.ensureVisible(
+        find.byKey(const ValueKey('weekly-baseline-confirm')),
+      );
+      await tester.tap(find.byKey(const ValueKey('weekly-baseline-confirm')));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(submit);
+      await tester.tap(submit);
+      await tester.pumpAndSettle();
+      expect(action!['type'], 'set_constraints');
+      expect(action!['capacity_basis'], 'net');
+      expect(action!['weekly_baseline_minutes'], isNotNull);
+      expect(action!['weekly_range_min_minutes'], isNotNull);
+      expect(action!['weekly_range_max_minutes'], isNotNull);
     },
   );
 
@@ -89,12 +128,14 @@ void main() {
           session['revision'] = (session['revision'] as int) + 1;
           session['preview'] = {
             'token': 'preview-1',
+            'mode': 'full',
+            'detailed_until': '2026-11-13',
             'scheduled_minutes': 120,
             'unscheduled_minutes': 60,
-            'deferred_minutes': 180,
+            'forecast_minutes': 0,
             'capacity_minutes': 240,
             'protected_blocks': 2,
-            'detailed_until': '2026-10-30',
+            'status': 'ready',
             'days': [],
             'issues': [
               {
@@ -103,6 +144,24 @@ void main() {
                 'message': '阅读练习尚缺 1 次',
               },
             ],
+            'capacity': {
+              'basis': 'net',
+              'adopted_weekly_minutes': 600,
+              'source': 'baseline',
+              'weekly_range_minutes': {'min': 300, 'max': 900},
+              'estimated_weeks': 2,
+              'assumptions': ['按净学习时间计算'],
+            },
+            'capacity_impact': {
+              'kept_blocks': 2,
+              'kept_minutes': 120,
+              'released_blocks': 1,
+              'released_minutes': 60,
+              'added_blocks': 3,
+              'added_minutes': 90,
+              'unscheduled_minutes': 0,
+              'deadline_at_risk': [],
+            },
           };
         }
       });
@@ -114,7 +173,11 @@ void main() {
       await tester.tap(find.text('试排并检查'));
       await tester.pumpAndSettle();
       expect(find.text('阅读练习尚缺 1 次'), findsOneWidget);
-      expect(find.text('远期待细化 3小时，未计入近期每日任务。'), findsOneWidget);
+      // 全周期预览：显示覆盖范围、容量假设与排程影响，不再出现“远期待细化”。
+      expect(find.textContaining('全周期覆盖'), findsOneWidget);
+      expect(find.text('容量假设'), findsOneWidget);
+      expect(find.text('排程影响'), findsOneWidget);
+      expect(find.textContaining('远期待细化'), findsNothing);
       expect(confirm().onPressed, isNotNull);
       final monday = find.byKey(const ValueKey('weekly-1-1'));
       await tester.ensureVisible(monday);

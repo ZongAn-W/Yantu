@@ -80,6 +80,57 @@ describe("interview replanning", () => {
     }
   });
 
+  it("carries the confirmed learning constraints into the replanned document", () => {
+    const { document, session } = replanFixture();
+    const constraints = "每周三晚上有课，22:00 后不安排";
+    session.profile = ProfileSchema.parse({ ...session.profile, constraints_text: constraints });
+    const result = replanDocument(document, session);
+    // 重新规划后的文档必须携带访谈确认的学习限制；否则关系表投影会用旧值覆盖刚保存的资料。
+    expect((result.document.profile as Record<string, unknown>).constraints).toBe(
+      constraints,
+    );
+    expect(
+      (PlannerDocumentSchema.parse(result.document).profile as Record<string, unknown>)
+        .constraints,
+    ).toBe(constraints);
+  });
+
+  it("carries the confirmed flexible capacity assumptions into the replanned document", () => {
+    const { document, session } = replanFixture();
+    session.profile.capacity_basis = "net";
+    session.profile.weekly_baseline_minutes = 540;
+    session.profile.weekly_range_min_minutes = 300;
+    session.profile.weekly_range_max_minutes = 600;
+    session.profile.week_capacity_overrides = {
+      "2026-10-19": { total_minutes: 180, days: { "6": 60 } },
+    };
+    session.profile.date_capacity_overrides = { "2026-11-02": 0 };
+    const result = replanDocument(document, session);
+    expect(result.document.profile).toMatchObject({
+      capacity_basis: "net",
+      weekly_baseline_minutes: 540,
+      weekly_range_min_minutes: 300,
+      weekly_range_max_minutes: 600,
+      week_capacity_overrides: { "2026-10-19": { total_minutes: 180, days: { "6": 60 } } },
+      date_capacity_overrides: { "2026-11-02": 0 },
+    });
+    // 显式 0 是有效容量（休息日），不能被当成“未设置”丢掉。
+    expect(
+      (result.document.profile.date_capacity_overrides as Record<string, number>)["2026-11-02"],
+    ).toBe(0);
+    expect(PlannerDocumentSchema.safeParse(result.document).success).toBe(true);
+
+    // 旧会话/部分会话缺少容量字段时保留文档已有值，不静默清除。
+    const second = replanFixture();
+    (second.document.profile as Record<string, unknown>).weekly_range_max_minutes = 720;
+    (second.document.profile as Record<string, unknown>).capacity_basis = "gross_buffer";
+    const kept = replanDocument(second.document, second.session);
+    expect(kept.document.profile).toMatchObject({
+      capacity_basis: "gross_buffer",
+      weekly_range_max_minutes: 720,
+    });
+  });
+
   it("only accepts a complete, valid week as the reliable source", () => {
     const week = { "0": 0, "1": 90, "2": 90, "3": 0, "4": 90, "5": 90, "6": 180 };
     expect(isReliableWeek(week)).toBe(true);

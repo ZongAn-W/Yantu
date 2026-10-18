@@ -2,7 +2,9 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sembast/sembast_memory.dart';
 import 'package:sjtu_study_planner_client/core/errors/app_failure.dart';
+import 'package:sjtu_study_planner_client/core/storage/file_transfer_repository.dart';
 import 'package:sjtu_study_planner_client/core/storage/local_database.dart';
+import 'package:sjtu_study_planner_client/core/storage/planner_json.dart';
 import 'package:sjtu_study_planner_client/core/storage/sembast_storage_repository.dart';
 import 'package:sjtu_study_planner_client/core/sync/planner_coordinator.dart';
 import 'package:sjtu_study_planner_client/core/sync/merge_plans.dart';
@@ -12,6 +14,66 @@ import 'package:sjtu_study_planner_client/shared/models/planner_models.dart';
 import 'package:sjtu_study_planner_client/features/planner/application/study_edits.dart';
 import '../support/planner_fixture.dart';
 
+const String _newFieldStamp = '2026-10-18T01:00:00.000Z';
+
+/// 给任意文档加上全部新字段（容量覆盖、临时学习实体与三类学习记录）。
+PlannerData withNewLearningFields(PlannerData data) {
+  final owner = data.profile.userId;
+  return data.copyWith(
+    profile: data.profile.copyWith(
+      capacityBasis: CapacityBasis.net,
+      weeklyBaselineMinutes: 300,
+      dateCapacityOverrides: {'2026-10-22': 0},
+      weekCapacityOverrides: {
+        '2026-10-19': const WeekCapacityOverride(
+          totalMinutes: 240,
+          days: {'2': 0},
+        ),
+      },
+    ),
+    adHocLearnings: [
+      AdHocLearning(
+        id: 'adhoc-photo',
+        userId: owner,
+        title: '摄影构图',
+        createdAt: _newFieldStamp,
+        updatedAt: _newFieldStamp,
+      ),
+    ],
+    logs: [
+      ...data.logs,
+      TimeLog(
+        id: 'log-adhoc',
+        userId: owner,
+        taskId: null,
+        blockId: null,
+        date: '2026-10-17',
+        minutes: 20,
+        startedAt: _newFieldStamp,
+        endedAt: _newFieldStamp,
+        source: LogSource.timer,
+        relation: TimeLogRelation.adHoc,
+        sessionId: 'session-x',
+        adHocId: 'adhoc-photo',
+      ),
+    ],
+  );
+}
+
+class FakeTransfer implements FileTransferRepository {
+  PlannerData? imported;
+  PlannerData? exported;
+
+  @override
+  Future<PlannerData?> importJson() async => imported;
+
+  @override
+  Future<bool> exportJson(PlannerData data) async {
+    exported = data;
+    return true;
+  }
+}
+
 class FakeSync implements SyncApi {
   FakeSync(this.data);
   PlannerData? data;
@@ -19,9 +81,9 @@ class FakeSync implements SyncApi {
   bool offline = false;
   Future<void> Function()? duringPush;
   @override
-  Future<RemoteSnapshot> pull() async {
+  Future<RemoteSnapshot> pull({int? revision}) async {
     if (offline) throw const OfflineFailure();
-    return RemoteSnapshot(data, revision);
+    return RemoteSnapshot(data, this.revision);
   }
 
   @override
@@ -242,4 +304,97 @@ void main() {
       expect(coordinator.data, base);
     },
   );
+  test(
+    'new fields survive an offline edit, coordinator restart and upload',
+    () async {
+      await coordinator.initialize();
+      remote.offline = true;
+      await coordinator.edit(withNewLearningFields);
+      await coordinator.sync();
+      expect(coordinator.status, SyncStatus.offline);
+      expect(coordinator.pending, isTrue);
+      coordinator.dispose();
+      coordinator = create();
+      await coordinator.initialize();
+      // 重启后本机保存的新字段完整保留。
+      expect(coordinator.data!.adHocLearnings.single.id, 'adhoc-photo');
+      expect(coordinator.data!.profile.dateCapacityOverrides, {'2026-10-22': 0});
+      expect(coordinator.data!.logs.any((log) => log.id == 'log-adhoc'), isTrue);
+      remote.offline = false;
+      await coordinator.sync();
+      expect(coordinator.pending, isFalse);
+      expect(coordinator.status, SyncStatus.connected);
+      expect(remote.data!.adHocLearnings.single.id, 'adhoc-photo');
+      expect(remote.data!.profile.capacityBasis, CapacityBasis.net);
+      expect(
+        remote.data!.profile.weekCapacityOverrides!.keys.single,
+        '2026-10-19',
+      );
+      final uploaded = remote.data!.logs.firstWhere(
+        (log) => log.id == 'log-adhoc',
+      );
+      expect(uploaded.taskId, isNull);
+      expect(uploaded.adHocId, 'adhoc-photo');
+      expect(uploaded.sessionId, 'session-x');
+      expect(uploaded.relation, TimeLogRelation.adHoc);
+    },
+  );
+  test(
+    'JSON export and import keep new fields and re-tag them for the account',
+    () async {
+      final transfer = FakeTransfer();
+      final transferStorage = SembastStorageRepository(
+        database: database,
+        transfer: transfer,
+      );
+      final exportCoordinator = PlannerCoordinator(
+        userId: base.profile.userId,
+        scope: 'transfer',
+        storage: transferStorage,
+        api: remote,
+        retryInterval: null,
+      );
+      addTearDown(exportCoordinator.dispose);
+      await exportCoordinator.initialize();
+      await exportCoordinator.edit(withNewLearningFields);
+      await exportCoordinator.exportJson();
+      expect(transfer.exported, isNotNull);
+      expect(transfer.exported!.adHocLearnings.single.id, 'adhoc-photo');
+      // 另一账号的导出被导入当前账号：id 重新映射，但新字段与 session 标识保留。
+      transfer.imported = forAccount(
+        withNewLearningFields(plannerFixture()),
+        'other-account',
+      );
+      await exportCoordinator.importJson();
+      expect(exportCoordinator.pending, isFalse);
+      final adHoc = exportCoordinator.data!.adHocLearnings.single;
+      expect(adHoc.userId, base.profile.userId);
+      expect(adHoc.id, isNot('adhoc-photo'));
+      final imported = exportCoordinator.data!.logs.firstWhere(
+        (log) => log.taskId == null,
+      );
+      expect(imported.adHocId, adHoc.id);
+      expect(imported.sessionId, 'session-x');
+      expect(imported.relation, TimeLogRelation.adHoc);
+      expect(exportCoordinator.data!.profile.dateCapacityOverrides, {
+        '2026-10-22': 0,
+      });
+      expect(remote.data!.adHocLearnings.single.userId, base.profile.userId);
+      expect(
+        remote.data!.profile.weekCapacityOverrides!.keys.single,
+        '2026-10-19',
+      );
+    },
+  );
+  test('explicit backup recovery keeps the new fields', () async {
+    await coordinator.initialize();
+    final rich = withNewLearningFields(base);
+    await coordinator.edit((_) => rich);
+    await coordinator.edit((data) => data.copyWith(phases: []));
+    await coordinator.recover();
+    expect(coordinator.data!.adHocLearnings.single.id, 'adhoc-photo');
+    expect(coordinator.data!.profile.dateCapacityOverrides, {'2026-10-22': 0});
+    expect(coordinator.data!.logs.any((log) => log.id == 'log-adhoc'), isTrue);
+    expect(remote.data!.adHocLearnings.single.id, 'adhoc-photo');
+  });
 }

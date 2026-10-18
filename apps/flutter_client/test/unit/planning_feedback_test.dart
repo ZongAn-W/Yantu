@@ -58,6 +58,22 @@ void main() {
     },
   );
 
+  test('extra study never recalibrates the content speed', () {
+    final extra = [
+      for (var i = 0; i < 3; i++)
+        logs[i].copyWith(
+          id: 'extra-$i',
+          relation: TimeLogRelation.extra,
+        ),
+    ];
+    final pace = calibratePace(task, extra);
+    expect(pace.samples, 0);
+    expect(pace.minutes, 0);
+    expect(pace.observedMinutesPerUnit, isNull);
+    final mixed = [...logs.take(1), ...extra];
+    expect(calibratePace(task, mixed).samples, 1);
+  });
+
   test(
     'feedback preserves budget, actual minutes, status, history and strategy',
     () {

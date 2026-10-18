@@ -36,9 +36,11 @@ void validatePlanner(PlannerData data) {
   ids(data.logs.map((row) => row.id));
   ids(data.fixedEvents.map((row) => row.id));
   ids(data.replanRuns.map((row) => row.id));
+  ids(data.adHocLearnings.map((row) => row.id));
   final owner = data.profile.userId,
       subjects = data.subjects.map((row) => row.id).toSet(),
       tasks = data.tasks.map((row) => row.id).toSet(),
+      adHocLearnings = {for (final row in data.adHocLearnings) row.id: row},
       blocks = {for (final row in data.blocks) row.id: row};
   if (data.planning != null && data.planning!['version'] != 1) {
     throw const FormatException('学习策略版本不兼容');
@@ -135,6 +137,18 @@ void validatePlanner(PlannerData data) {
       }
     }
   }
+  // 临时学习实体：只能属于当前账号，可选分类与转换后的正式事项都必须真实存在。
+  for (final row in data.adHocLearnings) {
+    if (row.userId != owner || row.title.trim().isEmpty) {
+      throw const FormatException('临时学习内容或账号标识无效');
+    }
+    if (row.subjectId != null && !subjects.contains(row.subjectId)) {
+      throw const FormatException('临时学习引用的课程无效');
+    }
+    if (row.convertedTaskId != null && !tasks.contains(row.convertedTaskId)) {
+      throw const FormatException('临时学习关联的正式事项无效');
+    }
+  }
   final instances = <String, String>{};
   for (final row in data.blocks) {
     date(row.date);
@@ -154,10 +168,20 @@ void validatePlanner(PlannerData data) {
   }
   for (final row in data.logs) {
     date(row.date);
+    final taskId = row.taskId, adHocId = row.adHocId;
+    // 每条记录必须能归属到正式事项或临时学习实体之一：临时学习没有正式事项，
+    // 旧数据也不会出现两个归属都缺失的记录。关系分类与归属必须自洽，
+    // 但不能要求 scheduled/extra 一定要有 block（计时产生的日志本来就没有 block）。
     if (row.userId != owner ||
-        !tasks.contains(row.taskId) ||
         row.minutes < 0 ||
-        (row.blockId != null && blocks[row.blockId]?.taskId != row.taskId)) {
+        (taskId == null && adHocId == null) ||
+        (taskId != null && !tasks.contains(taskId)) ||
+        (adHocId != null && !adHocLearnings.containsKey(adHocId)) ||
+        (row.blockId != null &&
+            (taskId == null || blocks[row.blockId]?.taskId != taskId)) ||
+        (row.relation == TimeLogRelation.adHoc && adHocId == null) ||
+        (row.sessionId != null && row.sessionId!.isEmpty) ||
+        (row.quotaMinutes != null && row.quotaMinutes! < 0)) {
       throw const FormatException('学习日志引用无效');
     }
   }
@@ -186,6 +210,44 @@ void validatePlanner(PlannerData data) {
   for (final value in data.dailyFeedback?.keys ?? <String>[]) {
     date(value);
   }
+  void capacityMinutes(int value, {int max = 10080}) {
+    if (value < 0 || value > max) {
+      throw const FormatException('容量设置无效');
+    }
+  }
+
+  final profile = data.profile;
+  for (final value in [
+    profile.weeklyBaselineMinutes,
+    profile.weeklyRangeMinMinutes,
+    profile.weeklyRangeMaxMinutes,
+  ]) {
+    if (value != null) capacityMinutes(value);
+  }
+  // 特定周覆盖的键是上海时区的周一日期（YYYY-MM-DD）；跨月/跨年同一周只认一个键。
+  for (final entry
+      in profile.weekCapacityOverrides?.entries ??
+          <MapEntry<String, WeekCapacityOverride>>[]) {
+    date(entry.key);
+    if (DateTime.parse('${entry.key}T00:00:00Z').weekday != DateTime.monday) {
+      throw const FormatException('周容量覆盖的周标识无效');
+    }
+    final total = entry.value.totalMinutes;
+    if (total != null) capacityMinutes(total);
+    for (final day in entry.value.days?.entries ?? <MapEntry<String, int>>[]) {
+      final index = int.tryParse(day.key);
+      if (index == null || index < 0 || index > 6) {
+        throw const FormatException('周容量覆盖的星期标识无效');
+      }
+      capacityMinutes(day.value, max: 1440);
+    }
+  }
+  // 日期覆盖的键必须是有效日期；显式 0 合法（休息日），缺失表示恢复上层规则。
+  for (final entry
+      in profile.dateCapacityOverrides?.entries ?? <MapEntry<String, int>>[]) {
+    date(entry.key);
+    capacityMinutes(entry.value, max: 1440);
+  }
 }
 
 PlannerData forAccount(PlannerData data, String userId) {
@@ -206,6 +268,8 @@ PlannerData forAccount(PlannerData data, String userId) {
                         'block_id',
                         'subject_id',
                         'run_id',
+                        'ad_hoc_id',
+                        'converted_task_id',
                       ].contains(key) &&
                       item is String
                 ? mapped(item)

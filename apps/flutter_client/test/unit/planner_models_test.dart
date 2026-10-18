@@ -9,14 +9,31 @@ JsonMap readPlannerFixture() => JsonMap.from(
   jsonDecode(File('test/fixtures/planner_v1.json').readAsStringSync()) as Map,
 );
 
+/// 旧 TypeScript 导出没有新字段；统一模型反序列化后会把“可加性旧默认键”
+/// 物化再进行序列化（临时学习空列表、容量口径 gross_buffer、旧日志
+/// relation=legacy_unknown）。期望值先补上这些文档化默认，再做全等比较；
+/// 不使用子集断言，避免掩盖真正的字段丢失。
+JsonMap legacyExportWithModelDefaults(JsonMap source) {
+  final expected = JsonMap.from(source);
+  expected.putIfAbsent('ad_hoc_learnings', () => <dynamic>[]);
+  expected['profile'] = JsonMap.from(expected['profile'] as Map)
+    ..putIfAbsent('capacity_basis', () => 'gross_buffer');
+  expected['logs'] = [
+    for (final row in expected['logs'] as List)
+      JsonMap.from(row as Map)..putIfAbsent('relation', () => 'legacy_unknown'),
+  ];
+  return expected;
+}
+
 void main() {
   test(
     'TypeScript PlannerData including nullable references and replan history round-trips',
     () {
       final source = readPlannerFixture();
       final data = PlannerData.fromJson(source);
-      expect(data.toJson(), source);
-      expect(jsonDecode(data.toJsonString()), source);
+      final expected = legacyExportWithModelDefaults(source);
+      expect(data.toJson(), expected);
+      expect(jsonDecode(data.toJsonString()), expected);
       expect(data.tasks.single.subjectId, data.subjects.single.id);
       expect(data.logs.single.blockId, isNull);
       expect(data.replanRuns.single.changes.single.before, isNull);
@@ -90,6 +107,7 @@ void main() {
     final source = JsonMap.from(json)
       ..['profile'] = profile
       ..['tasks'] = tasks;
+    final expected = legacyExportWithModelDefaults(source);
     final encoded = jsonEncode(source);
     final parsed = parsePlannerJson(encoded);
     expect(parsed.profile.resolvedTargetDate, isEmpty);
@@ -97,7 +115,7 @@ void main() {
     expect(parsed.profile.resolvedPlanEnd('2026-10-17'), '2026-11-13');
     expect(parsed.profile.weekMinutes['2'], 0);
     expect(parsed.tasks.single.deadlineKind, ItemDateKind.planEnd);
-    expect(parsed.toJson(), source);
+    expect(parsed.toJson(), expected);
   });
 
   test('legacy plans without the new fields read as an unknown date and a real deadline', () {

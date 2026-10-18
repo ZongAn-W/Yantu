@@ -5,6 +5,7 @@ import '../../../core/theme.dart';
 import '../../../core/widgets.dart';
 import '../../../shared/models/planner_models.dart';
 import '../../planner/application/planner_session.dart';
+import '../../planner/application/study_timer.dart';
 import '../../planner/domain/planner_format.dart';
 import '../../planner/domain/study_day.dart' as day_ops;
 import '../../planner/presentation/planner_dialogs.dart';
@@ -349,6 +350,40 @@ class _TaskCard extends ConsumerWidget {
                           : null,
                     ),
                     IconButton(
+                      key: Key('task-extra-study-${task.id}'),
+                      tooltip: task.status == TaskStatus.completed
+                          ? '复习计时（不重新打开事项）'
+                          : '加学计时（无需先安排到今天）',
+                      icon: const Icon(Icons.timer_outlined, size: 18),
+                      onPressed: editable && task.status != TaskStatus.archived
+                          ? () async {
+                              try {
+                                await ref
+                                    .read(studyTimerProvider)
+                                    .startExtra(task.id);
+                                if (context.mounted) {
+                                  showPlannerMessage(
+                                    context,
+                                    task.status == TaskStatus.completed
+                                        ? '已开始复习计时，记录会单独保存为加学。'
+                                        : '已开始加学计时：用时归入该事项真实投入，不抵消今日原定安排。',
+                                  );
+                                }
+                              } catch (error) {
+                                if (context.mounted) {
+                                  showPlannerMessage(
+                                    context,
+                                    error is StateError
+                                        ? error.message
+                                        : '开始计时失败：$error',
+                                    tone: PlannerNoticeTone.error,
+                                  );
+                                }
+                              }
+                            }
+                          : null,
+                    ),
+                    IconButton(
                       tooltip: '安排事项日期和时长',
                       icon: const Icon(
                         Icons.event_available_outlined,
@@ -390,9 +425,20 @@ class _TaskCard extends ConsumerWidget {
                                 destructive: true,
                               );
                               if (!confirmed || !context.mounted) return;
-                              await ref
-                                  .read(plannerSessionProvider)
-                                  .deleteTask(task.id);
+                              try {
+                                await ref
+                                    .read(plannerSessionProvider)
+                                    .deleteTask(task.id);
+                              } catch (error) {
+                                if (!context.mounted) return;
+                                showPlannerMessage(
+                                  context,
+                                  error is StateError
+                                      ? error.message
+                                      : '删除失败：$error',
+                                  tone: PlannerNoticeTone.error,
+                                );
+                              }
                             }
                           : null,
                     ),

@@ -11,12 +11,14 @@ import '../../../shared/models/planner_models.dart';
 import '../../auth/application/auth_controller.dart';
 import '../../planner/application/onboarding_controller.dart';
 import '../../planner/application/planner_session.dart';
+import '../../planner/domain/capacity.dart' as capacity;
 import '../../planner/domain/plan_cycle.dart';
 import '../../planner/domain/planner_format.dart';
 import '../../planner/presentation/constraint_dialog.dart';
 import '../../planner/presentation/planner_dialogs.dart';
 import '../../planner/presentation/planner_page_state.dart';
 import '../../shell/app_shell.dart';
+import 'capacity_overrides_dialog.dart';
 
 /// Web `/settings` — study information, scheduling boundaries, course priority,
 /// data management, account and sync state.
@@ -456,83 +458,118 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     ),
   );
 
-  Widget _boundaryPanel(PlannerData data, TextTheme text) => PlannerPanel(
-    title: '每日可用时间与排程边界',
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        const Text('一周七天的可用学习时间；某天为 0 时该天不生成学习安排。'),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 12,
-          runSpacing: 12,
-          children: [
-            for (final (key, label) in _weekDays)
-              SizedBox(
-                width: 150,
-                child: TextFormField(
-                  key: ValueKey('settings-weekly-$_weekVersion-$key'),
-                  controller: _weekly[key],
-                  keyboardType: TextInputType.number,
-                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  decoration: InputDecoration(
-                    labelText: label,
-                    suffixText: '分钟',
+  Widget _boundaryPanel(PlannerData data, TextTheme text) {
+    final net = data.profile.capacityBasis == CapacityBasis.net;
+    final assumptions = capacity.capacityAssumptionLabel(data.profile);
+    return PlannerPanel(
+      title: '每日可用时间与排程边界',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(
+            net
+                ? '一周七天的净学习时间：输入的就是真正能用于学习的净预算，程序不再机械扣除机动。某天为 0 时该天不生成学习安排。'
+                : '一周七天的可用学习时间；某天为 0 时该天不生成学习安排。旧计划沿用总预算口径。',
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              for (final (key, label) in _weekDays)
+                SizedBox(
+                  width: 150,
+                  child: TextFormField(
+                    key: ValueKey('settings-weekly-$_weekVersion-$key'),
+                    controller: _weekly[key],
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: InputDecoration(
+                      labelText: label,
+                      suffixText: net ? '净分钟' : '分钟',
+                    ),
                   ),
                 ),
-              ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        DropdownButtonFormField<int>(
-          initialValue: _granularity,
-          decoration: const InputDecoration(labelText: '时间粒度（分钟）'),
-          items: const [
-            DropdownMenuItem(value: 30, child: Text('30')),
-            DropdownMenuItem(value: 60, child: Text('60')),
-          ],
-          onChanged: (value) => setState(() => _granularity = value ?? 30),
-        ),
-        const SizedBox(height: 12),
-        _NumberField(
-          controller: _buffer,
-          label: '每日机动时间（分钟）',
-          helper: '30 至 180，排程至少保留 30 分钟',
-        ),
-        const SizedBox(height: 12),
-        _NumberField(
-          controller: _subjectLimit,
-          label: '单科每日上限（分钟）',
-          helper: '60 至 480，实际排程最多按 240 分钟计算',
-        ),
-        const SizedBox(height: 12),
-        Row(
-          children: [
-            Expanded(
-              child: _NumberField(
-                controller: _startMinute,
-                label: '学习开始（分钟）',
-                helper: '480 = 08:00',
-              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<int>(
+            initialValue: _granularity,
+            decoration: const InputDecoration(labelText: '时间粒度（分钟）'),
+            items: const [
+              DropdownMenuItem(value: 30, child: Text('30')),
+              DropdownMenuItem(value: 60, child: Text('60')),
+            ],
+            onChanged: (value) => setState(() => _granularity = value ?? 30),
+          ),
+          const SizedBox(height: 12),
+          if (!net) ...[
+            _NumberField(
+              controller: _buffer,
+              label: '每日机动时间（分钟）',
+              helper: '30 至 180，排程至少保留 30 分钟',
             ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _NumberField(
-                controller: _endMinute,
-                label: '学习结束（分钟）',
-                helper: '1320 = 22:00',
-              ),
-            ),
+            const SizedBox(height: 12),
           ],
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          '每天只安排事项和时长，不指定学习开始时间。固定课程、考试和休息可保留具体时间。',
-          style: TextStyle(color: PlannerColors.muted, fontSize: 12),
-        ),
-      ],
-    ),
-  );
+          _NumberField(
+            controller: _subjectLimit,
+            label: '单科每日上限（分钟）',
+            helper: '60 至 480，实际排程最多按 240 分钟计算',
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: _NumberField(
+                  controller: _startMinute,
+                  label: '学习开始（分钟）',
+                  helper: '480 = 08:00',
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _NumberField(
+                  controller: _endMinute,
+                  label: '学习结束（分钟）',
+                  helper: '1320 = 22:00',
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            '每天只安排事项和时长，不指定学习开始时间。固定课程、考试和休息可保留具体时间。',
+            style: TextStyle(color: PlannerColors.muted, fontSize: 12),
+          ),
+          const Divider(height: 24),
+          Text('容量假设与例外', style: text.titleSmall),
+          const SizedBox(height: 4),
+          if (assumptions.isNotEmpty)
+            Text(
+              assumptions,
+              key: const ValueKey('settings-capacity-assumptions'),
+              style: const TextStyle(color: PlannerColors.muted, fontSize: 12),
+            )
+          else
+            const Text(
+              '当前按默认每周模板逐日计算容量。',
+              key: ValueKey('settings-capacity-assumptions'),
+              style: TextStyle(color: PlannerColors.muted, fontSize: 12),
+            ),
+          const SizedBox(height: 8),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              key: const ValueKey('settings-capacity-editor'),
+              onPressed: () => CapacityOverridesDialog.show(context),
+              icon: const Icon(Icons.tune_outlined),
+              label: const Text('管理特定周与日期容量'),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   Widget _priorityPanel(PlannerData data, TextTheme text) => PlannerPanel(
     title: '课程优先级',

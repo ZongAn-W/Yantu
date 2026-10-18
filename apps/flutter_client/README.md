@@ -363,7 +363,19 @@ await coordinator.undoReplan();
 await coordinator.recordDayMinutes(taskId, '2026-10-17', 90);
 ```
 
-`ReplanMode.overcompleted` 可带 `excessMinutes`，只从未来 7 天提前。未完成只重排现有块在未来 14 天内的待完成部分，不自动补齐整项预计需求。每日最多 480 分钟预算扣至少 30 分钟缓冲，同科最多 240；daily 模式固定事件含休息按并集扣容量，timed 模式休息只占时间窗口、不扣同一预算。已执行记录留在原日，固定/已完成/窗口外块保护。
+`ReplanMode.overcompleted` 可带 `excessMinutes`，只从未来 7 天提前。未完成只重排现有块在未来 14 天内的待完成部分，不自动补齐整项预计需求。容量口径按 `capacity_basis` 解析：旧数据为 `gross_buffer`（每日预算扣至少 30 分钟缓冲），新计划为 `net`（净学习预算，不再机械扣机动）；同科最多 240 分钟，支持周/日期覆盖与显式休息日。daily 模式固定事件含休息按并集扣容量，timed 模式休息只占时间窗口、不扣同一预算。已执行记录留在原日，固定/已完成/窗口外块保护。
+
+全周期计划的容量/周期调整使用 `reschedulePlan` 覆盖整个剩余周期，不被 14 天边界截断；续排下一周期一次生成完整周期安排。旧 rolling 计划（`planning.rolling == true`）通过一次“补全本周期安排”预览确认后写入 `mode: "full"`、`rolling: false`、`detail_days = 周期天数`、`detailed_until = 周期末`、`forecast: null`；旧计划在确认前不改动。全周期计划不再显示“其后待细化”的预测区间。
+
+## 8.1 三类学习与临时学习（本次升级）
+
+- `TimeLog.relation` 记录计时发生时的执行关系：`scheduled`（今日原定）、`extra`（已有事项加学/超额）、`ad_hoc`（全新临时学习）、`legacy_unknown`（旧数据缺失）；与 `LogSource.timer/manual` 相互独立。原定学习按开始时的剩余额度写入 `quotaMinutes`，超出额度自动拆为 `extra` 记录（同一 `sessionId`，秒数不重复）；跨上海零点按日期拆分并重新判断新日期的执行关系。
+- `TimeLog.taskId` 可为空；临时学习使用 `ad_hoc_id` 指向 `PlannerData.adHocLearnings`（名称即可开始，可归档、可记录转换后的正式事项）。同名临时学习在未归档时可复用，不重复建实体。
+- 今日页的“开始学习”入口提供三类选择：今日安排、已有事项加学（支持搜索与课程/状态筛选，已完成事项以复习语义计时）、临时学习（填写名称即可，可选分类）。运行中只有一个计时会话，切换时先可靠保存原会话；退出登录、冲突选择、离线重试与失败恢复沿用既有保护。
+- 容量分解 `dayCapacityBreakdown` 区分 `capacity/actual/reserved/available/over`：实际投入每段只算一次，已执行部分不会重复扣减；原定达成只按原定事项封顶，加学与临时学习计入实际投入但不冒充原定完成。示例：净容量 120、数学原定 60 已学 30、摄影临时 20 → 实际 50、预留 30、新增可安排 40。
+- 临时学习可转为正式事项或关联已有事项：保留原日志与会话标识、真实起止和分钟数，只更新归属；临时实体归档并记录 `converted_task_id`，`relation` 保持 `ad_hoc` 以解释历史；重复确认、同步和重试不重复累计。
+
+容量解析核心位于 `lib/features/planner/domain/capacity.dart`，与 `apps/api/src/capacity.ts` 共用 `packages/planner-engine/fixtures/capacity-cases.json` 的跨端用例；页面、排程、校验与统计必须调用同一解析结果，不各自计算。
 
 预览/取消不落盘。确认和撤销先经协调器串行校验、持久化再同步；期间任务、日志、设置、固定事件或建议变化使确认过期。新本机 run 的可选 `local_undo_guard` 随 JSON/存储/API 保存，重启后修改数据仍阻止撤销覆盖。旧 TypeScript run 沿用其块快照保护和可选 `task_status_before/after`；没有完整旧输入时无法追溯增强保护。`study_edits.dart` 仅为兼容转发，今日学习记录已使用 domain。
 

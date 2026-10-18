@@ -134,13 +134,36 @@ class PlannerSession {
     return outcome!;
   }
 
-  Future<void> moveTaskDay(
-    List<ScheduleBlock> blocks,
-    String targetDate,
-  ) async {
-    final result = day_ops.moveTaskDay(data, blocks, targetDate);
-    if (!result.ok) throw StateError(result.error!);
-    await edit((data) => data.copyWith(blocks: result.blocks));
+  /// Moves the day the dialog opened on. Only the stable ids and the expected
+  /// source date are handed to the serialized edit; the current records are read
+  /// from the latest state, so a stale snapshot cannot overwrite newer plans.
+  Future<void> moveTaskDay(List<ScheduleBlock> blocks, String targetDate) =>
+      moveTaskDayByIds(
+        [for (final block in blocks) block.id],
+        targetDate,
+        sourceDate: blocks.isEmpty ? targetDate : blocks.first.date,
+      );
+
+  /// Moves the given records after resolving them from the latest serialized
+  /// plan. Fails with a user-understandable [StateError] without writing anything
+  /// when a record was deleted, changed day or became protected meanwhile.
+  Future<void> moveTaskDayByIds(
+    Iterable<String> blockIds,
+    String targetDate, {
+    required String sourceDate,
+  }) async {
+    final ids = [...blockIds];
+    if (ids.isEmpty) return;
+    await edit((current) {
+      final result = day_ops.moveTaskDayByIds(
+        current,
+        ids,
+        targetDate,
+        expectedSourceDate: sourceDate,
+      );
+      if (!result.ok) throw StateError(result.error!);
+      return current.copyWith(blocks: result.blocks);
+    });
   }
 
   Future<void> createFixedEvent(FixedEvent event) =>
@@ -158,6 +181,44 @@ class PlannerSession {
 
   Future<void> recordDayMinutes(String taskId, String date, int minutes) =>
       coordinator.recordDayMinutes(taskId, date, minutes);
+
+  /// 把临时学习转为新的正式事项：原日志/会话标识与用时保持不变，只补上事项归属，
+  /// 临时实体归档并记录 `converted_task_id`；重复确认不会复制分钟。
+  Future<day_ops.AdHocConvertResult> convertAdHocToTask({
+    required String adHocId,
+    required TaskDraft draft,
+  }) async {
+    late day_ops.AdHocConvertResult result;
+    await edit((current) {
+      result = day_ops.convertAdHocToTask(
+        current,
+        adHocId,
+        draft,
+        taskId: scheduler.SchedulerRuntime().ids(),
+        updatedAt: nowIso(),
+      );
+      return result.data;
+    });
+    return result;
+  }
+
+  /// 把临时学习的真实记录关联到已有事项，历史仍标记为临时学习关系。
+  Future<day_ops.AdHocConvertResult> linkAdHocToTask({
+    required String adHocId,
+    required String taskId,
+  }) async {
+    late day_ops.AdHocConvertResult result;
+    await edit((current) {
+      result = day_ops.linkAdHocToTask(
+        current,
+        adHocId,
+        taskId,
+        updatedAt: nowIso(),
+      );
+      return result.data;
+    });
+    return result;
+  }
 
   Future<void> saveDailyReview(
     String date, {
@@ -196,8 +257,14 @@ class PlannerSession {
     required String from,
     required String to,
   }) async {
-    final result = generatePlanBlocks(data, from: from, to: to);
-    await edit((_) => result.data);
+    // Generate inside the serialized edit so the result is computed from the
+    // latest plan; computing outside and writing the whole snapshot back would
+    // drop edits or sync changes that landed while the dialog was open.
+    late PlanGenerationResult result;
+    await edit((current) {
+      result = generatePlanBlocks(current, from: from, to: to);
+      return result.data;
+    });
     return result;
   }
 
