@@ -488,12 +488,9 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
             child: FilledButton.icon(
               key: const Key('adjust-apply'),
               onPressed: enabled ? _applyReschedule : null,
-              icon: _applying
-                  ? const SizedBox.square(
-                      dimension: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    )
-                  : const Icon(Icons.auto_fix_high),
+              icon: Icon(
+                _applying ? Icons.hourglass_top : Icons.auto_fix_high,
+              ),
               label: Text(_applying ? '正在重排…' : '一键调整后续计划'),
             ),
           ),

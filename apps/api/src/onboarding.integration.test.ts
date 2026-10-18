@@ -66,6 +66,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)("persisted onboarding", () 
     const { shanghaiDate: cycleToday } = await import("./onboarding-ai.js");
     const { dateAdd: cycleAdd } = await import("./planner.js");
     expect(session.recommendations.target_date).toBe("");
+    // 本会话没有形成初试年份（“2027年”回答落在专业问题上），推荐值仍用28天默认。
     expect(session.recommendations.plan_end_date).toBe(cycleAdd(cycleToday(), 27));
     await next({ type: "generate_courses" });
     expect(session.items).toEqual([]);

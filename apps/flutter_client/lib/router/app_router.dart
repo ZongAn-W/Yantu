@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../features/adjust/presentation/adjust_plan_page.dart';
 import '../features/auth/application/auth_controller.dart';
 import '../features/auth/presentation/auth_page.dart';
 import '../features/calendar/presentation/calendar_page.dart';
@@ -24,6 +25,7 @@ abstract final class AppRoutes {
   static const calendar = '/calendar';
   static const tasks = '/tasks';
   static const progress = '/progress';
+  static const adjust = '/adjust';
   static const interview = '/interview';
   static const settings = '/settings';
 }
@@ -172,6 +174,13 @@ class _PlannerRouter {
         builder: (context, _) => const AppShell(
           selectedPath: AppRoutes.progress,
           child: ProgressPage(),
+        ),
+      ),
+      GoRoute(
+        path: AppRoutes.adjust,
+        builder: (context, _) => const AppShell(
+          selectedPath: AppRoutes.adjust,
+          child: AdjustPlanPage(),
         ),
       ),
       GoRoute(

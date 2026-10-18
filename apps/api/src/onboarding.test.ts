@@ -162,6 +162,16 @@ describe("guided onboarding", () => {
     expect(session.recommendations.plan_end_date).toBe("2026-11-13");
   });
 
+  it("keeps the 28-day default when the year answer lands on a different question", async () => {
+    // 与 onboarding.integration.test.ts 的确认计划用例保持同一回答序列：
+    // “2027年”落在专业问题上，不构成初试年份，推荐值仍应是 28 天默认。
+    let session = newSession();
+    for (const text of ["考研", "上海交通大学", "计算机", "2027年", "高数一轮"]) session = await answer(session, text);
+    expect(session.learning_context.timing.exam_year).toBeNull();
+    expect(session.recommendations.target_date).toBe("");
+    expect(session.recommendations.plan_end_date).toBe("2026-11-13");
+  });
+
   it("builds fallback courses from the real goal instead of exam subjects", async () => {
     const skillSession = withMinimumAnswers(await answer(newSession(), "从零学习 Python，能独立处理 CSV 并完成简单的数据分析练习"));
     const skill = await advanceOnboarding(skillSession, { type: "generate_courses" });

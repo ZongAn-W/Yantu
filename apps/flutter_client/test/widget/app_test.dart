@@ -9,6 +9,7 @@ import 'package:sjtu_study_planner_client/core/http/api_client.dart';
 import 'package:sjtu_study_planner_client/core/providers.dart';
 import 'package:sjtu_study_planner_client/core/config/app_config.dart';
 import 'package:sjtu_study_planner_client/router/app_router.dart';
+import 'package:sjtu_study_planner_client/features/adjust/presentation/adjust_plan_page.dart';
 import 'package:sjtu_study_planner_client/features/planner/application/planner_sync.dart';
 import 'package:sjtu_study_planner_client/core/storage/identity_store.dart';
 import 'package:sjtu_study_planner_client/core/storage/storage_repository.dart';
@@ -400,6 +401,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(router.routeInformationProvider.value.uri.path, '/progress');
     expect(find.text('学习进度'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(NavigationDestination, '调整'));
+    await tester.pumpAndSettle();
+    expect(router.routeInformationProvider.value.uri.path, '/adjust');
+    expect(find.byType(AdjustPlanPage), findsOneWidget);
 
     await tester.tap(find.widgetWithText(NavigationDestination, '设置'));
     await tester.pumpAndSettle();

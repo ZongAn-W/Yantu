@@ -57,6 +57,7 @@ const shellDestinations = <ShellDestination>[
     label: '进度',
     icon: Icons.bar_chart_outlined,
   ),
+  ShellDestination(path: '/adjust', label: '调整', icon: Icons.tune_outlined),
   ShellDestination(path: '/interview', label: '访谈', icon: Icons.forum_outlined),
   ShellDestination(
     path: '/settings',

@@ -89,25 +89,28 @@ function fallbackRecommendations(session: OnboardingSession): OnboardingRecommen
   const intent = latestDateIntent(session);
   const profileDate = session.profile.target_date ?? "";
   let targetDate = "";
+  // 已明确但可能已过去的目标日期：只用于判断能否按初试年份估算，不写回推荐值。
+  let knownTargetDate = "";
   let targetReason = "";
   let estimated = true;
   if (intent && "cleared" in intent) {
     targetDate = "";
     targetReason = "你选择了暂不设置目标日期，本次只安排有限规划周期。";
   } else if (intent && "date" in intent) {
-    targetDate = intent.date;
+    targetDate = knownTargetDate = intent.date;
     targetReason = "使用你在访谈中提供的日期；这是你的目标日期，正式通知以考试或课程公告为准。";
     estimated = !/已确认|已确定|准确/.test(text);
   } else if (profileDate && profileDate >= today) {
-    targetDate = profileDate;
+    targetDate = knownTargetDate = profileDate;
     targetReason = session.profile.target_date_confirmed ? "使用你已确认的目标日期。" : "使用你已明确的目标日期；以正式通知为准。";
     estimated = !session.profile.target_date_confirmed;
   } else {
     targetDate = "";
+    knownTargetDate = profileDate;
     targetReason = "尚未确定目标日期，先安排一段有限规划周期；你也可以稍后在设置中补充。";
   }
   const examYear = session.profile.goal_type === "exam" ? session.learning_context?.timing?.exam_year ?? null : null;
-  const horizon = planHorizon(today, targetDate, examYear);
+  const horizon = planHorizon(today, knownTargetDate, examYear);
 
   let weekday = 120, weekend = 180;
   let timeReason = "根据当前目标，先以工作日2小时、周末3小时作为可调整的学习预算。";
