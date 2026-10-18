@@ -19,6 +19,10 @@ SMTP_FROM=你的QQ邮箱@qq.com
 
 ## 升级已有服务器
 
+日常升级推荐用仓库根目录的一键部署（`npm run deploy`，见根 README「一键部署」）：它自动完成构建、打包、上传和服务器脚本执行。本节的命令保留为手动流程。
+
+已有服务器如果从未配置过 SMTP，代码升级后注册仍会返回 `503 验证码邮件服务暂未配置`：需要先在服务器 `apps/api/.env` 补上上一节的 `SMTP_USER` / `SMTP_PASS` / `SMTP_FROM`（发布包按设计永远不包含这些密钥），再重建 API 容器。`upgrade-server.sh --check` 对未配置 SMTP 只告警、不阻断发布。
+
 先备份数据库，并同步本次修改的源码、依赖清单、`package-lock.json`、Compose 配置和 `db/migrations/`。保留服务器已有 `.env` 和数据库卷，不重新运行 `init-server-env.mjs`，不重新初始化数据库。
 
 在服务器项目根目录构建新 API 镜像（如服务器无法访问镜像仓库，可沿用之前本机构建、上传镜像的流程）：

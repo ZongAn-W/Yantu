@@ -176,6 +176,31 @@ JSON 导出与恢复保留计划、事项说明、实际日志、执行关系、
 - `apps/api/setup-ip-web.sh`：Nginx 静态根目录使用 Flutter Web 产物。
 - [测试报告](TEST_REPORT.md) 与 [迁移设计](FLUTTER_MIGRATION_DESIGN.md)：包含历史阶段记录；当前维护范围以本文为准。
 
+### 一键部署（推荐）
+
+日常发布不再手动打包、上传和敲服务器命令，一条命令完成：
+
+```powershell
+# 首次：生成部署密钥，并按打印的提示在服务器（阿里云 Workbench）执行一次公钥安装命令
+npm run deploy:key
+
+# 之后每次发布（本机执行）
+npm run deploy
+```
+
+`npm run deploy` 会依次：TypeScript 类型检查 → 构建 Flutter Web（Release，编译进 `API_BASE_URL`）→ 打包（只含 API 源码 + Web，约 26MB，不含 `.env`/数据库/镜像）→ `scp` 上传 → 服务器运行 `upgrade-server.sh --check` 和 `--apply` → 从本机验证线上 `/api/health`。服务器自己构建 API 镜像；服务器 `.env`、数据库容器和 `planner-db` 卷保持不动；失败自动回滚，备份在 `/opt/sjtu-study-planner/backups/<发布ID>-*`。
+
+常用选项：
+
+```powershell
+npm run deploy -- -CheckOnly   # 只做服务器只读检查，不改任何东西
+npm run deploy -- -SkipBuild   # 复用现有 apps/flutter_client/build/web
+npm run deploy -- -FullCheck   # 额外运行 npm test（Flutter 测试默认跳过）
+npm run deploy -- -ReleaseId 20261018-1600
+```
+
+运行脚本见 [tools/deploy-server.ps1](tools/deploy-server.ps1)、[tools/prepare-release.mjs](tools/prepare-release.mjs)、[tools/setup-deploy-key.ps1](tools/setup-deploy-key.ps1)；服务器侧脚本模板在 [tools/server-release/](tools/server-release/)。`upgrade-server.sh --check` 现在会额外校验：`DATABASE_URL` 不能指向 `localhost`（容器内必须是 `db`），以及服务器 `.env` 的 `SMTP_USER`/`SMTP_PASS` 未配置时给出警告。
+
 客户端仅注入公开的 `API_BASE_URL`。数据库凭据、JWT secret、AI key、SMTP 授权码和签名材料只留在服务器或构建机。
 
 ## AI 规划升级

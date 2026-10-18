@@ -13,6 +13,9 @@
     "api:build": "npm run build -w @planner/api",
     "api:start": "npm run start -w @planner/api",
     "build": "powershell.exe -NoLogo -NoProfile -File apps/flutter_client/tool/build-release.ps1 -Target Web",
+    "deploy": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tools/deploy-server.ps1",
+    "deploy:check": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tools/deploy-server.ps1 -CheckOnly",
+    "deploy:key": "powershell.exe -NoLogo -NoProfile -ExecutionPolicy Bypass -File tools/setup-deploy-key.ps1",
     "test": "vitest run",
     "typecheck": "tsc --noEmit && tsc --noEmit -p apps/api/tsconfig.json"
   },
