@@ -47,6 +47,7 @@ done
 [[ -f $release_dir/release.json ]] || die "Release is incomplete: release.json missing."
 [[ -f $source_dir/apps/api/Dockerfile ]] || die "Release source is incomplete: Dockerfile missing."
 [[ -f $source_dir/apps/api/db/migrations/202610200001_learning_relations_capacity.sql ]] || die "Release source is missing the learning-relations migration."
+[[ -f $source_dir/apps/api/db/migrations/202610220001_account_deletion.sql ]] || die "Release source is missing the account-deletion migration."
 [[ -f $release_web/index.html && -f $release_web/main.dart.js ]] || die "Release frontend is incomplete (index.html / main.dart.js)."
 [[ -f $env_file ]] || die "Existing server .env was not found: $env_file. Nothing was changed."
 [[ -f $compose_file ]] || die "Existing Compose file was not found: $compose_file. Nothing was changed."
@@ -248,12 +249,12 @@ say "API health check passed."
 migration_ok=0
 for _ in $(seq 1 30); do
   applied=$("${compose[@]}" exec -T db psql -U planner -d planner -Atc \
-    "select count(*) from schema_migrations where name='202610200001_learning_relations_capacity.sql'" 2>/dev/null | tr -d '[:space:]' || true)
+    "select count(*) from schema_migrations where name='202610220001_account_deletion.sql'" 2>/dev/null | tr -d '[:space:]' || true)
   if [[ $applied == 1 ]]; then migration_ok=1; break; fi
   sleep 2
 done
-(( migration_ok == 1 )) || die "New migration 202610200001_learning_relations_capacity.sql was not recorded by the API."
-say "New database migration applied: 202610200001_learning_relations_capacity.sql"
+(( migration_ok == 1 )) || die "New migration 202610220001_account_deletion.sql was not recorded by the API."
+say "New database migration applied: 202610220001_account_deletion.sql"
 [[ $("${compose[@]}" ps -q db) == "$db_id" ]] || die "Database container identity unexpectedly changed."
 say "Database container was retained (no volume change)."
 

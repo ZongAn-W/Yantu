@@ -186,6 +186,8 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)("registration against Postg
     const missingUser = await new SignJWT({ type: "refresh", email: input.email, username: "removed" })
       .setProtectedHeader({ alg: "HS256" }).setSubject(randomUUID()).setJti(randomUUID()).setExpirationTime("30d")
       .sign(new TextEncoder().encode("auth-test-refresh-01234567890123456789"));
-    expect((await post("/api/auth/token/refresh", { refreshToken: missingUser })).statusCode).toBe(401);
+    const deleted = await post("/api/auth/token/refresh", { refreshToken: missingUser });
+    expect(deleted.statusCode).toBe(410);
+    expect(deleted.json().code).toBe("ACCOUNT_DELETED");
   });
 });

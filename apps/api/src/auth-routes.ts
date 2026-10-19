@@ -1,6 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
-import { clearSession, issueBearerSession, issueSession, loginUser, refreshBearerSession, refreshSession, revokeBearerSession, wantsBearer } from "./auth.js";
+import { clearSession, issueBearerSession, issueSession, loginUser, refreshBearerSession, refreshSession, revokeBearerSession, userFromRequest, wantsBearer } from "./auth.js";
+import { AccountDeletionError, deleteAccount } from "./account-deletion.js";
 import { EmailSchema, RegistrationError, RegistrationSchema, registerWithCode, requestRegistrationCode } from "./registration.js";
 
 export async function authRoutes(app: FastifyInstance) {
@@ -58,6 +59,21 @@ export async function authRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.code(400).send({ error: "缺少刷新凭据" });
     await revokeBearerSession(parsed.data.refreshToken);
     return { ok: true };
+  });
+  app.post("/api/auth/delete-account", { config: { rateLimit: { max: 10, timeWindow: "15 minutes" } } }, async (request, reply) => {
+    const user = await userFromRequest(request, { allowDeleted: true });
+    if (!user) return reply.code(401).send({ error: "请先登录" });
+    const parsed = z.object({ password: z.string().min(1).max(200) }).strict().safeParse(request.body);
+    if (!parsed.success) return reply.code(400).send({ error: "请输入当前密码" });
+    try {
+      await deleteAccount(user.id, parsed.data.password);
+      clearSession(reply);
+      return { ok: true };
+    } catch (error) {
+      if (!(error instanceof AccountDeletionError)) throw error;
+      if (error.retryAfter) reply.header("Retry-After", error.retryAfter);
+      return reply.code(error.status).send({ error: error.message, ...(error.retryAfter ? { retryAfter: error.retryAfter } : {}) });
+    }
   });
   app.post("/api/auth/logout", async (_request, reply) => { clearSession(reply); return { ok: true }; });
 }

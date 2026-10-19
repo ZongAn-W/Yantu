@@ -15,6 +15,10 @@ class UnauthorizedFailure extends AppFailure {
   const UnauthorizedFailure([super.message = '登录已过期，请重新登录']);
 }
 
+class AccountDeletedFailure extends AppFailure {
+  const AccountDeletedFailure([super.message = '账号已注销，请重新登录']);
+}
+
 class ValidationFailure extends AppFailure {
   const ValidationFailure(super.message, {this.statusCode});
   final int? statusCode;

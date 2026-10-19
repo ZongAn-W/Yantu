@@ -41,7 +41,8 @@ class _FixtureSync implements SyncApi {
   int revision = 1;
 
   @override
-  Future<RemoteSnapshot> pull({int? revision}) async => RemoteSnapshot(data, this.revision);
+  Future<RemoteSnapshot> pull({int? revision}) async =>
+      RemoteSnapshot(data, this.revision);
 
   @override
   Future<RemoteSnapshot> push(
@@ -468,7 +469,13 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.text('开始计时'), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(TaskStudyTimer),
+        matching: find.text('开始计时'),
+      ),
+      findsOneWidget,
+    );
     expect(find.text('今日已完成'), findsNothing);
     expect(find.text('记录用时'), findsNothing);
     expect(find.text('修改用时'), findsNothing);

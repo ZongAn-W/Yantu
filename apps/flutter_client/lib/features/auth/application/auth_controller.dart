@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/providers.dart';
+import '../../../core/storage/account_data_store.dart';
 import '../data/auth_repository.dart';
 import '../../../core/errors/app_failure.dart';
 
@@ -22,6 +23,15 @@ final authControllerProvider = NotifierProvider<AuthController, AuthState>(
 /// aborts an explicit sign-out so no learned time is silently lost.
 typedef SessionEndHandler = Future<void> Function();
 
+class AccountDeletionParticipant {
+  const AccountDeletionParticipant({
+    required this.suspend,
+    required this.resume,
+  });
+  final Future<void> Function() suspend;
+  final void Function() resume;
+}
+
 class AuthState {
   const AuthState({
     this.user,
@@ -31,6 +41,7 @@ class AuthState {
     this.codeSending = false,
     this.retrySeconds = 0,
     this.notice,
+    this.deletionPending = false,
   });
 
   final AuthUser? user;
@@ -40,6 +51,9 @@ class AuthState {
   final bool codeSending;
   final int retrySeconds;
   final String? notice;
+  final bool deletionPending;
+  bool get deletionUncertain => deletionPending;
+  bool get deletingAccount => loading && user != null;
 
   AuthState copyWith({
     bool? loading,
@@ -47,6 +61,7 @@ class AuthState {
     bool? codeSending,
     int? retrySeconds,
     String? notice,
+    bool? deletionPending,
   }) => AuthState(
     user: user,
     loading: loading ?? this.loading,
@@ -55,6 +70,7 @@ class AuthState {
     codeSending: codeSending ?? this.codeSending,
     retrySeconds: retrySeconds ?? this.retrySeconds,
     notice: notice,
+    deletionPending: deletionPending ?? this.deletionPending,
   );
 }
 
@@ -64,6 +80,16 @@ class AuthController extends Notifier<AuthState> {
   int _generation = 0;
   Future<void>? _signingOut;
   final Set<SessionEndHandler> _sessionEndHandlers = {};
+  final Set<AccountDeletionParticipant> _deletionParticipants = {};
+  bool _deleting = false;
+  bool _endingDeletedAccount = false;
+  Future<void>? _deletedCleanup;
+
+  void addDeletionParticipant(AccountDeletionParticipant participant) =>
+      _deletionParticipants.add(participant);
+
+  void removeDeletionParticipant(AccountDeletionParticipant participant) =>
+      _deletionParticipants.remove(participant);
 
   /// Registered by durable local-state owners (currently the study timer). The
   /// handler list is intentionally small and ordered by registration.
@@ -83,10 +109,12 @@ class AuthController extends Notifier<AuthState> {
   AuthState build() {
     final client = ref.read(apiClientProvider);
     client.onSessionExpired = expire;
+    client.onAccountDeleted = accountDeleted;
     ref.onDispose(() {
       _disposed = true;
       _cooldown?.cancel();
       client.onSessionExpired = null;
+      client.onAccountDeleted = null;
     });
     Future.microtask(restoreSession);
     return const AuthState(restoring: true);
@@ -105,6 +133,10 @@ class AuthController extends Notifier<AuthState> {
         state = AuthState(user: user);
       }
     } catch (error) {
+      if (error is AccountDeletedFailure) {
+        await accountDeleted();
+        return;
+      }
       if (!_disposed && generation == _generation) {
         if (error is OfflineFailure || error is ServerFailure) {
           Map<String, dynamic>? cached;
@@ -148,7 +180,14 @@ class AuthController extends Notifier<AuthState> {
   );
 
   Future<AuthUser?> _run(Future<AuthUser> Function() operation) async {
-    if (state.loading || state.restoring || state.codeSending) return null;
+    if (_deleting ||
+        _endingDeletedAccount ||
+        _deletedCleanup != null ||
+        state.loading ||
+        state.restoring ||
+        state.codeSending) {
+      return null;
+    }
     final generation = ++_generation;
     state = state.copyWith(loading: true);
     try {
@@ -203,14 +242,131 @@ class AuthController extends Notifier<AuthState> {
   }
 
   Future<void> expire() async {
+    if (_endingDeletedAccount) return;
     _generation++;
     final failure = await _stopLocalState();
     if (_disposed) return;
     state = AuthState(
-      error: failure == null
-          ? null
-          : '登录会话已失效，但本机计时记录未能保存：$failure',
+      error: failure == null ? null : '登录会话已失效，但本机计时记录未能保存：$failure',
     );
+  }
+
+  /// Only a successful deletion response or ACCOUNT_DELETED may reach cleanup.
+  /// Connectivity failures keep the local data and leave writes suspended until
+  /// a retry establishes whether the server committed the deletion.
+  Future<bool> deleteAccount(String password) async {
+    final user = state.user;
+    if (user == null || state.loading || _deleting) return false;
+    _deleting = true;
+    final generation = ++_generation;
+    state = state.copyWith(loading: true);
+    var requestStarted = false;
+    try {
+      await _runSessionEndHandlers();
+      for (final participant in List.of(_deletionParticipants)) {
+        await participant.suspend();
+      }
+      requestStarted = true;
+      await ref.read(authRepositoryProvider).deleteAccount(password);
+      await _completeAccountDeletion(user);
+      return true;
+    } catch (error) {
+      final failure = ref.read(apiClientProvider).failureFrom(error);
+      final uncertain =
+          requestStarted &&
+          (failure is OfflineFailure ||
+              failure is ServerFailure ||
+              failure is ResponseFailure);
+      if (!uncertain) {
+        for (final participant in List.of(_deletionParticipants)) {
+          participant.resume();
+        }
+      }
+      if (!_disposed && generation == _generation) {
+        state = state.copyWith(
+          loading: false,
+          deletionPending: uncertain,
+          error: uncertain
+              ? '无法确认注销结果，请联网后重试。本机数据已保留，计时和同步已暂停。'
+              : !requestStarted
+              ? '注销前无法保存本机状态，请重试：$error'
+              : failure.message,
+        );
+      }
+      return false;
+    } finally {
+      _deleting = false;
+    }
+  }
+
+  Future<void> accountDeleted() async {
+    if (_deleting || _disposed) return;
+    await (_deletedCleanup ??= _cleanDeletedAccount().whenComplete(() {
+      _deletedCleanup = null;
+    }));
+  }
+
+  Future<void> _cleanDeletedAccount() async {
+    var user = state.user;
+    if (user == null) {
+      try {
+        final cached = await ref.read(identityStoreProvider).load();
+        if (cached != null) user = AuthUser.fromJson(cached);
+      } catch (_) {
+        // Even damaged local storage cannot keep a deleted account signed in.
+      }
+    }
+    try {
+      await _runSessionEndHandlers();
+    } catch (_) {
+      // The server has already deleted this account; its local session must end.
+    }
+    for (final participant in List.of(_deletionParticipants)) {
+      try {
+        await participant.suspend();
+      } catch (_) {
+        // Purge's durable marker also rejects delayed writes from this owner.
+      }
+    }
+    await _completeAccountDeletion(user);
+  }
+
+  Future<void> _completeAccountDeletion(AuthUser? user) async {
+    final client = ref.read(apiClientProvider);
+    final identity = ref.read(identityStoreProvider);
+    final store = ref.read(accountDataStoreProvider);
+    final scope = ref.read(appConfigProvider).apiBaseUrl;
+    _generation++;
+    _endingDeletedAccount = true;
+    if (!_disposed) state = const AuthState(loading: true);
+    Object? cleanupFailure;
+    try {
+      if (user != null) await store.purge(scope: scope, userId: user.id);
+    } catch (error) {
+      cleanupFailure = error;
+    }
+    try {
+      await identity.save(null);
+    } catch (error) {
+      cleanupFailure ??= error;
+    }
+    try {
+      await client.clearSession();
+    } catch (error) {
+      cleanupFailure ??= error;
+    } finally {
+      _endingDeletedAccount = false;
+    }
+    if (!_disposed) {
+      state = AuthState(
+        notice: cleanupFailure == null ? '账号已注销，云端数据和本机缓存已清理。' : null,
+        error: cleanupFailure == null
+            ? null
+            : cleanupFailure is LocalAccountCleanupIncomplete
+            ? '账号已注销。以下历史损坏文件无法自动清理，请手动逐个处理：\n${cleanupFailure.archivePaths.join('\n')}'
+            : '账号已注销，但本机缓存未能完整清理，请重新打开应用后重试清理。',
+      );
+    }
   }
 
   /// Stops durable local state before the session is dropped.
@@ -264,9 +420,7 @@ class AuthController extends Notifier<AuthState> {
     }
     if (_disposed || generation != _generation) return;
     state = AuthState(
-      notice: revokeFailure == null
-          ? null
-          : '已退出登录；云端会话撤销未完成，网络恢复后会自动清理。',
+      notice: revokeFailure == null ? null : '已退出登录；云端会话撤销未完成，网络恢复后会自动清理。',
     );
   }
 }

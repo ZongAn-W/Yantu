@@ -134,7 +134,8 @@ if [ "$apply" = "1" ]; then
   echo ""
   echo "=== upgrade-server.sh --apply ==="
   bash "$project/releases/$release_id/upgrade-server.sh" --apply
-  rm -f -- "$remote_tar" "$remote_sha"
+  rm -f -- "$remote_tar"
+  rm -f -- "$remote_sha"
 fi
 rm -f -- "__REMOTE_SCRIPT__"
 echo "REMOTE_DEPLOY_DONE release=$release_id apply=$apply"

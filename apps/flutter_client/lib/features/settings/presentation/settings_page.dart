@@ -12,9 +12,9 @@ import '../../planner/application/planner_session.dart';
 import '../../planner/domain/capacity.dart' as capacity;
 import '../../planner/domain/planner_format.dart';
 import '../../planner/presentation/planner_dialogs.dart';
-import '../../planner/presentation/planner_page_state.dart';
 import '../../shell/app_shell.dart';
 import 'capacity_overrides_dialog.dart';
+import 'delete_account_dialog.dart';
 
 /// Web `/settings` — study information, scheduling boundaries, course priority,
 /// data management, account and sync state.
@@ -122,35 +122,33 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     };
   }
 
-  ProfileSettingsDraft _draft(PlannerData data) => ProfileSettingsDraft.from(
-    data.profile,
-    today: shanghaiToday(),
-  ).copyWith(
-    goalText: _goalText.text.trim(),
-    goalType: _goalType,
-    goalSubtype: _goalSubtype.text.trim(),
-    targetDate: _targetDate.text.trim(),
-    targetDateConfirmed: _targetConfirmed,
-    planStartDate: _planStart.text.trim(),
-    planEndDate: _planEnd.text.trim(),
-    targetSchool: _school.text.trim(),
-    targetProgram: _program.text.trim(),
-    currentProgress: _progress.text.trim(),
-    constraintsText: _constraints.text.trim(),
-    weeklyMinutes: {
-      for (final (key, _) in _weekDays)
-        key: int.tryParse(_weekly[key]?.text.trim() ?? '') ?? 0,
-    },
-    bufferMinutes: _number(_buffer, data.profile.bufferMinutes),
-    subjectLimitMinutes: _number(
-      _subjectLimit,
-      data.profile.subjectLimitMinutes,
-    ),
-    studyStartMinute: _number(_startMinute, data.profile.studyStartMinute),
-    studyEndMinute: _number(_endMinute, data.profile.studyEndMinute),
-    granularityMinutes: _granularity,
-    priorities: _priorities,
-  );
+  ProfileSettingsDraft _draft(PlannerData data) =>
+      ProfileSettingsDraft.from(data.profile, today: shanghaiToday()).copyWith(
+        goalText: _goalText.text.trim(),
+        goalType: _goalType,
+        goalSubtype: _goalSubtype.text.trim(),
+        targetDate: _targetDate.text.trim(),
+        targetDateConfirmed: _targetConfirmed,
+        planStartDate: _planStart.text.trim(),
+        planEndDate: _planEnd.text.trim(),
+        targetSchool: _school.text.trim(),
+        targetProgram: _program.text.trim(),
+        currentProgress: _progress.text.trim(),
+        constraintsText: _constraints.text.trim(),
+        weeklyMinutes: {
+          for (final (key, _) in _weekDays)
+            key: int.tryParse(_weekly[key]?.text.trim() ?? '') ?? 0,
+        },
+        bufferMinutes: _number(_buffer, data.profile.bufferMinutes),
+        subjectLimitMinutes: _number(
+          _subjectLimit,
+          data.profile.subjectLimitMinutes,
+        ),
+        studyStartMinute: _number(_startMinute, data.profile.studyStartMinute),
+        studyEndMinute: _number(_endMinute, data.profile.studyEndMinute),
+        granularityMinutes: _granularity,
+        priorities: _priorities,
+      );
 
   static int _number(TextEditingController controller, int fallback) =>
       int.tryParse(controller.text.trim()) ?? fallback;
@@ -173,10 +171,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           .read(plannerSessionProvider)
           .edit((current) => applySettings(current, draft));
       if (mounted) {
-        setState(
-          () => _notice =
-              '学习目标与规划已保存；如需按新容量或周期重排未来安排，请到调整页使用一键调整后续计划。',
-        );
+        setState(() => _notice = '学习目标与规划已保存；如需按新容量或周期重排未来安排，请到调整页使用一键调整后续计划。');
       }
     } catch (error) {
       if (mounted) {
@@ -202,83 +197,153 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   @override
   Widget build(BuildContext context) {
-    return PlannerPageState(
-      builder: (context, snapshot) {
-        final data = snapshot.data!;
-        _seed(data);
-        final text = Theme.of(context).textTheme;
-        return PlannerPage(
-          title: '设置',
-          subtitle: '调整计划边界，保持排程符合你的实际生活。',
-          actions: [
-            PlannerPanel(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12,
-                vertical: 8,
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
+    final snapshot = ref.watch(plannerDataProvider);
+    final data = snapshot.data;
+    _seed(data);
+    final text = Theme.of(context).textTheme;
+    return PlannerPage(
+      title: '设置',
+      subtitle: '调整计划边界，保持排程符合你的实际生活。',
+      actions: [
+        PlannerPanel(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.circle, size: 10, color: syncTone(snapshot.status)),
+              const SizedBox(width: 6),
+              Text(syncLabels[snapshot.status] ?? '等待同步'),
+            ],
+          ),
+        ),
+      ],
+      children: [
+        _accountPanel(snapshot),
+        const SizedBox(height: 16),
+        if (_notice != null) ...[
+          PlannerNotice(_notice!, tone: PlannerNoticeTone.success),
+          const SizedBox(height: 12),
+        ],
+        if (_profileError != null) ...[
+          PlannerNotice(_profileError!, tone: PlannerNoticeTone.error),
+          const SizedBox(height: 12),
+        ],
+        if (snapshot.ready && !snapshot.blocked && data != null)
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final wide = constraints.maxWidth >= 1000;
+              final left = Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Icon(
-                    Icons.circle,
-                    size: 10,
-                    color: syncTone(snapshot.status),
-                  ),
-                  const SizedBox(width: 6),
-                  Text(syncLabels[snapshot.status] ?? '等待同步'),
+                  _goalPanel(data, text),
+                  const SizedBox(height: 16),
+                  _boundaryPanel(data, text),
                 ],
+              );
+              final right = Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _priorityPanel(data, text),
+                  const SizedBox(height: 16),
+                  _dataPanel(snapshot, text),
+                  const SizedBox(height: 16),
+                  _connectionPanel(snapshot, text),
+                ],
+              );
+              if (!wide) {
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [left, const SizedBox(height: 16), right],
+                );
+              }
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(child: left),
+                  const SizedBox(width: 16),
+                  Expanded(child: right),
+                ],
+              );
+            },
+          )
+        else ...[
+          PlannerPanel(
+            title: '学习计划',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (!snapshot.ready) ...[
+                  const LinearProgressIndicator(semanticsLabel: '正在读取本机计划'),
+                  const SizedBox(height: 12),
+                  const Text('正在读取本机计划…'),
+                ] else
+                  PlannerNotice(
+                    snapshot.message.isNotEmpty
+                        ? snapshot.message
+                        : snapshot.blocked
+                        ? '本地数据读取失败，已停止编辑和同步。请重新读取数据或从 JSON 备份恢复。'
+                        : '还没有读取到学习计划。可重试同步或从 JSON 备份恢复。',
+                    tone:
+                        snapshot.blocked || snapshot.status == SyncStatus.error
+                        ? PlannerNoticeTone.error
+                        : PlannerNoticeTone.info,
+                  ),
+              ],
+            ),
+          ),
+          if (snapshot.ready) ...[
+            const SizedBox(height: 16),
+            _dataPanel(snapshot, text),
+            const SizedBox(height: 16),
+            _connectionPanel(snapshot, text),
+          ],
+        ],
+      ],
+    );
+  }
+
+  Widget _accountPanel(PlannerSnapshot snapshot) {
+    final auth = ref.watch(authControllerProvider);
+    return PlannerPanel(
+      title: '账号管理',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (auth.user != null) ...[
+            Text(auth.user!.email),
+            const SizedBox(height: 8),
+          ],
+          const Text('注销后将永久删除账号和学习数据，且无法恢复。'),
+          if (auth.deletionPending) ...[
+            const SizedBox(height: 12),
+            const PlannerNotice(
+              '注销结果尚未确认，计时和同步已暂停。请联网后再次点击“注销账号”确认结果。',
+              tone: PlannerNoticeTone.warning,
+            ),
+          ],
+          const SizedBox(height: 12),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              key: const ValueKey('settings-delete-account'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: PlannerColors.danger,
               ),
+              onPressed:
+                  auth.user == null || auth.loading || auth.deletingAccount
+                  ? null
+                  : () => DeleteAccountDialog.show(
+                      context,
+                      onExport: snapshot.data == null
+                          ? null
+                          : () => ref.read(plannerSessionProvider).exportJson(),
+                    ),
+              icon: const Icon(Icons.person_remove_outlined),
+              label: const Text('注销账号'),
             ),
-          ],
-          children: [
-            if (_notice != null) ...[
-              PlannerNotice(_notice!, tone: PlannerNoticeTone.success),
-              const SizedBox(height: 12),
-            ],
-            if (_profileError != null) ...[
-              PlannerNotice(_profileError!, tone: PlannerNoticeTone.error),
-              const SizedBox(height: 12),
-            ],
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final wide = constraints.maxWidth >= 1000;
-                final left = Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _goalPanel(data, text),
-                    const SizedBox(height: 16),
-                    _boundaryPanel(data, text),
-                  ],
-                );
-                final right = Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    _priorityPanel(data, text),
-                    const SizedBox(height: 16),
-                    _dataPanel(snapshot, text),
-                    const SizedBox(height: 16),
-                    _connectionPanel(snapshot, text),
-                  ],
-                );
-                if (!wide) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [left, const SizedBox(height: 16), right],
-                  );
-                }
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(child: left),
-                    const SizedBox(width: 16),
-                    Expanded(child: right),
-                  ],
-                );
-              },
-            ),
-          ],
-        );
-      },
+          ),
+        ],
+      ),
     );
   }
 
@@ -401,16 +466,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           const SizedBox(height: 12),
           TextField(
             controller: _school,
-            decoration: const InputDecoration(
-              labelText: '院校或机构（可选）',
-            ),
+            decoration: const InputDecoration(labelText: '院校或机构（可选）'),
           ),
           const SizedBox(height: 12),
           TextField(
             controller: _program,
-            decoration: const InputDecoration(
-              labelText: '专业或方向（可选）',
-            ),
+            decoration: const InputDecoration(labelText: '专业或方向（可选）'),
           ),
         ],
         const SizedBox(height: 12),
@@ -419,7 +480,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           icon: Icons.save_outlined,
           onPressed: _saveProfile,
           onError: (error) => setState(
-            () => _profileError = error is StateError ? error.message : '$error',
+            () =>
+                _profileError = error is StateError ? error.message : '$error',
           ),
         ),
       ],

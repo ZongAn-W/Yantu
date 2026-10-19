@@ -115,11 +115,7 @@ Future<void> waitForSyncIdle(
       DateTime.now().isBefore(deadline)) {
     await Future<void>.delayed(const Duration(milliseconds: 5));
   }
-  expect(
-    coordinator.busy || coordinator.pending,
-    isFalse,
-    reason: '同步未在超时前完成',
-  );
+  expect(coordinator.busy || coordinator.pending, isFalse, reason: '同步未在超时前完成');
 }
 
 /// Lets the coordinator's fire-and-forget sync cycle finish before the next step.
@@ -159,6 +155,35 @@ void main() {
     retryInterval: null,
     uploadDebounce: uploadDebounce,
     uploadMaxWait: uploadMaxWait,
+  );
+
+  test(
+    'deletion suspension drains a pull and blocks writes until resumed',
+    () async {
+      final coordinator = create();
+      addTearDown(coordinator.dispose);
+      await coordinator.initialize();
+      final gate = Completer<void>();
+      remote.pullGate = gate;
+      final syncing = coordinator.sync();
+      await settle();
+      var drained = false;
+      final suspension = coordinator.suspendForAccountDeletion().then(
+        (_) => drained = true,
+      );
+      await settle();
+      expect(drained, isFalse);
+      gate.complete();
+      await syncing;
+      await suspension;
+      final pulls = remote.pulls;
+      await coordinator.sync();
+      expect(remote.pulls, pulls);
+      await expectLater(coordinator.edit((data) => data), throwsStateError);
+      coordinator.resumeAfterAccountDeletionFailure();
+      await coordinator.sync();
+      expect(remote.pulls, greaterThan(pulls));
+    },
   );
 
   test(
@@ -475,9 +500,8 @@ void main() {
       final pushesBefore = remote.pushes;
       final started = DateTime.now();
       await coordinator.edit(
-        (data) => data.copyWith(
-          profile: data.profile.copyWith(targetSchool: '快速上传'),
-        ),
+        (data) =>
+            data.copyWith(profile: data.profile.copyWith(targetSchool: '快速上传')),
       );
       await coordinator.sync();
       final elapsed = DateTime.now().difference(started);
@@ -515,20 +539,23 @@ void main() {
     expect(coordinator.status, SyncStatus.connected);
   });
 
-  test('an old server that ignores the revision parameter still works', () async {
-    final coordinator = create();
-    addTearDown(coordinator.dispose);
-    await coordinator.initialize();
-    // returnUnchanged 保持 false：模拟老服务端忽略 ?revision，返回完整文档。
-    remote.data = remote.data!.copyWith(
-      profile: remote.data!.profile.copyWith(targetSchool: '老服务端完整文档'),
-    );
-    remote.revision++;
-    await coordinator.sync();
-    expect(remote.pullRevisions.last, isNot(isNull));
-    expect(coordinator.data!.profile.targetSchool, '老服务端完整文档');
-    expect(coordinator.status, SyncStatus.connected);
-  });
+  test(
+    'an old server that ignores the revision parameter still works',
+    () async {
+      final coordinator = create();
+      addTearDown(coordinator.dispose);
+      await coordinator.initialize();
+      // returnUnchanged 保持 false：模拟老服务端忽略 ?revision，返回完整文档。
+      remote.data = remote.data!.copyWith(
+        profile: remote.data!.profile.copyWith(targetSchool: '老服务端完整文档'),
+      );
+      remote.revision++;
+      await coordinator.sync();
+      expect(remote.pullRevisions.last, isNot(isNull));
+      expect(coordinator.data!.profile.targetSchool, '老服务端完整文档');
+      expect(coordinator.status, SyncStatus.connected);
+    },
+  );
 
   test(
     'a remote change during a pending edit still surfaces a conflict',
@@ -537,9 +564,8 @@ void main() {
       addTearDown(coordinator.dispose);
       await coordinator.initialize();
       await coordinator.edit(
-        (data) => data.copyWith(
-          profile: data.profile.copyWith(targetSchool: '本机修改'),
-        ),
+        (data) =>
+            data.copyWith(profile: data.profile.copyWith(targetSchool: '本机修改')),
       );
       final pushesBefore = remote.pushes;
       // 服务端 revision 变了（完整文档路径），同一字段的并发修改必须冲突。
@@ -597,9 +623,8 @@ void main() {
     final pushesBefore = remote.pushes;
     final started = DateTime.now();
     await coordinator.edit(
-      (data) => data.copyWith(
-        profile: data.profile.copyWith(targetSchool: '最长等待'),
-      ),
+      (data) =>
+          data.copyWith(profile: data.profile.copyWith(targetSchool: '最长等待')),
     );
     await waitForSyncIdle(coordinator);
     final elapsed = DateTime.now().difference(started);
@@ -660,7 +685,9 @@ void main() {
       expect(coordinator.conflicts, isEmpty);
       expect(coordinator.pending, isFalse);
       expect(coordinator.data!.adHocLearnings.single.id, 'adhoc-photo');
-      expect(coordinator.data!.profile.dateCapacityOverrides, {'2026-10-22': 0});
+      expect(coordinator.data!.profile.dateCapacityOverrides, {
+        '2026-10-22': 0,
+      });
       expect(
         coordinator.data!.logs.any((log) => log.id == 'log-adhoc'),
         isTrue,
@@ -737,14 +764,19 @@ void main() {
       expect(coordinator.data!.profile.targetSchool, '本机修改');
       expect(coordinator.data!.adHocLearnings.single.id, 'adhoc-photo');
       expect(
-        coordinator.data!.logs.firstWhere((log) => log.id == 'log-adhoc').sessionId,
+        coordinator.data!.logs
+            .firstWhere((log) => log.id == 'log-adhoc')
+            .sessionId,
         'session-x',
       );
       expect(remote.pushes - pushesBefore, 1);
       // 同一份旧结构不会自动重试覆盖云端；用户升级后重新启动即可继续。
       await coordinator.sync();
       expect(remote.pushes - pushesBefore, 1);
-      expect(coordinator.data!.logs.any((log) => log.id == 'log-adhoc'), isTrue);
+      expect(
+        coordinator.data!.logs.any((log) => log.id == 'log-adhoc'),
+        isTrue,
+      );
     },
   );
 
@@ -807,7 +839,9 @@ void main() {
       // 与本机新字段无关的云端变化不得丢掉临时学习和容量覆盖。
       expect(coordinator.data!.adHocLearnings.single.id, 'adhoc-photo');
       expect(coordinator.data!.profile.capacityBasis, CapacityBasis.net);
-      expect(coordinator.data!.profile.dateCapacityOverrides, {'2026-10-22': 0});
+      expect(coordinator.data!.profile.dateCapacityOverrides, {
+        '2026-10-22': 0,
+      });
       final adhoc = coordinator.data!.logs.firstWhere(
         (log) => log.id == 'log-adhoc',
       );

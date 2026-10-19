@@ -22,7 +22,8 @@ import 'package:sjtu_study_planner_client/core/sync/sync_state.dart';
 import 'package:sjtu_study_planner_client/features/planner/application/planner_session.dart';
 import 'package:sjtu_study_planner_client/features/planner/application/planner_sync.dart';
 import 'package:sjtu_study_planner_client/features/planner/domain/planner_format.dart';
-import 'package:sjtu_study_planner_client/features/planner/domain/study_day.dart' as day_ops;
+import 'package:sjtu_study_planner_client/features/planner/domain/study_day.dart'
+    as day_ops;
 import 'package:sjtu_study_planner_client/router/app_router.dart';
 import 'package:sjtu_study_planner_client/shared/models/planner_models.dart';
 
@@ -43,11 +44,7 @@ Future<void> goto(WidgetTester tester, String label) async {
   final bottom = find.widgetWithText(NavigationDestination, label);
   final rail = find.widgetWithText(NavigationRailDestination, label);
   final finder = bottom.evaluate().isNotEmpty ? bottom : rail;
-  expect(
-    finder,
-    findsWidgets,
-    reason: '找不到导航目标「$label」，当前布局既没有底部导航也没有侧栏',
-  );
+  expect(finder, findsWidgets, reason: '找不到导航目标「$label」，当前布局既没有底部导航也没有侧栏');
   await tester.tap(finder.first);
   await tester.pumpAndSettle(const Duration(seconds: 5));
 }
@@ -56,7 +53,8 @@ Future<void> goto(WidgetTester tester, String label) async {
 ///
 /// Navigation affordances are covered by the layout test; the data-consistency
 /// checks below drive the routes directly so they stay independent of the shell.
-Future<void> openRoute(WidgetTester tester, Harness app, String path) async {  app.router.go(path);
+Future<void> openRoute(WidgetTester tester, Harness app, String path) async {
+  app.router.go(path);
   await tester.pumpAndSettle(const Duration(seconds: 5));
 }
 
@@ -149,7 +147,7 @@ void main() {
     expect(find.text('事项管理'), findsOneWidget);
     expect(find.text('基础一轮'), findsWidgets);
     expect(find.text('真题精读'), findsWidgets);
-    expect(find.text('2 个当前事项 · 0 个后续事项'), findsOneWidget);
+    expect(find.text('高数'), findsWidgets);
 
     // 日历 page: the seeded fixed event and its capacity note.
     await openRoute(tester, app, '/calendar');
@@ -174,11 +172,7 @@ void main() {
     // restart restore the session without reaching the API.
     final tokens = MemoryTokenStore();
     final identity = MemoryIdentityStore();
-    final first = harness(
-      tokenStore: tokens,
-      identity: identity,
-      bearer: true,
-    );
+    final first = harness(tokenStore: tokens, identity: identity, bearer: true);
     await login(tester, first);
     debugPrint('Offline recovery: signed in');
     expect(first.coordinator.metadata.revision, 7);
@@ -228,11 +222,7 @@ void main() {
     expect(second.coordinator.metadata.pending, isTrue);
     expect(second.coordinator.metadata.revision, pendingRevision);
     expect(
-      day_ops.taskDayMinutes(
-        second.coordinator.data!,
-        taskId,
-        shanghaiToday(),
-      ),
+      day_ops.taskDayMinutes(second.coordinator.data!, taskId, shanghaiToday()),
       105,
     );
     expect(server.pushCount, 0);
@@ -290,51 +280,44 @@ void main() {
     },
   );
 
-  testWidgets('recording minutes updates today, progress and the server together', (
-    tester,
-  ) async {
-    server.document = seededPlan();
-    server.revision = 1;
-    final app = harness();
-    addTearDown(app.dispose);
-    await login(tester, app);
+  testWidgets(
+    'recording minutes updates today, progress and the server together',
+    (tester) async {
+      server.document = seededPlan();
+      server.revision = 1;
+      final app = harness();
+      addTearDown(app.dispose);
+      await login(tester, app);
 
-    final taskId = app.coordinator.data!.tasks.first.id;
-    final before = day_ops.taskDayMinutes(
-      app.coordinator.data!,
-      taskId,
-      shanghaiToday(),
-    );
-    await app.session.recordDayMinutes(taskId, shanghaiToday(), 150);
-    await app.coordinator.sync();
-    await tester.pumpAndSettle();
-
-    // Today reflects the new value.
-    await openRoute(tester, app, '/');
-    expect(find.textContaining('2小时30分'), findsWidgets);
-
-    // Progress derives its totals from the same logs.
-    await openRoute(tester, app, '/progress');
-    expect(find.textContaining('累计实际学习'), findsOneWidget);
-
-    // The server received exactly the corrected total, not a delta.
-    expect(
-      day_ops.taskDayMinutes(
-        server.document!,
+      final taskId = app.coordinator.data!.tasks.first.id;
+      final before = day_ops.taskDayMinutes(
+        app.coordinator.data!,
         taskId,
         shanghaiToday(),
-      ),
-      150,
-    );
-    expect(
-      day_ops.taskDayMinutes(
-        server.document!,
-        taskId,
-        shanghaiToday(),
-      ),
-      greaterThan(before),
-    );
-  });
+      );
+      await app.session.recordDayMinutes(taskId, shanghaiToday(), 150);
+      await app.coordinator.sync();
+      await tester.pumpAndSettle();
+
+      // Today reflects the new value.
+      await openRoute(tester, app, '/');
+      expect(find.textContaining('2小时30分'), findsWidgets);
+
+      // Progress derives its totals from the same logs.
+      await openRoute(tester, app, '/progress');
+      expect(find.textContaining('累计实际学习'), findsOneWidget);
+
+      // The server received exactly the corrected total, not a delta.
+      expect(
+        day_ops.taskDayMinutes(server.document!, taskId, shanghaiToday()),
+        150,
+      );
+      expect(
+        day_ops.taskDayMinutes(server.document!, taskId, shanghaiToday()),
+        greaterThan(before),
+      );
+    },
+  );
 
   testWidgets('the layout switches between the sidebar and the bottom bar', (
     tester,
@@ -377,10 +360,7 @@ void main() {
     final exported = PlannerData.fromJson(
       await _readJson(transfer.exportPath!),
     );
-    expect(
-      exported.profile.userId,
-      app.coordinator.data!.profile.userId,
-    );
+    expect(exported.profile.userId, app.coordinator.data!.profile.userId);
 
     // Modify the file, then import it back on this account.
     final modified = exported.copyWith(
@@ -396,14 +376,8 @@ void main() {
     await app.coordinator.sync();
     await tester.pumpAndSettle();
 
-    expect(
-      app.coordinator.data!.tasks.first.title,
-      '导入后的事项',
-    );
-    expect(
-      server.document!.tasks.first.title,
-      '导入后的事项',
-    );
+    expect(app.coordinator.data!.tasks.first.title, '导入后的事项');
+    expect(server.document!.tasks.first.title, '导入后的事项');
     expect(app.coordinator.pending, isFalse);
 
     // The restored plan is visible on the 事项 page after the import.
@@ -448,22 +422,25 @@ class Harness {
   );
   late final ProviderContainer container = ProviderContainer(
     overrides: [
-      appConfigProvider.overrideWithValue(AppConfig(apiBaseUrl: server.baseUrl)),
+      appConfigProvider.overrideWithValue(
+        AppConfig(apiBaseUrl: server.baseUrl),
+      ),
       storageRepositoryProvider.overrideWithValue(storage),
       identityStoreProvider.overrideWithValue(identity),
       // The real store persists into the OS keychain, so a previous run would make
       // the app skip the login page. `SecureTokenStore` has its own unit tests; the
       // integration run needs a clean, per-test session.
       tokenStoreProvider.overrideWithValue(tokenStore),
-      if (bearer) apiClientProvider.overrideWith((ref) {
-        final client = ApiClient(
-          config: ref.watch(appConfigProvider),
-          tokenStore: ref.watch(tokenStoreProvider),
-          usesBearer: true,
-        );
-        ref.onDispose(client.close);
-        return client;
-      }),
+      if (bearer)
+        apiClientProvider.overrideWith((ref) {
+          final client = ApiClient(
+            config: ref.watch(appConfigProvider),
+            tokenStore: ref.watch(tokenStoreProvider),
+            usesBearer: true,
+          );
+          ref.onDispose(client.close);
+          return client;
+        }),
       // The periodic retry is production behaviour, but a shorter interval keeps
       // the integration run quick; the manual `sync()` calls remain explicit.
       syncRetryIntervalProvider.overrideWithValue(const Duration(seconds: 2)),

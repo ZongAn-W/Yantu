@@ -29,10 +29,16 @@ final studyTimerProvider = ChangeNotifierProvider<StudyTimer>((ref) {
   // before the account session is dropped.
   final auth = ref.read(authControllerProvider.notifier);
   auth.addSessionEndHandler(timer.pauseForSessionEnd);
+  final participant = AccountDeletionParticipant(
+    suspend: timer.suspendForAccountDeletion,
+    resume: timer.resumeAfterAccountDeletionFailure,
+  );
+  auth.addDeletionParticipant(participant);
   final observer = _TimerLifecycleObserver(timer);
   WidgetsBinding.instance.addObserver(observer);
   ref.onDispose(() {
     auth.removeSessionEndHandler(timer.pauseForSessionEnd);
+    auth.removeDeletionParticipant(participant);
     WidgetsBinding.instance.removeObserver(observer);
   });
   return timer;
@@ -103,6 +109,21 @@ class StudyTimer extends ChangeNotifier {
   Future<void> _writes = Future.value();
   Future<void>? _initializing;
   bool _disposed = false;
+  bool _accountDeletionSuspended = false;
+
+  Future<void> suspendForAccountDeletion() async {
+    _accountDeletionSuspended = true;
+    _ticker?.cancel();
+    _ticker = null;
+    await _initializing;
+    await _writes;
+  }
+
+  void resumeAfterAccountDeletionFailure() {
+    _accountDeletionSuspended = false;
+    _updateTicker();
+  }
+
   bool _needsPlannerFlush = false;
   bool _checkActiveAfterWrite = false;
   bool _invalidPauseQueued = false;
@@ -201,7 +222,11 @@ class StudyTimer extends ChangeNotifier {
 
   /// Minutes the user explicitly gave up for one owner/day when they chose the
   /// cloud copy of a conflicting day.
-  int _discardedMilliseconds({String? taskId, String? adHocId, required String date}) {
+  int _discardedMilliseconds({
+    String? taskId,
+    String? adHocId,
+    required String date,
+  }) {
     var total = 0;
     for (final record in _state.discards) {
       if (record.taskId == taskId &&
@@ -225,15 +250,16 @@ class StudyTimer extends ChangeNotifier {
       date: bucket.date,
     );
     if (discarded == 0) return bucket.milliseconds;
-    final siblings = buckets
-        .where(
-          (item) =>
-              item.taskId == bucket.taskId &&
-              item.adHocId == bucket.adHocId &&
-              item.date == bucket.date,
-        )
-        .toList()
-      ..sort(_compareBuckets);
+    final siblings =
+        buckets
+            .where(
+              (item) =>
+                  item.taskId == bucket.taskId &&
+                  item.adHocId == bucket.adHocId &&
+                  item.date == bucket.date,
+            )
+            .toList()
+          ..sort(_compareBuckets);
     var remaining = discarded;
     for (final sibling in siblings) {
       final deducted = math.min(remaining, sibling.milliseconds);
@@ -254,13 +280,15 @@ class StudyTimer extends ChangeNotifier {
       date: date,
     );
     if (discarded == 0) return raw;
-    final siblings = _state.sessions
-        .where(
-          (item) =>
-              item.taskId == session.taskId && item.adHocId == session.adHocId,
-        )
-        .toList()
-      ..sort((a, b) => a.startedAt.compareTo(b.startedAt));
+    final siblings =
+        _state.sessions
+            .where(
+              (item) =>
+                  item.taskId == session.taskId &&
+                  item.adHocId == session.adHocId,
+            )
+            .toList()
+          ..sort((a, b) => a.startedAt.compareTo(b.startedAt));
     var remaining = discarded;
     for (final item in siblings) {
       final amount = item.millisecondsForDate(date);
@@ -363,7 +391,9 @@ class StudyTimer extends ChangeNotifier {
       if (reason != null) throw StateError(reason);
     }
     if (coordinator.blocked) throw StateError('本机计划暂时不可写入');
-    if (activeTaskId == taskId && activeRelation == TimeLogRelation.extra) return;
+    if (activeTaskId == taskId && activeRelation == TimeLogRelation.extra) {
+      return;
+    }
     await _startSession(taskId: taskId, intent: TimeLogRelation.extra);
   });
 
@@ -399,8 +429,7 @@ class StudyTimer extends ChangeNotifier {
             return result.data;
           });
           learning = created;
-        } else if (normalizedSubject.isNotEmpty &&
-            learning.subjectId == null) {
+        } else if (normalizedSubject.isNotEmpty && learning.subjectId == null) {
           await coordinator.edit((current) {
             final result = day_ops.upsertAdHocLearning(
               current,
@@ -470,7 +499,7 @@ class StudyTimer extends ChangeNotifier {
   /// planner write is best effort: a failed flush stays pending in the timer
   /// state and is replayed on the next sign-in.
   Future<void> pauseForSessionEnd() async {
-    if (_disposed || !ready) return;
+    if (_disposed || _accountDeletionSuspended || !ready) return;
     await _serial(() async {
       if (_disposed || _state.active == null) return;
       final saved = await _saveSnapshot(_project().copyWith(active: null));
@@ -490,14 +519,22 @@ class StudyTimer extends ChangeNotifier {
     String taskId,
     String date, {
     required String expectedSessionId,
-  }) => _discardSession(taskId: taskId, date: date, expectedSessionId: expectedSessionId);
+  }) => _discardSession(
+    taskId: taskId,
+    date: date,
+    expectedSessionId: expectedSessionId,
+  );
 
   /// Removes the latest paused temporary-learning interval.
   Future<void> discardLastAdHocSession(
     String adHocId,
     String date, {
     required String expectedSessionId,
-  }) => _discardSession(adHocId: adHocId, date: date, expectedSessionId: expectedSessionId);
+  }) => _discardSession(
+    adHocId: adHocId,
+    date: date,
+    expectedSessionId: expectedSessionId,
+  );
 
   Future<void> _discardSession({
     String? taskId,
@@ -577,47 +614,48 @@ class StudyTimer extends ChangeNotifier {
   /// logs to the target task while keeping `relation = ad_hoc` and `ad_hoc_id`.
   /// The timer buckets must follow, otherwise the next checkpoint would write the
   /// old owner back and duplicate or lose attribution.
-  Future<void> adoptAdHocConversion(String adHocId, String taskId) =>
-      _serial(() async {
-        if (!ready) return;
-        final buckets = [
-          for (final bucket in _state.buckets)
-            bucket.adHocId == adHocId ? bucket.withTaskId(taskId) : bucket,
-        ];
-        final sessions = [
-          for (final session in _state.sessions)
-            session.adHocId == adHocId
-                ? session.copyWith(taskId: taskId)
-                : session,
-        ];
-        final discards = [
-          for (final discard in _state.discards)
-            discard.adHocId == adHocId
-                ? discard.copyWith(taskId: taskId)
-                : discard,
-        ];
-        final active = _state.active;
-        await _commit(
-          _state.copyWith(
-            active: active != null && active.adHocId == adHocId
-                ? _ActiveTimer(
-                    taskId: taskId,
-                    adHocId: active.adHocId,
-                    intent: active.intent,
-                    checkpoint: active.checkpoint,
-                    sessionId: active.sessionId,
-                  )
-                : active,
-            buckets: buckets,
-            sessions: sessions,
-            discards: discards,
-          ),
-        );
-      });
+  Future<void> adoptAdHocConversion(
+    String adHocId,
+    String taskId,
+  ) => _serial(() async {
+    if (!ready) return;
+    final buckets = [
+      for (final bucket in _state.buckets)
+        bucket.adHocId == adHocId ? bucket.withTaskId(taskId) : bucket,
+    ];
+    final sessions = [
+      for (final session in _state.sessions)
+        session.adHocId == adHocId ? session.copyWith(taskId: taskId) : session,
+    ];
+    final discards = [
+      for (final discard in _state.discards)
+        discard.adHocId == adHocId ? discard.copyWith(taskId: taskId) : discard,
+    ];
+    final active = _state.active;
+    await _commit(
+      _state.copyWith(
+        active: active != null && active.adHocId == adHocId
+            ? _ActiveTimer(
+                taskId: taskId,
+                adHocId: active.adHocId,
+                intent: active.intent,
+                checkpoint: active.checkpoint,
+                sessionId: active.sessionId,
+              )
+            : active,
+        buckets: buckets,
+        sessions: sessions,
+        discards: discards,
+      ),
+    );
+  });
 
   Future<void> _serial(Future<void> Function() action) {
     final result = _writes.then((_) async {
       if (_disposed) return;
+      if (_accountDeletionSuspended) {
+        throw StateError('账号注销处理中，已暂停学习计时');
+      }
       busy = true;
       _notify();
       try {
@@ -862,15 +900,14 @@ class StudyTimer extends ChangeNotifier {
         for (final block in sorted) {
           final key = '${block.taskId}:${block.date}';
           if (!affected.contains(key)) continue;
-          final remaining =
-              coverageByDay.putIfAbsent(
-                key,
-                () => day_ops.scheduledMinutesForTaskDay(
-                  next,
-                  block.taskId,
-                  block.date,
-                ),
-              );
+          final remaining = coverageByDay.putIfAbsent(
+            key,
+            () => day_ops.scheduledMinutesForTaskDay(
+              next,
+              block.taskId,
+              block.date,
+            ),
+          );
           final actual = math.min(remaining, block.durationMinutes);
           coverageByDay[key] = remaining - actual;
           replacements[block.id] = block.copyWith(
@@ -1049,12 +1086,7 @@ class StudyTimer extends ChangeNotifier {
           final take = math.min(remaining, available);
           if (take > 0) {
             buckets[index] = scheduled.add(take, until, active.sessionId);
-            session = session.add(
-              date,
-              TimeLogRelation.scheduled,
-              take,
-              until,
-            );
+            session = session.add(date, TimeLogRelation.scheduled, take, until);
             remaining -= take;
           }
         }
@@ -1144,11 +1176,7 @@ class StudyTimer extends ChangeNotifier {
     final task = data.tasks.where((task) => task.id == taskId).firstOrNull;
     if (task == null || task.status == TaskStatus.archived) return false;
     if (task.status == TaskStatus.completed && !allowCompleted) return false;
-    return strategy.strategyExecutionError(
-          data,
-          task,
-          shanghaiToday(_now()),
-        ) ==
+    return strategy.strategyExecutionError(data, task, shanghaiToday(_now())) ==
         null;
   }
 
@@ -1174,11 +1202,7 @@ class StudyTimer extends ChangeNotifier {
       // the item was completed elsewhere.
       return active.intent == TimeLogRelation.extra;
     }
-    return strategy.strategyExecutionError(
-          data,
-          task,
-          shanghaiToday(_now()),
-        ) ==
+    return strategy.strategyExecutionError(data, task, shanghaiToday(_now())) ==
         null;
   }
 
@@ -1238,6 +1262,11 @@ class StudyTimer extends ChangeNotifier {
   }
 
   void _updateTicker() {
+    if (_accountDeletionSuspended) {
+      _ticker?.cancel();
+      _ticker = null;
+      return;
+    }
     if (_disposed) return;
     if (ready && (_state.active != null || _needsPlannerFlush)) {
       final interval = tickInterval;
@@ -1285,9 +1314,9 @@ int _relationRank(TimeLogRelation relation) => switch (relation) {
 };
 
 int _compareBuckets(_TimerBucket a, _TimerBucket b) {
-  final byRelation = _relationRank(a.relation).compareTo(
-    _relationRank(b.relation),
-  );
+  final byRelation = _relationRank(
+    a.relation,
+  ).compareTo(_relationRank(b.relation));
   if (byRelation != 0) return byRelation;
   final byStart = a.startedAt.compareTo(b.startedAt);
   return byStart != 0 ? byStart : a.id.compareTo(b.id);
@@ -1295,11 +1324,7 @@ int _compareBuckets(_TimerBucket a, _TimerBucket b) {
 
 /// User-discard scope: one owner and Shanghai date.
 class _DiscardScope {
-  const _DiscardScope({
-    this.taskId,
-    this.adHocId,
-    required this.date,
-  });
+  const _DiscardScope({this.taskId, this.adHocId, required this.date});
   final String? taskId;
   final String? adHocId;
   final String date;
@@ -1485,7 +1510,8 @@ class _ActiveTimer {
   factory _ActiveTimer.fromJson(JsonMap json) => _ActiveTimer(
     taskId: json['taskId'] as String?,
     adHocId: json['adHocId'] as String?,
-    intent: TimeLogRelation.values
+    intent:
+        TimeLogRelation.values
             .where((value) => value.name == json['intent'])
             .firstOrNull ??
         TimeLogRelation.scheduled,
@@ -1552,21 +1578,18 @@ class _TimerSession {
     return total;
   }
 
-  _TimerSession copyWith({
-    bool? discarded,
-    String? taskId,
-    String? adHocId,
-  }) => _TimerSession(
-    id: id,
-    taskId: taskId ?? this.taskId,
-    adHocId: adHocId ?? this.adHocId,
-    relation: relation,
-    startedAt: startedAt,
-    endedAt: endedAt,
-    slots: slots,
-    isLegacy: isLegacy,
-    discarded: discarded ?? this.discarded,
-  );
+  _TimerSession copyWith({bool? discarded, String? taskId, String? adHocId}) =>
+      _TimerSession(
+        id: id,
+        taskId: taskId ?? this.taskId,
+        adHocId: adHocId ?? this.adHocId,
+        relation: relation,
+        startedAt: startedAt,
+        endedAt: endedAt,
+        slots: slots,
+        isLegacy: isLegacy,
+        discarded: discarded ?? this.discarded,
+      );
 
   _TimerSession add(
     String date,

@@ -68,7 +68,8 @@ class _PlannerStore extends MemoryStorageRepository {
 
 class _OfflineApi implements SyncApi {
   @override
-  Future<RemoteSnapshot> pull({int? revision}) async => throw const OfflineFailure();
+  Future<RemoteSnapshot> pull({int? revision}) async =>
+      throw const OfflineFailure();
 
   @override
   Future<RemoteSnapshot> push(
@@ -124,6 +125,21 @@ void main() {
   });
 
   String taskId() => coordinator.data!.tasks.first.id;
+
+  test(
+    'account deletion suspends checkpoints and new timing until resumed',
+    () async {
+      await timer.start(taskId(), date);
+      clock.advance(const Duration(seconds: 20));
+      await timer.pauseForSessionEnd();
+      await timer.suspendForAccountDeletion();
+      await expectLater(timer.start(taskId(), date), throwsStateError);
+      await expectLater(timer.checkpoint(), throwsStateError);
+      timer.resumeAfterAccountDeletionFailure();
+      await timer.start(taskId(), date);
+      expect(timer.activeTaskId, taskId());
+    },
+  );
 
   test(
     'planned dependencies require actual content confirmation before timing',
@@ -805,6 +821,112 @@ void main() {
     expect(await store.load('api-two:user-a'), isNull);
   });
 
+  group('without a long-term plan', () {
+    setUp(() async {
+      await coordinator.edit(
+        (data) => data.copyWith(
+          planning: null,
+          subjects: [],
+          tasks: [],
+          blocks: [],
+          logs: [],
+          adHocLearnings: [],
+        ),
+      );
+    });
+
+    test(
+      'temporary study counts upward and pause/resume records elapsed only once',
+      () async {
+        final originalProfile = coordinator.data!.profile;
+        await timer.startAdHoc(title: '  背英语单词  ');
+
+        final learning = coordinator.data!.adHocLearnings.single;
+        expect(learning.title, '背英语单词');
+        expect(learning.subjectId, isNull);
+        expect(learning.convertedTaskId, isNull);
+        expect(timer.activeTaskId, isNull);
+        expect(timer.activeAdHocId, learning.id);
+        expect(timer.activeRelation, TimeLogRelation.adHoc);
+        expect(timer.elapsedForAdHoc(learning.id, date), Duration.zero);
+
+        clock.advance(const Duration(seconds: 37));
+        expect(
+          timer.elapsedForAdHoc(learning.id, date),
+          const Duration(seconds: 37),
+        );
+        await timer.pause();
+        final first = timer.lastSessionForAdHoc(learning.id, date)!;
+        expect(first.elapsed, const Duration(seconds: 37));
+        expect(timer.activeAdHocId, isNull);
+        expect(coordinator.data!.logs, isEmpty);
+
+        clock.advance(const Duration(minutes: 10));
+        expect(
+          timer.elapsedForAdHoc(learning.id, date),
+          const Duration(seconds: 37),
+        );
+        await timer.startAdHoc(title: '背英语单词');
+        expect(coordinator.data!.adHocLearnings, hasLength(1));
+        expect(timer.activeAdHocId, learning.id);
+        clock.advance(const Duration(seconds: 28));
+        await timer.pause();
+        final second = timer.lastSessionForAdHoc(learning.id, date)!;
+        expect(second.id, isNot(first.id));
+        expect(second.elapsed, const Duration(seconds: 28));
+
+        // Ending an already paused interval and retrying its checkpoint must not
+        // bill the elapsed time a second time.
+        await timer.pause();
+        await timer.checkpoint();
+        await timer.checkpoint();
+        expect(timer.activeAdHocId, isNull);
+        expect(
+          timer.elapsedForAdHoc(learning.id, date),
+          const Duration(seconds: 65),
+        );
+        final data = coordinator.data!;
+        final log = data.logs.single;
+        expect(log.adHocId, learning.id);
+        expect(log.taskId, isNull);
+        expect(log.blockId, isNull);
+        expect(log.quotaMinutes, isNull);
+        expect(log.relation, TimeLogRelation.adHoc);
+        expect(log.minutes, 1);
+        expect(adHocMinutesOnDate(data, date), 1);
+        expect(data.planning, isNull);
+        expect(data.subjects, isEmpty);
+        expect(data.tasks, isEmpty);
+        expect(data.blocks, isEmpty);
+        expect(data.profile, originalProfile);
+        expect(
+          learning.toJson().keys,
+          isNot(
+            contains(anyOf('estimated_minutes', 'deadline', 'earliest_date')),
+          ),
+        );
+      },
+    );
+
+    test(
+      'an empty temporary title creates no timer or learning record',
+      () async {
+        final before = coordinator.data;
+        final savedTimer = timerStore.values[timer.storageKey];
+        await expectLater(timer.startAdHoc(title: '   '), throwsStateError);
+
+        expect(timer.activeAdHocId, isNull);
+        expect(timer.activeTaskId, isNull);
+        expect(coordinator.data, before);
+        expect(coordinator.data!.adHocLearnings, isEmpty);
+        expect(coordinator.data!.logs, isEmpty);
+        expect(coordinator.data!.tasks, isEmpty);
+        expect(coordinator.data!.blocks, isEmpty);
+        expect(timerStore.values[timer.storageKey], savedTimer);
+      },
+    );
+  });
+
   group('learning relations', () {
     List<TimeLog> logsFor(String taskId) => [
       for (final log in coordinator.data!.logs)
@@ -849,41 +971,46 @@ void main() {
       },
     );
 
-    test('startExtra needs no today block and keeps the original task id', () async {
-      final id = taskId();
-      final future = coordinator.data!.tasks.single.copyWith(
-        id: 'future-task',
-        title: '线性代数第三章',
-        earliestDate: '2026-12-01',
-      );
-      coordinator.data = coordinator.data!.copyWith(
-        tasks: [...coordinator.data!.tasks, future],
-        blocks: [
-          coordinator.data!.blocks.single.copyWith(durationMinutes: 60),
-        ],
-      );
-      await timer.start(id, date);
-      clock.advance(const Duration(seconds: 70));
-      await timer.startExtra('future-task');
-      expect(timer.activeTaskId, 'future-task');
-      expect(timer.activeRelation, TimeLogRelation.extra);
-      clock.advance(const Duration(seconds: 80));
-      await timer.pause();
+    test(
+      'startExtra needs no today block and keeps the original task id',
+      () async {
+        final id = taskId();
+        final future = coordinator.data!.tasks.single.copyWith(
+          id: 'future-task',
+          title: '线性代数第三章',
+          earliestDate: '2026-12-01',
+        );
+        coordinator.data = coordinator.data!.copyWith(
+          tasks: [...coordinator.data!.tasks, future],
+          blocks: [
+            coordinator.data!.blocks.single.copyWith(durationMinutes: 60),
+          ],
+        );
+        await timer.start(id, date);
+        clock.advance(const Duration(seconds: 70));
+        await timer.startExtra('future-task');
+        expect(timer.activeTaskId, 'future-task');
+        expect(timer.activeRelation, TimeLogRelation.extra);
+        clock.advance(const Duration(seconds: 80));
+        await timer.pause();
 
-      final logs = coordinator.data!.logs
-          .where((log) => log.taskId == 'future-task')
-          .toList();
-      expect(logs, hasLength(1));
-      expect(logs.single.relation, TimeLogRelation.extra);
-      expect(logs.single.minutes, 1);
-      expect(logs.single.sessionId, isNotNull);
-      expect(
-        coordinator.data!.blocks.any((block) => block.taskId == 'future-task'),
-        isFalse,
-        reason: '加学不为今天伪造日程块',
-      );
-      expect(logsFor(id).single.relation, TimeLogRelation.scheduled);
-    });
+        final logs = coordinator.data!.logs
+            .where((log) => log.taskId == 'future-task')
+            .toList();
+        expect(logs, hasLength(1));
+        expect(logs.single.relation, TimeLogRelation.extra);
+        expect(logs.single.minutes, 1);
+        expect(logs.single.sessionId, isNotNull);
+        expect(
+          coordinator.data!.blocks.any(
+            (block) => block.taskId == 'future-task',
+          ),
+          isFalse,
+          reason: '加学不为今天伪造日程块',
+        );
+        expect(logsFor(id).single.relation, TimeLogRelation.scheduled);
+      },
+    );
 
     test(
       'Shanghai midnight re-evaluates the relation and keeps the session link',
@@ -915,35 +1042,42 @@ void main() {
       },
     );
 
-    test('a new scheduled day gets its own quota instead of yesterday quota', () async {
-      final id = taskId();
-      final block = coordinator.data!.blocks.single.copyWith(
-        durationMinutes: 60,
-      );
-      coordinator.data = coordinator.data!.copyWith(
-        blocks: [
-          block,
-          block.copyWith(id: 'block-day-two', date: '2026-10-18', durationMinutes: 30),
-        ],
-      );
-      clock.wall = DateTime.parse('2026-10-17T15:59:00Z');
-      await timer.start(id, date);
-      clock.advance(const Duration(minutes: 20));
-      await timer.pause();
+    test(
+      'a new scheduled day gets its own quota instead of yesterday quota',
+      () async {
+        final id = taskId();
+        final block = coordinator.data!.blocks.single.copyWith(
+          durationMinutes: 60,
+        );
+        coordinator.data = coordinator.data!.copyWith(
+          blocks: [
+            block,
+            block.copyWith(
+              id: 'block-day-two',
+              date: '2026-10-18',
+              durationMinutes: 30,
+            ),
+          ],
+        );
+        clock.wall = DateTime.parse('2026-10-17T15:59:00Z');
+        await timer.start(id, date);
+        clock.advance(const Duration(minutes: 20));
+        await timer.pause();
 
-      final dayOne = coordinator.data!.logs.singleWhere(
-        (log) => log.date == date,
-      );
-      final dayTwo = coordinator.data!.logs.singleWhere(
-        (log) => log.date == '2026-10-18',
-      );
-      expect(dayOne.relation, TimeLogRelation.scheduled);
-      expect(dayOne.quotaMinutes, 60);
-      expect(dayTwo.relation, TimeLogRelation.scheduled);
-      expect(dayTwo.quotaMinutes, 30, reason: '新日期重新判定额度');
-      expect(dayTwo.minutes, 19);
-      expect(dayTwo.sessionId, dayOne.sessionId);
-    });
+        final dayOne = coordinator.data!.logs.singleWhere(
+          (log) => log.date == date,
+        );
+        final dayTwo = coordinator.data!.logs.singleWhere(
+          (log) => log.date == '2026-10-18',
+        );
+        expect(dayOne.relation, TimeLogRelation.scheduled);
+        expect(dayOne.quotaMinutes, 60);
+        expect(dayTwo.relation, TimeLogRelation.scheduled);
+        expect(dayTwo.quotaMinutes, 30, reason: '新日期重新判定额度');
+        expect(dayTwo.minutes, 19);
+        expect(dayTwo.sessionId, dayOne.sessionId);
+      },
+    );
 
     test(
       'temporary learning starts by name, reuses the entity and fabricates nothing',
@@ -981,31 +1115,34 @@ void main() {
       },
     );
 
-    test('a completed task can be reviewed as extra without reopening it', () async {
-      final id = taskId();
-      await coordinator.edit(
-        (data) => data.copyWith(
-          tasks: [
-            data.tasks.single.copyWith(
-              status: TaskStatus.completed,
-              completedMinutes: data.tasks.single.estimatedMinutes,
-            ),
-          ],
-        ),
-      );
-      await timer.startExtra(id);
-      expect(timer.activeRelation, TimeLogRelation.extra);
-      clock.advance(const Duration(minutes: 2));
-      await timer.pause();
+    test(
+      'a completed task can be reviewed as extra without reopening it',
+      () async {
+        final id = taskId();
+        await coordinator.edit(
+          (data) => data.copyWith(
+            tasks: [
+              data.tasks.single.copyWith(
+                status: TaskStatus.completed,
+                completedMinutes: data.tasks.single.estimatedMinutes,
+              ),
+            ],
+          ),
+        );
+        await timer.startExtra(id);
+        expect(timer.activeRelation, TimeLogRelation.extra);
+        clock.advance(const Duration(minutes: 2));
+        await timer.pause();
 
-      final task = coordinator.data!.tasks.single;
-      expect(task.status, TaskStatus.completed, reason: '复习不重新打开事项');
-      final log = coordinator.data!.logs.single;
-      expect(log.relation, TimeLogRelation.extra);
-      expect(log.minutes, 2);
-      expect(coordinator.data!.blocks.single.status, BlockStatus.planned);
-      expect(scheduledMinutesForTaskDay(coordinator.data!, id, date), 0);
-    });
+        final task = coordinator.data!.tasks.single;
+        expect(task.status, TaskStatus.completed, reason: '复习不重新打开事项');
+        final log = coordinator.data!.logs.single;
+        expect(log.relation, TimeLogRelation.extra);
+        expect(log.minutes, 2);
+        expect(coordinator.data!.blocks.single.status, BlockStatus.planned);
+        expect(scheduledMinutesForTaskDay(coordinator.data!, id, date), 0);
+      },
+    );
 
     test('discarding an ad-hoc session removes only its minutes', () async {
       await timer.startAdHoc(title: '阅读计划外文章');
@@ -1027,62 +1164,71 @@ void main() {
       expect(adHocMinutesOnDate(coordinator.data!, date), 0);
     });
 
-    test('converting ad-hoc to a task keeps the log and timer attribution', () async {
-      await timer.startAdHoc(title: '摄影构图');
-      clock.advance(const Duration(minutes: 25));
-      await timer.pause();
-      final entity = coordinator.data!.adHocLearnings.single;
-      final original = coordinator.data!.logs.singleWhere(
-        (log) => log.adHocId == entity.id,
-      );
-      await coordinator.edit((data) {
-        final draft = TaskDraft.blank(data, date).copyWith(
-          title: '摄影构图',
-          subjectId: data.subjects.single.id,
-          estimatedMinutes: 120,
+    test(
+      'converting ad-hoc to a task keeps the log and timer attribution',
+      () async {
+        await timer.startAdHoc(title: '摄影构图');
+        clock.advance(const Duration(minutes: 25));
+        await timer.pause();
+        final entity = coordinator.data!.adHocLearnings.single;
+        final original = coordinator.data!.logs.singleWhere(
+          (log) => log.adHocId == entity.id,
         );
-        return convertAdHocToTask(
-          data,
-          entity.id,
-          draft,
-          taskId: 'converted-task',
-        ).data;
-      });
-      await timer.adoptAdHocConversion(entity.id, 'converted-task');
-      await timer.checkpoint();
-      await timer.checkpoint();
+        await coordinator.edit((data) {
+          final draft = TaskDraft.blank(data, date).copyWith(
+            title: '摄影构图',
+            subjectId: data.subjects.single.id,
+            estimatedMinutes: 120,
+          );
+          return convertAdHocToTask(
+            data,
+            entity.id,
+            draft,
+            taskId: 'converted-task',
+          ).data;
+        });
+        await timer.adoptAdHocConversion(entity.id, 'converted-task');
+        await timer.checkpoint();
+        await timer.checkpoint();
 
-      final converted = coordinator.data!;
-      final log = converted.logs.singleWhere((item) => item.id == original.id);
-      expect(log.taskId, 'converted-task');
-      expect(log.adHocId, entity.id, reason: '历史临时关系仍可解释');
-      expect(log.relation, TimeLogRelation.adHoc);
-      expect(log.sessionId, original.sessionId);
-      expect(log.minutes, 25);
-      expect(
-        converted.logs.fold<int>(0, (sum, item) => sum + item.minutes),
-        25,
-        reason: '转换不复制分钟',
-      );
-      expect(converted.adHocLearnings.single.archived, isTrue);
-      expect(converted.adHocLearnings.single.convertedTaskId, 'converted-task');
-      expect(
-        converted.tasks.singleWhere((task) => task.id == 'converted-task'),
-        isNotNull,
-      );
-    });
+        final converted = coordinator.data!;
+        final log = converted.logs.singleWhere(
+          (item) => item.id == original.id,
+        );
+        expect(log.taskId, 'converted-task');
+        expect(log.adHocId, entity.id, reason: '历史临时关系仍可解释');
+        expect(log.relation, TimeLogRelation.adHoc);
+        expect(log.sessionId, original.sessionId);
+        expect(log.minutes, 25);
+        expect(
+          converted.logs.fold<int>(0, (sum, item) => sum + item.minutes),
+          25,
+          reason: '转换不复制分钟',
+        );
+        expect(converted.adHocLearnings.single.archived, isTrue);
+        expect(
+          converted.adHocLearnings.single.convertedTaskId,
+          'converted-task',
+        );
+        expect(
+          converted.tasks.singleWhere((task) => task.id == 'converted-task'),
+          isNotNull,
+        );
+      },
+    );
 
-    test('reviewing a completed task is rejected when it is archived', () async {
-      final id = taskId();
-      await coordinator.edit(
-        (data) => data.copyWith(
-          tasks: [
-            data.tasks.single.copyWith(status: TaskStatus.archived),
-          ],
-        ),
-      );
-      await expectLater(timer.startExtra(id), throwsStateError);
-      expect(timer.activeTaskId, isNull);
-    });
+    test(
+      'reviewing a completed task is rejected when it is archived',
+      () async {
+        final id = taskId();
+        await coordinator.edit(
+          (data) => data.copyWith(
+            tasks: [data.tasks.single.copyWith(status: TaskStatus.archived)],
+          ),
+        );
+        await expectLater(timer.startExtra(id), throwsStateError);
+        expect(timer.activeTaskId, isNull);
+      },
+    );
   });
 }

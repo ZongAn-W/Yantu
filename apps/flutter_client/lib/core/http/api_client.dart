@@ -31,6 +31,7 @@ class ApiClient {
   final TokenStore tokenStore;
   final bool usesBearer;
   SessionExpiredCallback? onSessionExpired;
+  SessionExpiredCallback? onAccountDeleted;
   Future<void>? _refreshing;
   int _sessionGeneration = 0;
   int _credentialRevision = 0;
@@ -157,6 +158,9 @@ class ApiClient {
       final message = data is Map && data['error'] is String
           ? data['error'] as String
           : null;
+      if (status == 410 && data is Map && data['code'] == 'ACCOUNT_DELETED') {
+        return AccountDeletedFailure(message ?? '账号已注销，请重新登录');
+      }
       if (status == 401) return UnauthorizedFailure(message ?? '登录已过期，请重新登录');
       if (status == 409) return ConflictFailure(message ?? '数据冲突，请重新加载');
       if (status != null && status >= 500) {
@@ -180,7 +184,9 @@ class _AuthInterceptor extends Interceptor {
   _AuthInterceptor(this.client);
   final ApiClient client;
 
-  bool _isAuth(RequestOptions options) => options.path.startsWith('/api/auth/');
+  bool _isAuth(RequestOptions options) =>
+      options.path.startsWith('/api/auth/') &&
+      options.path != '/api/auth/delete-account';
 
   @override
   Future<void> onRequest(
@@ -220,6 +226,19 @@ class _AuthInterceptor extends Interceptor {
     ErrorInterceptorHandler handler,
   ) async {
     final request = error.requestOptions;
+    if (client.failureFrom(error) is AccountDeletedFailure) {
+      // Finish the failing request before cleanup drains the coordinator that
+      // owns it; awaiting cleanup here would wait on this very request.
+      handler.next(error);
+      if (request.extra['sessionGeneration'] == client._sessionGeneration) {
+        Future<void>(() async {
+          if (request.extra['sessionGeneration'] == client._sessionGeneration) {
+            await client.onAccountDeleted?.call();
+          }
+        });
+      }
+      return;
+    }
     if (error.response?.statusCode != 401 || _isAuth(request)) {
       handler.next(error);
       return;

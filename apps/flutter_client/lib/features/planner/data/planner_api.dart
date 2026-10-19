@@ -104,12 +104,4 @@ class PlannerApi {
       },
     );
   }
-
-  Future<String> settleDay(String date, DailyReview review) async {
-    final response = await client.post(
-      '/api/daily-reviews/${Uri.encodeComponent(date)}/settle',
-      data: review.toJson(),
-    );
-    return _parse(() => response.data['runId'] as String);
-  }
 }

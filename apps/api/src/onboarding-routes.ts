@@ -1,7 +1,7 @@
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import type pg from "pg";
-import { requireUser } from "./auth.js";
+import { AccountDeletedError, requireUser } from "./auth.js";
 import { query, transaction } from "./db.js";
 import { InterviewProfileSchema } from "./contracts.js";
 import { ActionSchema, newSession, SessionSchema, type OnboardingSession } from "./onboarding-contracts.js";
@@ -151,6 +151,7 @@ export async function onboardingRoutes(app: FastifyInstance) {
       return { session: await attachExamResearch(next) };
     } catch (error) {
       // 用户只看到通用提示；把具体校验失败的字段写进服务端日志以便定位。
+      if (error instanceof AccountDeletedError) throw error;
       if (error instanceof z.ZodError)
         console.error(JSON.stringify({ event: "onboarding_schema_invalid", userId: user.id,
           issues: error.issues.slice(0, 20).map(issue => ({ code: issue.code, path: issue.path, message: issue.message })) }));

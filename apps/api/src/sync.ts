@@ -3,7 +3,7 @@ import type pg from "pg";
 import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { transaction } from "./db.js";
-import { requireUser } from "./auth.js";
+import { AccountDeletedError, requireUser } from "./auth.js";
 import { isReliableWeek, normalizeWeek, snapshot } from "./planner.js";
 import {
   PlannerDocumentSchema,
@@ -444,6 +444,9 @@ function projectedConstraints(
 
 async function lockedState(client: pg.PoolClient, owner: string) {
   // SERIALIZABLE captures state and all relationship rows from one database snapshot.
+  // Acquire the parent before the state row, matching deletion's lock order.
+  const user = await client.query("select id from users where id=$1 for key share", [owner]);
+  if (!user.rowCount) throw new AccountDeletedError();
   await client.query(
     "insert into planner_sync_state(user_id) values($1) on conflict do nothing",
     [owner],

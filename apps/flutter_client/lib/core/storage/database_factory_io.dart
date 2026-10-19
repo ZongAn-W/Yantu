@@ -5,6 +5,8 @@ import 'dart:typed_data';
 import 'package:sembast/utils/sembast_import_export.dart';
 import 'package:sembast/sembast_memory.dart';
 import 'atomic_file_io.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:path/path.dart' as path;
 
 Future<Database> openPlannerDatabase(String path) async {
   await File(path).parent.create(recursive: true);
@@ -61,6 +63,45 @@ Future<void> backupPlannerDatabase(Database database) async {
     '${database.path}.recovery.json',
     Uint8List.fromList(utf8.encode(jsonEncode(exported))),
   );
+}
+
+/// Scrub valid exported recovery archives in place. Corrupt native journals are
+/// deliberately retained: their damaged bytes cannot be safely reconstructed.
+/// No archive or directory is removed.
+Future<List<String>> scrubPlannerDatabaseArchives(
+  Database database,
+  Map<String, Object?> Function(Map<String, Object?>) sanitize,
+) async {
+  final main = File(database.path);
+  if (!await main.parent.exists()) return [];
+  final unreadable = <String>[];
+  final base = RegExp.escape(path.basename(main.path));
+  final pattern = RegExp(
+    '^$base(?:\\.recovery\\.json)?(?:\\.(?:corrupt|tmp)-[0-9]+)+\$',
+  );
+  await for (final entity in main.parent.list(followLinks: false)) {
+    if (entity is! File || !pattern.hasMatch(path.basename(entity.path))) {
+      continue;
+    }
+    Map<String, Object?> sanitized;
+    try {
+      final decoded = jsonDecode(await entity.readAsString());
+      if (decoded is! Map || decoded['sembast_export'] != 1) {
+        unreadable.add(entity.path);
+        continue;
+      }
+      sanitized = sanitize(Map<String, Object?>.from(decoded));
+    } on FormatException {
+      unreadable.add(entity.path);
+      debugPrint('历史损坏文件无法解析，保留原文件：${entity.path}');
+      continue;
+    }
+    await atomicWrite(
+      entity.path,
+      Uint8List.fromList(utf8.encode(jsonEncode(sanitized))),
+    );
+  }
+  return unreadable;
 }
 
 Future<Database> recoverPlannerDatabase(String path) async {

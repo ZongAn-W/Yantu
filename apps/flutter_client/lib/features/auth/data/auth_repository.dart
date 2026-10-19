@@ -112,4 +112,18 @@ class AuthRepository {
       await client.clearSession();
     }
   }
+
+  Future<void> deleteAccount(String password) async {
+    try {
+      final response = await client.post(
+        '/api/auth/delete-account',
+        data: {'password': password},
+      );
+      if (response.data is! Map || response.data['ok'] != true) {
+        throw const ResponseFailure();
+      }
+    } on AccountDeletedFailure {
+      // A retry can observe a deletion that already committed.
+    }
+  }
 }

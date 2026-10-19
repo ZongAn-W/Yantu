@@ -202,7 +202,9 @@ class TaskStudyTimer extends ConsumerWidget {
         ? '开始加学'
         : '开始计时';
     final targetLabel = adHocId != null || extraOnly
-        ? (elapsed > Duration.zero ? '已学 ${duration(elapsed.inMinutes)}' : '名称即可计时')
+        ? (elapsed > Duration.zero
+              ? '已学 ${duration(elapsed.inMinutes)}'
+              : '名称即可计时')
         : '目标 ${duration(plannedMinutes)}';
     final ring = Semantics(
       key: Key('study-progress-$_ownerKey-$date'),
@@ -281,6 +283,15 @@ class TaskStudyTimer extends ConsumerWidget {
                 icon: Icon(running ? Icons.pause : Icons.play_arrow, size: 18),
                 label: Text(action),
               ),
+              if (running)
+                TextButton.icon(
+                  key: Key('study-timer-end-$_ownerKey-$date'),
+                  onPressed: !timer.ready || timer.busy
+                      ? null
+                      : () => _toggle(context, ref, timer),
+                  icon: const Icon(Icons.stop, size: 18),
+                  label: const Text('结束计时'),
+                ),
               if (last != null)
                 IconButton(
                   key: Key('undo-study-session-$_ownerKey-$date'),

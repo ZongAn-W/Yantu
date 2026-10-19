@@ -256,9 +256,33 @@ class DateField extends StatelessWidget {
 
 /// Task create/edit form.
 class TaskEditorDialog extends ConsumerStatefulWidget {
-  const TaskEditorDialog({this.taskId, super.key});
+  const TaskEditorDialog({
+    this.taskId,
+    this.quickStart = false,
+    this.initialTitle = '',
+    this.initialSubjectId = '',
+    super.key,
+  });
 
   final String? taskId;
+  final bool quickStart;
+  final String initialTitle;
+  final String initialSubjectId;
+
+  static Future<bool> showQuickStart(
+    BuildContext context, {
+    String initialTitle = '',
+    String initialSubjectId = '',
+  }) async =>
+      await showDialog<bool>(
+        context: context,
+        builder: (context) => TaskEditorDialog(
+          quickStart: true,
+          initialTitle: initialTitle,
+          initialSubjectId: initialSubjectId,
+        ),
+      ) ==
+      true;
 
   static Future<void> show(BuildContext context, {String? taskId}) =>
       showDialog<void>(
@@ -278,6 +302,7 @@ class _TaskEditorDialogState extends ConsumerState<TaskEditorDialog> {
   late TextEditingController _estimated;
   String? _error;
   bool _saving = false;
+  String? _createdTaskId;
 
   @override
   void initState() {
@@ -289,6 +314,13 @@ class _TaskEditorDialogState extends ConsumerState<TaskEditorDialog> {
     _draft = task == null
         ? TaskDraft.blank(data, shanghaiToday())
         : TaskDraft.from(task);
+    if (widget.quickStart) {
+      _draft = _draft.copyWith(
+        title: widget.initialTitle,
+        subjectId: widget.initialSubjectId,
+        deadlineKind: ItemDateKind.planEnd,
+      );
+    }
     _title = TextEditingController(text: _draft.title);
     _description = TextEditingController(text: _draft.description);
     _course = TextEditingController(
@@ -333,7 +365,16 @@ class _TaskEditorDialogState extends ConsumerState<TaskEditorDialog> {
     try {
       final session = ref.read(plannerSessionProvider);
       if (widget.taskId == null) {
-        await session.createTask(draft);
+        final taskId = await session.createTask(draft);
+        if (widget.quickStart) {
+          if (mounted) {
+            setState(() {
+              _createdTaskId = taskId;
+              _saving = false;
+            });
+          }
+          return;
+        }
       } else {
         await session.updateTask(widget.taskId!, draft);
       }
@@ -348,9 +389,59 @@ class _TaskEditorDialogState extends ConsumerState<TaskEditorDialog> {
     }
   }
 
+  Future<void> _startCreatedTask() async {
+    if (_saving || _createdTaskId == null) return;
+    setState(() {
+      _saving = true;
+      _error = null;
+    });
+    try {
+      await ref
+          .read(studyTimerProvider)
+          .start(_createdTaskId!, shanghaiToday());
+      if (mounted) Navigator.pop(context, true);
+    } catch (error) {
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = error is StateError ? error.message : '$error';
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = ref.watch(plannerSessionProvider).data;
+    if (_createdTaskId != null) {
+      return AlertDialog(
+        title: const Text('事项已创建'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(_title.text.trim()),
+            const SizedBox(height: 8),
+            const Text('今天还没有安排，立即计时会记录为加学。'),
+            if (_error != null) ...[
+              const SizedBox(height: 8),
+              PlannerNotice(_error!, tone: PlannerNoticeTone.error),
+            ],
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: _saving ? null : () => Navigator.pop(context, false),
+            child: const Text('完成'),
+          ),
+          FilledButton(
+            key: const Key('quick-task-start'),
+            onPressed: _saving ? null : _startCreatedTask,
+            child: const Text('立即开始计时'),
+          ),
+        ],
+      );
+    }
     final editing = widget.taskId != null;
     final statuses = editing
         ? TaskStatus.values
@@ -368,6 +459,12 @@ class _TaskEditorDialogState extends ConsumerState<TaskEditorDialog> {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (widget.quickStart) ...[
+                const Text(
+                  '填写课程和事项名称即可保存。预计时长、优先级和日期暂用下方初始值，可按需调整；保存后不会自动安排日程。',
+                ),
+                const SizedBox(height: 12),
+              ],
               TextField(
                 controller: _title,
                 enabled: !_saving,
@@ -979,169 +1076,6 @@ class _FixedEventDialogState extends ConsumerState<FixedEventDialog> {
   }
 }
 
-class DailyReviewDialog extends ConsumerStatefulWidget {
-  const DailyReviewDialog({required this.date, super.key});
-
-  final String date;
-
-  static Future<void> show(BuildContext context, {required String date}) =>
-      showDialog<void>(
-        context: context,
-        builder: (context) => DailyReviewDialog(date: date),
-      );
-
-  @override
-  ConsumerState<DailyReviewDialog> createState() => _DailyReviewDialogState();
-}
-
-class _DailyReviewDialogState extends ConsumerState<DailyReviewDialog> {
-  late List<day_ops.TaskDayReview> _entries;
-  late final List<day_ops.TaskDayReview> _originalEntries;
-  late final String _originalFeedback;
-  final _feedback = TextEditingController();
-  String? _error;
-  bool _saving = false;
-
-  String _progressLabel(PlannerData data, String taskId) {
-    final actual = day_ops.taskDayMinutes(data, taskId, widget.date);
-    final planned = day_ops.taskDayPlannedMinutes(data, taskId, widget.date);
-    if (planned > 0 && actual >= planned) return '已达目标';
-    return actual > 0 ? '进行中' : '未开始';
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    final data = ref.read(plannerSessionProvider).data;
-    _originalEntries = day_ops.dailyReviewEntries(data, widget.date);
-    _entries = [..._originalEntries];
-    _originalFeedback = data.dailyFeedback?[widget.date] ?? '';
-    _feedback.text = _originalFeedback;
-  }
-
-  void _updateEntry(day_ops.TaskDayReview value) => setState(() {
-    _entries = [
-      for (final entry in _entries)
-        entry.taskId == value.taskId ? value : entry,
-    ];
-  });
-
-  @override
-  void dispose() {
-    _feedback.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    if (_saving) return;
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-    try {
-      final session = ref.read(plannerSessionProvider);
-      await session.saveDailyReview(
-        widget.date,
-        original: _originalEntries,
-        edited: _entries,
-        originalFeedback: _originalFeedback,
-        feedback: _feedback.text,
-      );
-      if (mounted) Navigator.pop(context);
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _saving = false;
-          _error = error is StateError ? error.message : '$error';
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final data = ref.watch(plannerSessionProvider).data;
-    return AlertDialog(
-      title: Text('${widget.date} · 结束今天'),
-      content: SizedBox(
-        width: 520,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (_entries.isEmpty)
-                const PlannerEmpty(
-                  message: '今天没有安排，无需结算。',
-                  icon: Icons.event_available_outlined,
-                ),
-              for (final entry in _entries)
-                Padding(
-                  padding: const EdgeInsets.only(bottom: 12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Text(
-                        '${subjectNameOf(data, data.tasks.where((t) => t.id == entry.taskId).firstOrNull?.subjectId ?? '')} · '
-                        '${data.tasks.where((t) => t.id == entry.taskId).firstOrNull?.title ?? ''}',
-                        style: const TextStyle(fontWeight: FontWeight.w600),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        '已学 ${duration(day_ops.taskDayMinutes(data, entry.taskId, widget.date))} / '
-                        '目标 ${duration(day_ops.taskDayPlannedMinutes(data, entry.taskId, widget.date))} · '
-                        '${_progressLabel(data, entry.taskId)}',
-                        style: tabularFigures.copyWith(
-                          color: PlannerColors.muted,
-                          fontSize: 12,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      TextFormField(
-                        initialValue: entry.feedback,
-                        enabled: !_saving,
-                        decoration: const InputDecoration(
-                          labelText: '卡点或反馈',
-                          hintText: '可选',
-                        ),
-                        onChanged: (value) =>
-                            _updateEntry(entry.copyWith(feedback: value)),
-                      ),
-                    ],
-                  ),
-                ),
-              TextField(
-                controller: _feedback,
-                enabled: !_saving,
-                maxLines: 2,
-                decoration: const InputDecoration(
-                  labelText: '今天整体反馈',
-                  hintText: '例如：上午效率低，复合函数求导仍不熟。',
-                ),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                PlannerNotice(_error!, tone: PlannerNoticeTone.error),
-              ],
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _saving ? null : () => Navigator.pop(context),
-          child: const Text('取消'),
-        ),
-        FilledButton.icon(
-          onPressed: _saving || _entries.isEmpty ? null : _save,
-          icon: const Icon(Icons.check, size: 18),
-          label: const Text('保存今日记录'),
-        ),
-      ],
-    );
-  }
-}
-
 /// 今日“开始学习”入口：把三类学习关系摆在同一处，用户无需先绕去设置或新建事项。
 ///
 /// - 今日原定学习：按今天已有的安排开始计时；
@@ -1150,10 +1084,20 @@ class _DailyReviewDialogState extends ConsumerState<DailyReviewDialog> {
 class StartStudyDialog extends ConsumerStatefulWidget {
   const StartStudyDialog({super.key});
 
-  static Future<void> show(BuildContext context) => showDialog<void>(
-    context: context,
-    builder: (context) => const StartStudyDialog(),
-  );
+  static Future<void> show(BuildContext context) async {
+    final data = ProviderScope.containerOf(
+      context,
+      listen: false,
+    ).read(plannerSessionProvider).data;
+    if (data.tasks.isEmpty) {
+      await AdHocStudyDialog.show(context);
+      return;
+    }
+    await showDialog<void>(
+      context: context,
+      builder: (context) => const StartStudyDialog(),
+    );
+  }
 
   @override
   ConsumerState<StartStudyDialog> createState() => _StartStudyDialogState();
@@ -1293,7 +1237,7 @@ class _StartStudyDialogState extends ConsumerState<StartStudyDialog> {
       );
     }
     return AlertDialog(
-      title: const Text('开始学习'),
+      title: const Text('开始计时'),
       content: SizedBox(
         width: 520,
         child: SingleChildScrollView(
@@ -1623,61 +1567,73 @@ class _AdHocStudyDialogState extends ConsumerState<AdHocStudyDialog> {
     }
   }
 
+  Future<void> _createTask() async {
+    final started = await TaskEditorDialog.showQuickStart(
+      context,
+      initialTitle: _title.text.trim(),
+      initialSubjectId: _subject,
+    );
+    if (started && mounted) Navigator.pop(context, true);
+  }
+
   @override
   Widget build(BuildContext context) {
     final data = ref.watch(plannerSessionProvider).data;
     return AlertDialog(
-      title: const Text('临时学习'),
+      title: const Text('今天想学什么？'),
       content: SizedBox(
         width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            TextField(
-              key: const Key('ad-hoc-title'),
-              controller: _title,
-              autofocus: true,
-              enabled: !_busy,
-              maxLength: 150,
-              decoration: const InputDecoration(
-                labelText: '学什么',
-                hintText: '例如：了解摄影构图',
-                counterText: '',
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              const Text('输入内容名称即可开始计时，不需要先制定完整计划。'),
+              const SizedBox(height: 12),
+              TextField(
+                key: const Key('ad-hoc-title'),
+                controller: _title,
+                autofocus: true,
+                enabled: !_busy,
+                maxLength: 150,
+                decoration: InputDecoration(
+                  labelText: '学习内容名称',
+                  hintText: '例如：背英语单词',
+                  counterText: '',
+                  errorText: _error,
+                ),
+                onChanged: (_) => setState(() => _error = null),
               ),
-              onChanged: (_) => setState(() => _error = null),
-            ),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              key: const Key('ad-hoc-subject'),
-              initialValue: _subject,
-              decoration: const InputDecoration(labelText: '课程/分类（可选）'),
-              items: [
-                const DropdownMenuItem(value: '', child: Text('不指定课程')),
-                for (final subject in data.subjects)
-                  DropdownMenuItem(value: subject.id, child: Text(subject.name)),
-              ],
-              onChanged: _busy
-                  ? null
-                  : (value) => setState(() => _subject = value ?? ''),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              '只需名称即可计时：不会创建正式事项、预算、截止日期或日程，'
-              '也不会自动进入 AI 排程。之后可以转为正式事项或关联到已有事项。',
-              style: TextStyle(color: PlannerColors.muted, fontSize: 12),
-            ),
-            if (_error != null) ...[
               const SizedBox(height: 8),
-              PlannerNotice(_error!, tone: PlannerNoticeTone.error),
+              DropdownButtonFormField<String>(
+                key: const Key('ad-hoc-subject'),
+                initialValue: _subject,
+                decoration: const InputDecoration(labelText: '课程/分类（可选）'),
+                items: [
+                  const DropdownMenuItem(value: '', child: Text('不指定课程')),
+                  for (final subject in data.subjects)
+                    DropdownMenuItem(
+                      value: subject.id,
+                      child: Text(subject.name),
+                    ),
+                ],
+                onChanged: _busy
+                    ? null
+                    : (value) => setState(() => _subject = value ?? ''),
+              ),
             ],
-          ],
+          ),
         ),
       ),
       actions: [
         TextButton(
           onPressed: _busy ? null : () => Navigator.pop(context, false),
           child: const Text('取消'),
+        ),
+        TextButton(
+          key: const Key('ad-hoc-create-task'),
+          onPressed: _busy ? null : _createTask,
+          child: const Text('创建正式事项'),
         ),
         FilledButton.icon(
           key: const Key('ad-hoc-start'),

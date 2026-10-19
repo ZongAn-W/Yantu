@@ -34,10 +34,19 @@ final plannerSyncProvider = ChangeNotifierProvider<PlannerCoordinator>((ref) {
     retryInterval: retryInterval,
   );
   final observer = _ResumeObserver(coordinator);
+  final auth = ref.read(authControllerProvider.notifier);
+  final participant = AccountDeletionParticipant(
+    suspend: coordinator.suspendForAccountDeletion,
+    resume: coordinator.resumeAfterAccountDeletionFailure,
+  );
+  auth.addDeletionParticipant(participant);
   WidgetsBinding.instance.addObserver(observer);
   // The coordinator is the provider's notifier, so Riverpod disposes it; this
   // callback only removes the lifecycle observer.
-  ref.onDispose(() => WidgetsBinding.instance.removeObserver(observer));
+  ref.onDispose(() {
+    auth.removeDeletionParticipant(participant);
+    WidgetsBinding.instance.removeObserver(observer);
+  });
   if (user != null) unawaited(coordinator.initialize());
   return coordinator;
 });

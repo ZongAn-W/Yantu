@@ -229,23 +229,6 @@ void main() {
     expect(day_ops.taskTotalMinutes(local(), taskId), 70);
   });
 
-  test('day completion toggles only the given blocks', () async {
-    final blocks = local()
-        .blocks
-        .where((block) => block.date == '2026-10-16')
-        .toList();
-    await session.setTaskDayCompletion(blocks, true);
-    expect(
-      local().blocks.every((block) => block.status == BlockStatus.completed),
-      isTrue,
-    );
-    await session.setTaskDayCompletion(blocks, false);
-    expect(
-      local().blocks.every((block) => block.status == BlockStatus.planned),
-      isTrue,
-    );
-  });
-
   test('completing a task records minutes and marks it completed', () async {
     final taskId = local().tasks.first.id;
     await session.completeTask(taskId, actualMinutes: 60, date: '2026-10-16');

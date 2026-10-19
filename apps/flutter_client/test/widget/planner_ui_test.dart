@@ -243,7 +243,7 @@ class FakeSyncServer {
 }
 
 void main() {
-  testWidgets('archived items appear only through their status filter', (
+  testWidgets('archived items stay visible in the course directory', (
     tester,
   ) async {
     final base = todayFixture();
@@ -261,135 +261,14 @@ void main() {
     final container = await signIn(tester, respond: server.respond);
     container.read(appRouterProvider).go('/tasks');
     await tester.pumpAndSettle();
-    expect(find.text('旧规划归档事项'), findsNothing);
-    await tester.ensureVisible(find.text('全部状态'));
-    await tester.tap(find.text('全部状态'));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('已归档').last);
-    await tester.pumpAndSettle();
     expect(find.text('旧规划归档事项'), findsOneWidget);
-    IconButton action(String tooltip) => tester.widget<IconButton>(
-      find.byWidgetPredicate(
-        (widget) => widget is IconButton && widget.tooltip == tooltip,
-      ),
-    );
-    expect(action('编辑事项').onPressed, isNotNull);
-    expect(action('安排事项日期和时长').onPressed, isNull);
-    expect(action('手动标记完成').onPressed, isNull);
+
+    await tester.tap(find.byTooltip('编辑或删除事项'));
+    await tester.pumpAndSettle();
+    expect(find.text('编辑事项'), findsOneWidget);
+    expect(find.text('删除事项'), findsOneWidget);
   });
 
-  for (final completion in [
-    CompletionStatus.partial,
-    CompletionStatus.skipped,
-  ]) {
-    testWidgets('reopening daily review preserves feedback and $completion', (
-      tester,
-    ) async {
-      final fixture = todayFixture();
-      final server = FakeSyncServer(
-        plan: fixture.copyWith(
-          blocks: [
-            fixture.blocks.single.copyWith(
-              completionStatus: completion,
-              feedback: '原有反馈',
-            ),
-          ],
-        ),
-      );
-      final container = await signIn(tester, respond: server.respond);
-      final coordinator = container.read(plannerSyncProvider);
-      await tester.tap(find.text('结束今天'));
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(
-        tester.widget<TextField>(fieldWithLabel('卡点或反馈')).controller?.text,
-        '原有反馈',
-      );
-      expect(fieldWithLabel('实际用时'), findsNothing);
-      expect(
-        find.byType(DropdownButtonFormField<CompletionStatus>),
-        findsNothing,
-      );
-      expect(find.textContaining('未开始'), findsWidgets);
-      await tester.tap(find.text('保存今日记录'));
-      await tester.pump(const Duration(milliseconds: 400));
-      await drainSync(tester, coordinator);
-      expect(coordinator.data!.blocks.single.feedback, '原有反馈');
-      expect(coordinator.data!.blocks.single.completionStatus, completion);
-      expect(server.document.blocks.single.feedback, '原有反馈');
-    });
-  }
-  testWidgets(
-    'daily review edits and overall feedback survive reopening and sync',
-    (tester) async {
-      var elapsed = Duration.zero;
-      final now = DateTime.now();
-      final fixture = todayFixture();
-      final server = FakeSyncServer(
-        plan: fixture.copyWith(
-          blocks: [
-            fixture.blocks.single.copyWith(
-              completionStatus: CompletionStatus.partial,
-              feedback: '原有反馈',
-            ),
-          ],
-          dailyFeedback: {shanghaiToday(): '原有整体反馈'},
-        ),
-      );
-      final container = await signIn(
-        tester,
-        respond: server.respond,
-        timerNow: () => now.add(elapsed),
-        monotonicNow: () => elapsed,
-      );
-      final coordinator = container.read(plannerSyncProvider);
-      final timer = container.read(studyTimerProvider);
-      await timer.start(fixture.tasks.single.id, shanghaiToday());
-      await tester.tap(find.text('结束今天'));
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(
-        tester.widget<TextField>(fieldWithLabel('今天整体反馈')).controller?.text,
-        '原有整体反馈',
-      );
-      await tester.enterText(fieldWithLabel('卡点或反馈'), '修正后的卡点');
-      await tester.enterText(fieldWithLabel('今天整体反馈'), '修正后的整体反馈');
-      expect(fieldWithLabel('实际用时'), findsNothing);
-      elapsed = const Duration(minutes: 2, seconds: 17);
-      await timer.checkpoint();
-      await tester.pump(const Duration(milliseconds: 100));
-      expect(find.textContaining('已学 2分钟'), findsOneWidget);
-      await tester.tap(find.text('保存今日记录'));
-      await tester.pump(const Duration(milliseconds: 400));
-      await drainSync(tester, coordinator);
-      expect(server.document.blocks.single.feedback, '修正后的卡点');
-      expect(
-        server.document.blocks.single.completionStatus,
-        CompletionStatus.partial,
-      );
-      expect(
-        day_ops.taskDayMinutes(
-          server.document,
-          fixture.tasks.single.id,
-          shanghaiToday(),
-        ),
-        2,
-      );
-      expect(server.document.dailyFeedback?[shanghaiToday()], '修正后的整体反馈');
-      await tester.tap(find.text('结束今天'));
-      await tester.pump(const Duration(milliseconds: 400));
-      expect(
-        tester.widget<TextField>(fieldWithLabel('卡点或反馈')).controller?.text,
-        '修正后的卡点',
-      );
-      expect(
-        tester.widget<TextField>(fieldWithLabel('今天整体反馈')).controller?.text,
-        '修正后的整体反馈',
-      );
-      await tester.tap(find.text('取消'));
-      await tester.pumpAndSettle();
-      await timer.pause();
-      await drainSync(tester, coordinator);
-    },
-  );
   testWidgets('the login form validates before sending anything', (
     tester,
   ) async {
@@ -525,7 +404,7 @@ void main() {
     await tester.tap(find.text('重试加载'));
     await tester.pumpAndSettle(const Duration(seconds: 5));
     expect(coordinator.status, SyncStatus.connected);
-    expect(find.text('今天，专注眼前的一步'), findsOneWidget);
+    expect(find.byKey(const Key('dashboard-quick-start')), findsOneWidget);
     expect(find.text('基础一轮'), findsWidgets);
   });
 
@@ -540,23 +419,27 @@ void main() {
     router.go('/tasks');
     await tester.pumpAndSettle(const Duration(seconds: 3));
 
-    await tester.tap(find.widgetWithText(FilledButton, '新建事项'));
+    final addButton = find.byKey(const Key('course-add-calculus'));
+    await tester.ensureVisible(addButton);
+    await tester.tap(addButton);
     // The dialog animates in; a bounded settle avoids depending on its exact frames.
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('新建事项'), findsWidgets);
-    expect(find.text('保存事项'), findsOneWidget);
+    expect(find.text('新建事项'), findsOneWidget);
+    expect(find.byKey(const Key('task-save-button')), findsOneWidget);
 
     // An empty title is refused.
-    await tester.tap(find.widgetWithText(FilledButton, '保存事项'));
+    await tester.tap(find.byKey(const Key('task-save-button')));
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('请填写事项名称和课程'), findsOneWidget);
+    expect(find.text('请填写事项名称'), findsOneWidget);
     expect(coordinator.data!.tasks.length, tasksBefore);
 
-    // A valid title saves and the plan grows by exactly one task. The dialog field is
-    // addressed by its label, because the page behind it also owns a TextField.
-    await tester.enterText(fieldWithLabel('事项名称'), '阶段七验收事项');
+    // A valid title saves and the plan grows by exactly one task.
+    await tester.enterText(
+      find.byKey(const Key('task-title-field')),
+      '阶段七验收事项',
+    );
     await tester.pump(const Duration(milliseconds: 200));
-    await tester.tap(find.widgetWithText(FilledButton, '保存事项'));
+    await tester.tap(find.byKey(const Key('task-save-button')));
     await waitUntil(
       tester,
       () => coordinator.data!.tasks.length == tasksBefore + 1,
@@ -575,6 +458,142 @@ void main() {
       isTrue,
       reason: '服务端应保存新增事项',
     );
+  });
+
+  testWidgets('the new-course dialog creates an empty folder and syncs it', (
+    tester,
+  ) async {
+    final server = FakeSyncServer();
+    final container = await signIn(tester, respond: server.respond);
+    final coordinator = container.read(plannerSyncProvider);
+    final subjectsBefore = coordinator.data!.subjects.length;
+    container.read(appRouterProvider).go('/tasks');
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.byKey(const Key('new-course-button')));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('新建课程'), findsWidgets);
+    await tester.enterText(
+      find.byKey(const Key('course-name-field')),
+      '概率论与数理统计',
+    );
+    await tester.tap(find.byKey(const Key('course-save-button')));
+    await waitUntil(
+      tester,
+      () => coordinator.data!.subjects.length == subjectsBefore + 1,
+      reason: '创建课程后计划没有新增课程',
+    );
+    await drainSync(tester, coordinator);
+    final created = coordinator.data!.subjects.last;
+    expect(created.name, '概率论与数理统计');
+    expect(
+      coordinator.data!.tasks.where((task) => task.subjectId == created.id),
+      isEmpty,
+    );
+    expect(server.pushCount, greaterThan(0), reason: '新增课程应上传到服务端');
+    expect(
+      server.document.subjects.any((subject) => subject.name == '概率论与数理统计'),
+      isTrue,
+    );
+  });
+
+  testWidgets(
+    'the task directory is name-only with independent desktop columns',
+    (tester) async {
+      tester.view.physicalSize = const Size(1440, 1000);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final base = todayFixture();
+      final source = base.tasks.single;
+      final english = base.subjects.first.copyWith(
+        id: 'english',
+        name: '英语',
+        color: '#1f7a5a',
+      );
+      final dataStructures = base.subjects.first.copyWith(
+        id: 'data-structure',
+        name: '数据结构',
+        color: '#c2761f',
+      );
+      final server = FakeSyncServer(
+        plan: base.copyWith(
+          subjects: [base.subjects.first, english, dataStructures],
+          tasks: [
+            source,
+            source.copyWith(
+              id: 'task-english',
+              subjectId: english.id,
+              title: '真题精读',
+            ),
+            source.copyWith(
+              id: 'task-ds',
+              subjectId: dataStructures.id,
+              title: '树与二叉树',
+            ),
+          ],
+        ),
+      );
+      final container = await signIn(tester, respond: server.respond);
+      container.read(appRouterProvider).go('/tasks');
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const Key('tasks-two-columns')), findsOneWidget);
+      expect(find.byKey(const Key('tasks-single-column')), findsNothing);
+      expect(find.text('真题精读'), findsOneWidget);
+      expect(find.text(source.description!), findsNothing);
+      expect(tester.takeException(), isNull);
+
+      tester.view.physicalSize = const Size(390, 844);
+      await tester.pumpAndSettle();
+      expect(find.byKey(const Key('tasks-single-column')), findsOneWidget);
+      expect(find.byKey(const Key('tasks-two-columns')), findsNothing);
+      expect(tester.takeException(), isNull, reason: '手机宽度下目录不能溢出');
+    },
+  );
+
+  testWidgets('search and course filter narrow the directory', (tester) async {
+    tester.view.physicalSize = const Size(1280, 900);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final base = todayFixture();
+    final source = base.tasks.single;
+    final english = base.subjects.first.copyWith(
+      id: 'english',
+      name: '英语',
+      color: '#1f7a5a',
+    );
+    final server = FakeSyncServer(
+      plan: base.copyWith(
+        subjects: [base.subjects.first, english],
+        tasks: [
+          source,
+          source.copyWith(
+            id: 'task-english',
+            subjectId: english.id,
+            title: '真题精读',
+          ),
+        ],
+      ),
+    );
+    final container = await signIn(tester, respond: server.respond);
+    container.read(appRouterProvider).go('/tasks');
+    await tester.pumpAndSettle();
+
+    await tester.enterText(find.byKey(const Key('tasks-search-field')), '真题');
+    await tester.pumpAndSettle();
+    expect(find.text('真题精读'), findsOneWidget);
+    expect(find.text('基础一轮'), findsNothing);
+
+    await tester.tap(find.byKey(const Key('clear-search-button')));
+    await tester.pumpAndSettle();
+    expect(find.text('基础一轮'), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('course-filter-button')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('英语').last);
+    await tester.pumpAndSettle();
+    expect(find.text('真题精读'), findsOneWidget);
+    expect(find.text('基础一轮'), findsNothing);
   });
 
   testWidgets('study time comes from the inline timer and cannot be edited', (
@@ -797,15 +816,19 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('基础一轮'), findsOneWidget);
 
-    final deleteButton = find.byTooltip('删除事项').first;
-    await tester.ensureVisible(deleteButton);
+    final coordinator = container.read(plannerSyncProvider);
+    final taskId = coordinator.data!.tasks.single.id;
+    final menu = find.byKey(Key('task-menu-$taskId'));
+    await tester.ensureVisible(menu);
     await tester.pumpAndSettle();
-    await tester.tap(deleteButton);
+    await tester.tap(menu);
     await tester.pumpAndSettle();
+    await tester.tap(find.text('删除事项').last);
+    await tester.pumpAndSettle();
+    expect(find.text('删除事项'), findsWidgets);
     await tester.tap(find.widgetWithText(TextButton, '取消'));
     await tester.pumpAndSettle();
 
-    final coordinator = container.read(plannerSyncProvider);
     expect(coordinator.data!.tasks, hasLength(1), reason: '取消删除不改变计划');
     expect(server.pushCount, 0, reason: '取消删除不产生同步写入');
   });
@@ -860,10 +883,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('依赖演练'), findsOneWidget);
 
-      final deleteButton = find.byTooltip('删除事项').first;
-      await tester.ensureVisible(deleteButton);
+      final coordinator = container.read(plannerSyncProvider);
+      final menu = find.byKey(Key('task-menu-${first.id}'));
+      await tester.ensureVisible(menu);
       await tester.pumpAndSettle();
-      await tester.tap(deleteButton);
+      await tester.tap(menu);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('删除事项').last);
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(FilledButton, '确认删除'));
       await tester.pump();
@@ -874,7 +900,6 @@ void main() {
         findsOneWidget,
         reason: '有依赖时必须明确阻止并说明原因',
       );
-      final coordinator = container.read(plannerSyncProvider);
       expect(coordinator.data!.tasks, hasLength(2));
       expect(server.pushCount, 0);
       expect(

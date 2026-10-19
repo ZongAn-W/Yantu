@@ -87,23 +87,3 @@ abstract class DraftResponse with _$DraftResponse {
       _DraftResponse;
   factory DraftResponse.fromJson(JsonMap json) => _$DraftResponseFromJson(json);
 }
-
-@freezed
-abstract class DailyEntry with _$DailyEntry {
-  const factory DailyEntry({
-    required String itemId,
-    required int actualMinutes,
-    required CompletionStatus completionStatus,
-    @Default('') String feedback,
-  }) = _DailyEntry;
-  factory DailyEntry.fromJson(JsonMap json) => _$DailyEntryFromJson(json);
-}
-
-@freezed
-abstract class DailyReview with _$DailyReview {
-  const factory DailyReview({
-    @Default('') String feedback,
-    @Default([]) List<DailyEntry> entries,
-  }) = _DailyReview;
-  factory DailyReview.fromJson(JsonMap json) => _$DailyReviewFromJson(json);
-}

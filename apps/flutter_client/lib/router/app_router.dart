@@ -10,7 +10,6 @@ import '../features/dashboard/presentation/dashboard_page.dart';
 import '../features/onboarding/presentation/onboarding_page.dart';
 import '../features/planner/application/onboarding_controller.dart';
 import '../core/errors/app_failure.dart';
-import '../core/providers.dart';
 import '../features/progress/presentation/progress_page.dart';
 import '../features/settings/presentation/settings_page.dart';
 import '../features/shell/app_shell.dart';
@@ -30,47 +29,20 @@ abstract final class AppRoutes {
   static const settings = '/settings';
 }
 
-final _hasLocalPlanProvider = FutureProvider<bool>((ref) async {
-  final userId = ref.watch(
-    authControllerProvider.select((state) => state.user?.id),
-  );
-  if (userId == null) return false;
-  final config = ref.watch(appConfigProvider);
-  final storage = ref.watch(storageRepositoryProvider);
-  final key =
-      'sjtu-study-planner:items-v2:${Uri.encodeComponent(config.apiBaseUrl)}:cloud:$userId';
-  final snapshot = await storage.load(key);
-  return snapshot.data?.profile.userId == userId;
-});
-
 final appRouterProvider = Provider<GoRouter>((ref) {
   final session = _AuthRouteState(
     ref.read(authControllerProvider).user != null,
   );
-  final onboarding = _OnboardingRouteState(
-    ref.read(onboardingStatusProvider).valueOrNull != null,
-    ref.read(onboardingStatusProvider).isLoading,
-    ref.read(onboardingStatusProvider).hasError,
-  );
-  void updateLocalPlan() {
-    onboarding.updateLocalPlan(
-      ref.read(_hasLocalPlanProvider).valueOrNull == true,
-    );
-  }
-
-  updateLocalPlan();
+  // Keep profile lookup available without letting its loading/error state
+  // decide whether the authenticated workbench is accessible.
+  ref.listen(onboardingStatusProvider, (_, _) {});
   ref.listen(authControllerProvider, (_, next) {
     session.update(next.user != null);
   });
-  ref.listen(onboardingStatusProvider, (_, next) {
-    onboarding.update(next.valueOrNull != null, next.isLoading, next.hasError);
-  });
-  ref.listen(_hasLocalPlanProvider, (_, _) => updateLocalPlan());
-  final planner = _PlannerRouter(session, onboarding);
+  final planner = _PlannerRouter(session);
   ref.onDispose(() {
     planner.router.dispose();
     session.dispose();
-    onboarding.dispose();
   });
   return planner.router;
 });
@@ -86,56 +58,22 @@ class _AuthRouteState extends ChangeNotifier {
   }
 }
 
-class _OnboardingRouteState extends ChangeNotifier {
-  _OnboardingRouteState(this.complete, this.loading, this.failed);
-  bool complete;
-  bool loading;
-  bool failed;
-  bool hasLocalPlan = false;
-
-  void update(bool nextComplete, bool nextLoading, bool nextFailed) {
-    if (complete == nextComplete &&
-        loading == nextLoading &&
-        failed == nextFailed) {
-      return;
-    }
-    complete = nextComplete;
-    loading = nextLoading;
-    failed = nextFailed;
-    notifyListeners();
-  }
-
-  void updateLocalPlan(bool next) {
-    if (hasLocalPlan == next) return;
-    hasLocalPlan = next;
-    notifyListeners();
-  }
-}
-
 class _PlannerRouter {
-  _PlannerRouter(this.session, this.onboarding);
+  _PlannerRouter(this.session);
   final _AuthRouteState session;
-  final _OnboardingRouteState onboarding;
 
   late final GoRouter router = GoRouter(
     initialLocation: AppRoutes.login,
-    refreshListenable: Listenable.merge([session, onboarding]),
+    refreshListenable: session,
     redirect: (context, state) {
       final location = state.matchedLocation;
       final login = location == AppRoutes.login;
       if (!session.authenticated) return login ? null : AppRoutes.login;
-      // Hold a dedicated route while the profile lookup runs, so an account that
-      // already finished onboarding never sees the wizard flash.
-      if ((onboarding.loading || onboarding.failed) &&
-          !onboarding.hasLocalPlan) {
-        return location == AppRoutes.loading ? null : AppRoutes.loading;
-      }
-      if (!onboarding.complete && !onboarding.loading && !onboarding.failed) {
-        return location == AppRoutes.onboarding ? null : AppRoutes.onboarding;
-      }
-      if (login ||
-          location == AppRoutes.onboarding ||
-          location == AppRoutes.loading) {
+      // The planning interview is optional. Let a new account reach the
+      // workbench while profile lookup and local plan bootstrap happen in the
+      // background; /onboarding remains available from the explicit AI planning
+      // entry point.
+      if (login || location == AppRoutes.loading) {
         return AppRoutes.today;
       }
       return null;

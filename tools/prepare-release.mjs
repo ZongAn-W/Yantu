@@ -9,7 +9,7 @@
 //   output/releases/<release-id>/                       unpacked release directory
 //   output/releases/study-planner-<release-id>.tar.gz  upload bundle
 //   output/releases/study-planner-<release-id>.tar.gz.sha256
-import { cp, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { basename, join, resolve } from "node:path";
@@ -47,8 +47,9 @@ if (!mainJs.includes(apiOrigin)) {
   throw new Error(`web/main.dart.js does not embed ${apiOrigin}; rebuild the Web client with --dart-define=API_BASE_URL=${apiOrigin}`);
 }
 
-await rm(releaseDir, { recursive: true, force: true });
-await mkdir(releaseDir, { recursive: true });
+await mkdir(outputRoot, { recursive: true });
+// Release IDs are immutable. Never remove an existing release directory.
+await mkdir(releaseDir);
 
 const source = join(releaseDir, "source");
 const inputs = [

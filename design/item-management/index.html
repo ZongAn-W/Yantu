@@ -1,0 +1,1413 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>不白学 · 事项管理 — 界面设计示意</title>
+<style>
+  :root{
+    --bg:#f5f7fa;
+    --surface:#ffffff;
+    --text:#20334a;
+    --muted:#5b6b7d;
+    --faint:#68788a;
+    --blue:#275e91;
+    --blue-deep:#214f7c;
+    --green:#237354;
+    --orange:#a85c14;
+    --danger:#b3261e;
+    --border:#dce3eb;
+    --border-soft:#e9eef4;
+    --focus:rgba(39,94,145,.18);
+    --radius:12px;
+    --shadow-menu:0 12px 32px rgba(32,51,74,.16), 0 2px 6px rgba(32,51,74,.06);
+    --shadow-dialog:0 24px 64px rgba(23,35,49,.24);
+    --font:"Noto Sans SC","Microsoft YaHei UI","Microsoft YaHei","PingFang SC","Segoe UI",sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{-webkit-text-size-adjust:100%}
+  body{
+    margin:0;
+    min-height:100vh;
+    background:var(--bg);
+    color:var(--text);
+    font-family:var(--font);
+    font-size:14px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  body.modal-open{overflow:hidden}
+  [hidden]{display:none !important}
+  button{font-family:inherit}
+  h1,h2,p,ul{margin:0}
+  ul{list-style:none;padding:0}
+  .icon{
+    width:18px;height:18px;flex:none;
+    fill:none;stroke:currentColor;stroke-width:1.7;
+    stroke-linecap:round;stroke-linejoin:round;
+  }
+  .svg-sprite{position:absolute;width:0;height:0;overflow:hidden}
+  :focus-visible{outline:2px solid var(--blue);outline-offset:2px}
+  .visually-hidden{
+    position:absolute;width:1px;height:1px;padding:0;margin:-1px;
+    overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0;
+  }
+
+  /* ── App shell ─────────────────────────────────────────── */
+  .app{display:grid;grid-template-columns:240px minmax(0,1fr);min-height:100vh}
+  .sidebar{
+    position:sticky;top:0;height:100vh;width:240px;z-index:20;
+    display:flex;flex-direction:column;
+    background:var(--surface);border-right:1px solid var(--border);
+  }
+  .brand{display:flex;align-items:center;gap:10px;padding:18px 16px 14px}
+  .brand-mark{
+    width:34px;height:34px;border-radius:9px;flex:none;
+    display:grid;place-items:center;background:var(--blue);color:#fff;
+  }
+  .brand-mark .icon{width:20px;height:20px}
+  .brand-copy{flex:1;min-width:0;display:flex;flex-direction:column;gap:1px}
+  .brand-copy strong{font-size:15px;font-weight:600;line-height:1.3}
+  .brand-copy span{font-size:11.5px;color:var(--muted);line-height:1.3}
+  .avatar{
+    width:30px;height:30px;flex:none;border:0;border-radius:50%;
+    display:grid;place-items:center;background:var(--blue);color:#fff;cursor:pointer;
+  }
+  .avatar .icon{width:16px;height:16px}
+  .nav{display:flex;flex-direction:column;gap:2px;padding:6px 8px}
+  .nav-item{
+    display:flex;align-items:center;gap:12px;height:40px;padding:0 12px;
+    border:0;border-radius:8px;background:transparent;color:var(--text);
+    font-size:13.5px;text-align:left;cursor:pointer;
+  }
+  .nav-item .icon{width:18px;height:18px;color:var(--muted)}
+  .nav-item:hover{background:#f4f7fa}
+  .nav-item.is-active{background:rgba(39,94,145,.08);color:var(--blue);font-weight:600}
+  .nav-item.is-active .icon{color:var(--blue)}
+  .sidebar-bottom{margin-top:auto;display:flex;flex-direction:column;gap:10px;padding:12px}
+  .goal-card{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:11px 12px}
+  .goal-label{display:block;font-size:11px;color:var(--muted);letter-spacing:.04em}
+  .goal-title{margin:4px 0 2px;font-size:12.5px;font-weight:600;line-height:1.4}
+  .goal-meta{font-size:11px;color:var(--muted);line-height:1.5}
+  .sync-row{display:flex;align-items:center;gap:7px;padding:0 4px 2px;font-size:11.5px;color:var(--muted)}
+  .sync-dot{width:7px;height:7px;border-radius:50%;background:var(--green);flex:none}
+  .main{min-width:0;display:flex;flex-direction:column;min-height:100vh}
+  .page{
+    display:flex;flex-direction:column;flex:1;
+    width:100%;max-width:1200px;margin:0 auto;padding:26px 32px 30px;
+  }
+
+  /* ── Page heading ──────────────────────────────────────── */
+  .page-head{
+    display:flex;align-items:flex-end;justify-content:space-between;
+    gap:20px 24px;flex-wrap:wrap;
+  }
+  .head-copy{min-width:240px}
+  .title-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .title-row h1{font-size:24px;font-weight:600;line-height:1.25;letter-spacing:.01em}
+  .demo-chip{
+    display:inline-flex;align-items:center;height:20px;padding:0 8px;
+    border:1px solid var(--border);border-radius:999px;background:rgba(255,255,255,.72);
+    color:var(--muted);font-size:11px;line-height:1;white-space:nowrap;
+  }
+  .sub{margin-top:6px;font-size:13px;color:var(--muted);line-height:1.5}
+  .toolbar{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+
+  .search{
+    display:flex;align-items:center;width:224px;min-width:0;height:34px;
+    padding:0 7px 0 10px;background:var(--surface);
+    border:1px solid var(--border);border-radius:8px;color:var(--muted);
+    transition:border-color .15s,box-shadow .15s;
+  }
+  .search .search-icon{width:16px;height:16px}
+  .search input{
+    flex:1;min-width:0;height:100%;padding:0 7px;
+    border:0;outline:0;background:transparent;
+    color:var(--text);font-family:inherit;font-size:13px;
+  }
+  .search input::placeholder{color:var(--faint)}
+  .search input::-webkit-search-cancel-button{display:none}
+  .search:focus-within{border-color:var(--blue);box-shadow:0 0 0 3px var(--focus)}
+  .search-clear{
+    display:grid;place-items:center;width:24px;height:24px;padding:0;
+    border:0;border-radius:50%;background:transparent;color:var(--muted);cursor:pointer;
+  }
+  .search-clear:hover{background:#eef2f7;color:var(--text)}
+  .search-clear .icon{width:13px;height:13px}
+
+  .filter-btn{
+    display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 10px;
+    border:1px solid var(--border);border-radius:8px;background:var(--surface);
+    color:var(--text);font-size:13px;cursor:pointer;white-space:nowrap;
+    transition:border-color .15s,background .15s;
+  }
+  .filter-btn:hover{border-color:#c7d3e0;background:#fbfcfe}
+  .filter-btn[aria-expanded="true"]{border-color:var(--blue)}
+  .filter-dot{width:7px;height:7px;border-radius:50%;flex:none}
+  .filter-chevron{width:14px;height:14px;color:var(--faint)}
+
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:6px;
+    height:34px;padding:0 14px;border:1px solid transparent;border-radius:8px;
+    font-size:13px;font-weight:600;line-height:1;cursor:pointer;white-space:nowrap;
+    transition:background .15s,border-color .15s,color .15s,opacity .15s;
+  }
+  .btn .icon{width:15px;height:15px}
+  .btn-primary{background:var(--blue);color:#fff}
+  .btn-primary:hover{background:var(--blue-deep)}
+  .btn-primary:disabled{background:var(--blue);opacity:.38;cursor:not-allowed}
+  .btn-ghost{background:var(--surface);border-color:var(--border);color:var(--text)}
+  .btn-ghost:hover{background:#f6f8fb;border-color:#c7d3e0}
+  .btn-outline{background:var(--surface);border-color:#b9c9da;color:var(--blue)}
+  .btn-outline:hover{background:#f2f6fa;border-color:var(--blue)}
+  .btn-danger{background:var(--danger);color:#fff}
+  .btn-danger:hover{background:#95201a}
+  .new-mobile{display:none;height:30px;padding:0 10px;font-size:12.5px;margin-left:auto}
+  .new-mobile .icon{width:14px;height:14px}
+
+  /* ── Course board ──────────────────────────────────────── */
+  .board{margin-top:22px}
+  .board-columns{display:flex;align-items:flex-start;gap:18px}
+  .board-col{flex:1;min-width:0;display:flex;flex-direction:column;gap:18px}
+  .board.is-empty{display:block}
+  .course{
+    min-width:0;overflow:hidden;
+    background:var(--surface);border:1px solid var(--border);
+    border-radius:var(--radius);
+    box-shadow:inset 3px 0 0 color-mix(in srgb,var(--course) 48%,#fff), 0 1px 2px rgba(32,51,74,.035);
+  }
+  .course-head{
+    display:flex;align-items:center;gap:11px;
+    padding:13px 16px;
+    background:#f8fafc;
+    border-bottom:1px solid var(--border-soft);
+  }
+  .course-icon{
+    width:38px;height:38px;flex:none;border-radius:10px;
+    display:grid;place-items:center;
+    background:var(--course);color:#fff;
+    box-shadow:inset 0 0 0 1px rgba(255,255,255,.16), 0 1px 2px rgba(32,51,74,.16);
+  }
+  .course-glyph{
+    width:19px;height:19px;
+    fill:none;stroke:currentColor;stroke-width:1.7;
+    stroke-linecap:round;stroke-linejoin:round;
+  }
+  .course-id{display:flex;align-items:center;gap:9px;flex:1;min-width:0}
+  .course-name{
+    min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font-size:15.5px;font-weight:600;line-height:1.4;letter-spacing:.01em;
+  }
+  .course-count{
+    flex:none;font-size:11.5px;color:var(--muted);
+    font-variant-numeric:tabular-nums;
+  }
+  .course-add{
+    display:inline-flex;align-items:center;gap:4px;flex:none;
+    height:28px;padding:0 8px;border:1px solid transparent;border-radius:6px;
+    background:transparent;color:var(--blue);font-size:12.5px;font-weight:500;
+    cursor:pointer;transition:background .15s,border-color .15s;
+  }
+  .course-add .icon{width:14px;height:14px}
+  .course-add:hover{background:rgba(39,94,145,.07);border-color:rgba(39,94,145,.14)}
+
+  .items{padding:0}
+  .item{
+    display:flex;align-items:flex-start;gap:10px;
+    padding:12px 14px 12px 18px;
+    transition:background .12s;
+  }
+  .item + .item{border-top:1px solid var(--border-soft)}
+  .item:hover{background:#f8fafc}
+  .item-copy{flex:1;min-width:0;padding-top:1px}
+  .item-title{
+    font-size:14.5px;font-weight:600;line-height:1.5;
+    color:var(--text);overflow-wrap:anywhere;
+  }
+  .item-more{
+    display:grid;place-items:center;flex:none;
+    width:30px;height:30px;margin-top:-3px;padding:0;
+    border:0;border-radius:6px;background:transparent;
+    color:#6d7e90;cursor:pointer;
+    transition:background .12s,color .12s;
+  }
+  .item-more .icon{width:18px;height:18px;stroke-width:2}
+  .item-more:hover,.item-more[aria-expanded="true"]{background:#eef2f7;color:var(--text)}
+  .item:hover .item-more{color:var(--text)}
+  .item-flash{animation:item-flash 1.8s ease-out}
+  @keyframes item-flash{
+    0%{background:rgba(39,94,145,.14)}
+    35%{background:rgba(39,94,145,.10)}
+    100%{background:transparent}
+  }
+
+  .course-empty{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;
+    min-height:104px;padding:18px 18px;text-align:center;
+  }
+  .course-empty-note{display:flex;align-items:center;gap:7px;font-size:12.5px;color:var(--muted)}
+  .course-empty-note .icon{width:17px;height:17px;color:#8494a6}
+  .course-empty-hint{font-size:11.5px;line-height:1.5;color:var(--muted)}
+
+  .board-empty{
+    display:flex;flex-direction:column;align-items:center;
+    padding:44px 24px 46px;text-align:center;
+    background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);
+  }
+  .board-empty-icon{
+    width:42px;height:42px;border-radius:50%;
+    display:grid;place-items:center;
+    background:#eef3f8;color:var(--muted);margin-bottom:12px;
+  }
+  .board-empty-icon .icon{width:20px;height:20px}
+  .board-empty-title{font-size:14px;font-weight:600}
+  .board-empty-hint{margin-top:5px;font-size:12.5px;color:var(--muted);line-height:1.6;max-width:520px}
+  .board-empty-actions{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:16px}
+  .board-empty .btn{height:32px;font-size:12.5px;padding:0 13px}
+  .demo-foot{
+    margin-top:20px;font-size:11px;line-height:1.6;color:var(--muted);
+    font-variant-numeric:tabular-nums;
+  }
+
+  /* ── Popover ───────────────────────────────────────────── */
+  #popover-layer{position:fixed;inset:0;z-index:60;pointer-events:none}
+  .popover{
+    position:fixed;pointer-events:auto;padding:5px;
+    background:var(--surface);border:1px solid var(--border);border-radius:10px;
+    box-shadow:var(--shadow-menu);
+    animation:pop-in .12s ease-out;
+  }
+  @keyframes pop-in{from{opacity:0;transform:translateY(-3px)}to{opacity:1;transform:none}}
+  .popover-item{width:158px}
+  .popover-course{width:236px;max-height:min(60vh,420px);overflow:auto}
+  .menu-item{
+    display:flex;align-items:center;gap:9px;width:100%;min-height:38px;
+    padding:8px 10px;border:0;border-radius:7px;background:transparent;
+    color:var(--text);font-size:13px;text-align:left;cursor:pointer;
+  }
+  .menu-item .icon{width:16px;height:16px;color:var(--muted)}
+  .menu-item:hover{background:#f2f6fa}
+  .menu-item:focus-visible{background:#e9f1f8;outline:2px solid var(--blue);outline-offset:-2px}
+  .menu-item.danger{color:var(--danger)}
+  .menu-item.danger .icon{color:var(--danger)}
+  .course-option{
+    display:flex;align-items:center;gap:9px;width:100%;min-height:38px;
+    padding:8px 10px;border:0;border-radius:7px;background:transparent;
+    color:var(--text);font-size:13px;text-align:left;cursor:pointer;
+  }
+  .course-option:hover{background:#f2f6fa}
+  .course-option:focus-visible{background:#e9f1f8;outline:2px solid var(--blue);outline-offset:-2px}
+  .course-option-dot{width:8px;height:8px;border-radius:50%;flex:none}
+  .course-option-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .course-option-count{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .course-option-check{width:14px;height:14px;color:var(--blue);opacity:0}
+  .course-option.is-selected{background:#eef3f8}
+  .course-option.is-selected .course-option-label{font-weight:600}
+  .course-option.is-selected .course-option-check{opacity:1}
+
+  /* ── Dialog ────────────────────────────────────────────── */
+  .modal-layer{
+    position:fixed;inset:0;z-index:80;
+    display:grid;place-items:center;padding:20px;
+  }
+  .modal-backdrop{position:absolute;inset:0;background:rgba(23,35,49,.36);animation:fade-in .15s ease-out}
+  .modal{
+    position:relative;width:min(468px,100%);max-height:calc(100dvh - 40px);
+    overflow:auto;background:var(--surface);border-radius:14px;
+    box-shadow:var(--shadow-dialog);outline:none;
+    animation:dialog-in .16s ease-out;
+  }
+  @keyframes fade-in{from{opacity:0}to{opacity:1}}
+  @keyframes dialog-in{from{opacity:0;transform:translateY(8px) scale(.985)}to{opacity:1;transform:none}}
+  #modalContent{padding:22px 24px 20px}
+  .modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .modal-head h2{font-size:17px;font-weight:600;line-height:1.4}
+  .modal-close{
+    display:grid;place-items:center;width:28px;height:28px;margin:-3px -4px 0 0;padding:0;
+    border:0;border-radius:6px;background:transparent;color:var(--muted);cursor:pointer;
+  }
+  .modal-close:hover{background:#f0f4f8;color:var(--text)}
+  .modal-close .icon{width:16px;height:16px}
+  .modal-body{display:flex;flex-direction:column;gap:15px;margin-top:18px}
+  .field{display:flex;flex-direction:column;gap:6px}
+  .field-label{display:flex;align-items:baseline;justify-content:space-between;gap:12px;font-size:12.5px;font-weight:600;color:#3d5064}
+  .label-hint{font-size:11px;font-weight:400;color:var(--muted)}
+  .input{
+    width:100%;height:38px;padding:0 11px;
+    border:1px solid var(--border);border-radius:8px;background:var(--surface);
+    color:var(--text);font-family:inherit;font-size:13.5px;line-height:1.5;
+    transition:border-color .15s,box-shadow .15s;
+  }
+  .input::placeholder{color:var(--faint)}
+  .input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px var(--focus)}
+  .textarea{height:auto;min-height:82px;padding:9px 11px;resize:none;line-height:1.6}
+  .select-wrap{position:relative;display:flex;align-items:center}
+  .select-dot{position:absolute;left:12px;top:50%;width:8px;height:8px;margin-top:-4px;border-radius:50%;background:#c3ceda;pointer-events:none}
+  .select{
+    width:100%;height:38px;padding:0 34px 0 29px;
+    border:1px solid var(--border);border-radius:8px;background:var(--surface);
+    color:var(--text);font-family:inherit;font-size:13.5px;
+    appearance:none;cursor:pointer;
+    transition:border-color .15s,box-shadow .15s;
+  }
+  .select:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px var(--focus)}
+  .select-chevron{position:absolute;right:11px;top:50%;width:14px;height:14px;margin-top:-7px;color:var(--faint);pointer-events:none}
+  .field-note{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--blue)}
+  .field-note.muted{color:var(--muted)}
+  .field-note .icon{width:13px;height:13px}
+  .swatches{display:flex;flex-wrap:wrap;gap:10px;padding:3px 0 1px}
+  .swatch{
+    width:26px;height:26px;flex:none;padding:0;border:2px solid #fff;border-radius:50%;
+    background:var(--swatch);cursor:pointer;
+    box-shadow:0 0 0 1px var(--border);
+    transition:box-shadow .12s,transform .12s;
+  }
+  .swatch:hover{transform:scale(1.07)}
+  .swatch[aria-checked="true"]{box-shadow:0 0 0 2px #fff,0 0 0 4px var(--swatch)}
+  .swatch:focus-visible{outline:2px solid var(--blue);outline-offset:3px}
+  .modal-foot{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-top:22px}
+  .modal-foot .btn{height:34px;min-width:66px}
+  .confirm-text{font-size:14px;line-height:1.7;overflow-wrap:anywhere}
+  .confirm-text strong{font-weight:600}
+  .confirm-sub{margin-top:6px;font-size:12.5px;color:var(--muted);line-height:1.6}
+
+  /* ── Toast ─────────────────────────────────────────────── */
+  .toast{
+    position:fixed;left:50%;bottom:30px;z-index:90;
+    transform:translateX(-50%) translateY(6px);
+    max-width:min(560px,calc(100vw - 40px));padding:9px 15px;
+    border-radius:8px;background:#25384e;color:#fff;
+    font-size:12.5px;line-height:1.5;box-shadow:0 8px 24px rgba(23,35,49,.24);
+    opacity:0;transition:opacity .16s,transform .16s;
+    pointer-events:none;text-align:center;overflow-wrap:anywhere;
+  }
+  .toast.is-visible{opacity:1;transform:translateX(-50%) translateY(0)}
+
+  /* 桌面端事项与课程名对齐，强化“文件夹内容”层级 */
+  @media (min-width:900px){
+    .item{padding-left:65px}
+    .item-copy{padding-top:0}
+  }
+
+  /* 平板宽度：保留侧栏但改单列，避免课程名被压到 2–3 个字 */
+  @media (min-width:900px) and (max-width:1079px){
+    .board{display:flex;flex-direction:column;gap:16px}
+  }
+
+  /* ── Mobile shell ──────────────────────────────────────── */
+  .mobile-topbar{display:none}
+  .bottom-nav{display:none}
+
+  @media (max-width:899px){
+    .app{grid-template-columns:1fr}
+    .sidebar{display:none}
+    .mobile-topbar{
+      position:sticky;top:0;z-index:30;
+      display:flex;align-items:center;justify-content:space-between;
+      height:48px;padding:0 16px;
+      background:var(--surface);border-bottom:1px solid var(--border);
+    }
+    .mobile-brand{display:flex;align-items:center;gap:8px;font-size:13.5px;font-weight:600}
+    .mini-mark{
+      width:24px;height:24px;border-radius:7px;display:grid;place-items:center;
+      background:var(--blue);color:#fff;
+    }
+    .mini-mark .icon{width:15px;height:15px}
+    .mobile-actions{display:flex;align-items:center;gap:10px}
+    .sync-inline{display:flex;align-items:center;gap:5px;font-size:10.5px;color:var(--muted)}
+    .sync-inline i{width:6px;height:6px;border-radius:50%;background:var(--green);display:block}
+    .avatar-sm{width:26px;height:26px}
+    .avatar-sm .icon{width:14px;height:14px}
+
+    .page{padding:16px 16px 90px;max-width:none}
+    .page-head{flex-direction:column;align-items:stretch;gap:12px}
+    .head-copy{min-width:0}
+    .title-row{gap:8px}
+    .title-row h1{font-size:22px;line-height:1.3}
+    .demo-chip{height:19px;font-size:10.5px;padding:0 7px}
+    .new-mobile{display:inline-flex;position:relative;height:34px;padding:0 11px;font-size:12.5px}
+    .new-mobile::after{content:"";position:absolute;inset:-5px -3px}
+    .sub{margin-top:4px;font-size:12.5px}
+    .toolbar{width:100%;min-width:0;flex-wrap:nowrap;gap:8px;justify-content:flex-start}
+    .search{width:auto;flex:1;min-width:0;height:36px}
+    .filter-btn{height:38px;flex:none;position:relative}
+    .filter-btn::after{content:"";position:absolute;inset:-3px -2px}
+    .new-desktop{display:none}
+    .board{display:flex;flex-direction:column;gap:12px;margin-top:16px}
+    .course{border-radius:12px}
+    .course-head{gap:10px;padding:11px 13px}
+    .course-icon{width:34px;height:34px;border-radius:9px}
+    .course-glyph{width:17px;height:17px}
+    .course-id{gap:8px}
+    .course-name{font-size:15px}
+    .course-count{font-size:11.5px}
+    .course-add{position:relative;height:28px;padding:0 7px;font-size:12px}
+    .course-add::after{content:"";position:absolute;inset:-8px -6px}
+    .course-add .icon{width:13px;height:13px}
+    .item{padding:11px 12px 11px 15px}
+    .item-copy{padding-top:1px}
+    .item-title{font-size:14px;line-height:1.55}
+    .item-desc{font-size:12.3px;line-height:1.6;margin-top:2px}
+    .item-more{position:relative;width:38px;height:38px;margin-top:-4px;color:#6d7e90}
+    .item-more::after{content:"";position:absolute;inset:-3px}
+    .course-empty{min-height:96px;padding:15px 13px 16px}
+    .course-empty-note{font-size:12px}
+    .course-empty-hint{font-size:11px;padding:0 8px}
+    .search-clear{position:relative;width:26px;height:26px}
+    .search-clear::after{content:"";position:absolute;inset:-9px}
+    .demo-foot{margin-top:16px;font-size:11px;padding:0 2px}
+    .board-empty{padding:36px 20px 38px}
+    .modal-layer{padding:12px}
+    .modal{width:100%;max-height:calc(100dvh - 24px)}
+    #modalContent{padding:20px 18px 18px}
+    .modal-head h2{font-size:16.5px}
+    .modal-close{position:relative;width:32px;height:32px;margin:-4px -6px 0 0}
+    .modal-close::after{content:"";position:absolute;inset:-6px}
+    .input,.select{height:42px;font-size:14px}
+    .textarea{min-height:88px}
+    .modal-foot{margin-top:20px;position:sticky;bottom:-18px;background:var(--surface);padding:12px 0 2px}
+    .modal-foot .btn{height:44px;flex:1}
+    .menu-item,.course-option{min-height:44px;padding:10px}
+    .toast{bottom:78px;font-size:12.5px}
+
+    .bottom-nav{
+      position:fixed;left:0;right:0;bottom:0;z-index:40;
+      display:flex;align-items:stretch;justify-content:space-between;
+      padding:5px 2px calc(5px + env(safe-area-inset-bottom,0px));
+      background:var(--surface);border-top:1px solid var(--border);
+    }
+    .bottom-nav button{
+      flex:1;min-width:0;display:flex;flex-direction:column;align-items:center;gap:2px;
+      padding:4px 0 2px;border:0;background:transparent;
+      color:var(--muted);font-size:10.5px;line-height:1.2;cursor:pointer;
+    }
+    .bottom-nav .icon{
+      width:19px;height:19px;padding:3px 8px;box-sizing:content-box;
+      border-radius:999px;
+    }
+    .bottom-nav button.is-active{color:var(--blue);font-weight:600}
+    .bottom-nav button.is-active .icon{background:rgba(39,94,145,.10)}
+  }
+
+  @media (max-width:400px){
+    .course-add span{max-width:64px;overflow:hidden;text-overflow:ellipsis}
+  }
+
+  @media (max-width:360px){
+    .sync-inline{display:none}
+    .toolbar{flex-wrap:wrap}
+    .search{flex:1 1 100%;width:100%}
+    .filter-btn{width:100%;justify-content:space-between}
+  }
+
+  /* 仅用于生成整页设计预览图：让底部导航回到文档流末端，避免固定定位在整页截图中悬浮 */
+  @media (max-width:899px){
+    .capture-nav .page{padding-bottom:18px}
+    .capture-nav .bottom-nav{position:static}
+  }
+
+  @media (prefers-reduced-motion:reduce){
+    *,*::before,*::after{animation-duration:.001ms !important;transition-duration:.001ms !important}
+  }
+</style>
+</head>
+<body>
+
+<svg class="svg-sprite" aria-hidden="true" focusable="false" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-logo" viewBox="0 0 24 24">
+    <path d="M12 3.8 3.2 8.4l8.8 4.6 8.8-4.6L12 3.8Z"/>
+    <path d="M7 11.1v4.3c0 1.6 2.2 2.8 5 2.8s5-1.2 5-2.8v-4.3"/>
+    <path d="M20.8 9.2v4.9"/>
+  </symbol>
+  <symbol id="i-check-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8.5"/><path d="m8.4 12.2 2.4 2.4 4.8-5.1"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="4" y="5.5" width="16" height="14.5" rx="2"/><path d="M8 3.5v4M16 3.5v4M4 10.2h16"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6.5h11M9 12h11M9 17.5h11"/><path d="M4.6 6.5h.01M4.6 12h.01M4.6 17.5h.01" stroke-width="2.2"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20h16"/><path d="M7 20v-5.5M12 20V7M17 20v-9"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 7h8.5M17.5 7H20M4 17h2.5M11.5 17H20"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M20 15.5a2 2 0 0 1-2 2H9.2L5 20.5v-3H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2Z"/><path d="M8.4 9.3h7.2M8.4 12.8h4.6"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24">
+    <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/>
+    <circle cx="12" cy="12" r="3"/>
+  </symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8.4" r="3.3"/><path d="M5.6 20c.7-3.2 3.3-5.1 6.4-5.1s5.7 1.9 6.4 5.1"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="6.5"/><path d="m15.9 15.9 4.1 4.1"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m7 10 5 5 5-5"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><path d="M5.5 12h.01M12 12h.01M18.5 12h.01"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 20h4L19.5 8.5a2.12 2.12 0 0 0-3-3L5 17v3Z"/><path d="m14.5 8.5 3 3"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M9.5 7V4.8h5V7M6.5 7l1 13h9l1-13"/><path d="M10 11v6M14 11v6"/></symbol>
+  <symbol id="i-folder-plus" viewBox="0 0 24 24"><path d="M3.5 7A2 2 0 0 1 5.5 5h4L11 7h7.5a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2Z"/><path d="M12 11v6M9 14h6"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12.5 4.5 4.5L19 7"/></symbol>
+</svg>
+
+<div class="app">
+  <aside class="sidebar" aria-label="应用导航">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true"><svg class="icon"><use href="#i-logo"/></svg></span>
+      <div class="brand-copy">
+        <strong>不白学</strong>
+        <span>学习执行台</span>
+      </div>
+      <button class="avatar" type="button" aria-label="账号菜单"><svg class="icon"><use href="#i-user"/></svg></button>
+    </div>
+    <nav class="nav">
+      <button class="nav-item" type="button"><svg class="icon"><use href="#i-check-circle"/></svg><span>今日</span></button>
+      <button class="nav-item" type="button"><svg class="icon"><use href="#i-calendar"/></svg><span>日历</span></button>
+      <button class="nav-item is-active" type="button" aria-current="page"><svg class="icon"><use href="#i-list"/></svg><span>事项</span></button>
+      <button class="nav-item" type="button"><svg class="icon"><use href="#i-chart"/></svg><span>进度</span></button>
+      <button class="nav-item" type="button"><svg class="icon"><use href="#i-sliders"/></svg><span>调整</span></button>
+      <button class="nav-item" type="button"><svg class="icon"><use href="#i-chat"/></svg><span>访谈</span></button>
+      <button class="nav-item" type="button"><svg class="icon"><use href="#i-settings"/></svg><span>设置</span></button>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="goal-card">
+        <span class="goal-label">学习目标</span>
+        <p class="goal-title">2027 计算机考研</p>
+        <p class="goal-meta" id="goalMeta">6 门课程 · 20 个事项</p>
+      </div>
+      <div class="sync-row"><span class="sync-dot"></span>云端已同步</div>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="mobile-topbar">
+      <div class="mobile-brand">
+        <span class="mini-mark" aria-hidden="true"><svg class="icon"><use href="#i-logo"/></svg></span>
+        <span>不白学</span>
+      </div>
+      <div class="mobile-actions">
+        <span class="sync-inline"><i></i>云端已同步</span>
+        <button class="avatar avatar-sm" type="button" aria-label="账号菜单"><svg class="icon"><use href="#i-user"/></svg></button>
+      </div>
+    </header>
+
+    <main class="page">
+      <header class="page-head">
+        <div class="head-copy">
+          <div class="title-row">
+            <h1>事项管理</h1>
+            <span class="demo-chip" title="页面中的课程与事项均为示例数据">示例数据</span>
+            <button class="btn btn-primary new-mobile" type="button" data-new-course><svg class="icon"><use href="#i-plus"/></svg>新建课程</button>
+          </div>
+          <p class="sub">按课程分组查看和管理学习事项</p>
+        </div>
+        <div class="toolbar">
+          <div class="search" id="searchBox">
+            <svg class="icon search-icon" aria-hidden="true"><use href="#i-search"/></svg>
+            <input id="searchInput" type="search" placeholder="搜索事项" aria-label="搜索事项" autocomplete="off" spellcheck="false">
+            <button class="search-clear" id="searchClear" type="button" aria-label="清除搜索" hidden><svg class="icon" aria-hidden="true"><use href="#i-close"/></svg></button>
+          </div>
+          <button class="filter-btn" id="filterBtn" type="button" aria-haspopup="menu" aria-expanded="false">
+            <span class="filter-dot" id="filterDot" hidden></span>
+            <span id="filterLabel">全部课程</span>
+            <svg class="icon filter-chevron" aria-hidden="true"><use href="#i-chevron-down"/></svg>
+          </button>
+          <button class="btn btn-primary new-desktop" type="button" data-new-course><svg class="icon"><use href="#i-plus"/></svg>新建课程</button>
+        </div>
+      </header>
+
+      <section class="board" id="board" aria-label="课程与事项列表"></section>
+      <span class="visually-hidden" id="resultStatus" role="status" aria-live="polite"></span>
+
+      <p class="demo-foot">以上课程与事项均为示例数据，仅用于展示界面结构、层级与操作方式，不代表真实学习内容。</p>
+    </main>
+  </div>
+</div>
+
+<nav class="bottom-nav" aria-label="应用导航">
+  <button type="button"><svg class="icon"><use href="#i-check-circle"/></svg><span>今日</span></button>
+  <button type="button"><svg class="icon"><use href="#i-calendar"/></svg><span>日历</span></button>
+  <button class="is-active" type="button" aria-current="page"><svg class="icon"><use href="#i-list"/></svg><span>事项</span></button>
+  <button type="button"><svg class="icon"><use href="#i-chart"/></svg><span>进度</span></button>
+  <button type="button"><svg class="icon"><use href="#i-sliders"/></svg><span>调整</span></button>
+  <button type="button"><svg class="icon"><use href="#i-chat"/></svg><span>访谈</span></button>
+  <button type="button"><svg class="icon"><use href="#i-settings"/></svg><span>设置</span></button>
+</nav>
+
+<div id="popover-layer"></div>
+
+<div class="modal-layer" id="modalLayer" hidden>
+  <div class="modal-backdrop" data-modal-cancel></div>
+  <div class="modal" id="modalEl" role="dialog" aria-modal="true" aria-labelledby="modalTitle" tabindex="-1">
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ── 课程图标 ──────────────────────────────────────────── */
+  const COURSE_ICONS = {
+    calculus: '<svg class="course-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.2 4v16h15.6"/><path d="M6.6 16.6c2.9 0 3.1-8.8 5.7-8.8 2 0 1.4 6.2 4.7 6.2"/></svg>',
+    english: '<svg class="course-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M4.6 19 11 5l6.4 14"/><path d="M7.3 13.9h7.4"/></svg>',
+    tree: '<svg class="course-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5.6" r="2.1"/><circle cx="6.4" cy="18.4" r="2.1"/><circle cx="17.6" cy="18.4" r="2.1"/><path d="M12 7.7v3.7M6.4 16.3v-4.9h11.2v4.9"/></svg>',
+    matrix: '<svg class="course-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4H4v16h3M17 4h3v16h-3"/><path d="M9 9h6M9 12h6M9 15h6"/></svg>',
+    network: '<svg class="course-glyph" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.1"/><path d="M3.9 12h16.2M12 3.9c2.2 2.3 3.3 5.1 3.3 8.1S14.2 17.8 12 20.1c-2.2-2.3-3.3-5.1-3.3-8.1S9.8 6.2 12 3.9Z"/></svg>',
+    chip: '<svg class="course-glyph" viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="1.6"/><rect x="10.2" y="10.2" width="3.6" height="3.6" rx=".8"/><path d="M10 3.6V7M14 3.6V7M10 17v3.4M14 17v3.4M3.6 10H7M3.6 14H7M17 10h3.4M17 14h3.4"/></svg>',
+    book: '<svg class="course-glyph" viewBox="0 0 24 24" aria-hidden="true"><path d="M5.4 19.3V6.7a2.2 2.2 0 0 1 2.2-2.2H19v15.6H7.7a2.3 2.3 0 0 0-2.3 2.3"/><path d="M5.4 19.3a2.3 2.3 0 0 1 2.3-2.2H19"/><path d="M9 8.3h5.8"/></svg>'
+  };
+
+  const COURSE_COLORS = ['#4565c7', '#1f7a5a', '#c2761f', '#7a6bd0', '#2b7f9e', '#8a5a2b'];
+  const COURSE_COLOR_NAMES = ['靛蓝', '松绿', '琥珀', '紫罗兰', '青蓝', '赭石'];
+
+  /* ── 示例数据（明确标注：仅用于设计示意） ─────────────── */
+  const DATA = [
+    {
+      id:'calculus', name:'高等数学', color:'#4565c7', icon:'calculus',
+      items:[
+        {id:'c1', title:'函数、极限与连续：基础概念梳理', description:'整理等价无穷小、连续性与间断点分类，完成 20 道基础题并归档错题。'},
+        {id:'c2', title:'一元函数微分学：导数与微分计算', description:'覆盖复合函数、隐函数与参数方程求导，整理常用求导公式。'},
+        {id:'c3', title:'一元函数微分学：中值定理与导数应用', description:'拉格朗日中值定理、柯西中值定理与泰勒公式的常见题型；重点整理单调性、极值、凹凸性以及不等式证明的判断路径与常用构造方法，并归纳每种题型的第一步切入点与易错细节。'},
+        {id:'c4', title:'定积分与反常积分综合训练：换元法、分部积分、几何应用与物理应用题典型题精练', description:'完成 660 题对应章节，错题按知识点归类后二刷。'},
+        {id:'c5', title:'真题复盘：2015–2019 年数学一错题整理', description:''}
+      ]
+    },
+    {
+      id:'english', name:'英语', color:'#1f7a5a', icon:'english',
+      items:[
+        {id:'e1', title:'考研核心词汇：List 13–16 背诵与复盘', description:'每天一个 List，重点记忆熟词僻义与固定搭配；晚上用 20 分钟回看当天的生词。'},
+        {id:'e2', title:'长难句分析：定语从句与状语从句', description:'按主干拆分法精读 10 个真题长难句，标注从句类型与修饰关系，整理成可复用的分析步骤。'},
+        {id:'e3', title:'2018–2022 年阅读理解真题精读', description:'每天两篇，完成后逐句翻译并记录生词；周末统一复盘错题与干扰项设置。'},
+        {id:'e4', title:'写作素材积累：图表作文常用表达', description:'整理图表描述与数据变化的常用句型，各写一篇小作文。'},
+        {id:'e5', title:'翻译训练：真题段落精译与对照修改', description:'对照参考译文逐句修改，标注漏译、语序与搭配问题，并把高频表达整理成替换清单。'}
+      ]
+    },
+    {
+      id:'data-structure', name:'数据结构', color:'#c2761f', icon:'tree',
+      items:[
+        {id:'d1', title:'线性表：顺序表与链表的实现与对比', description:'手写插入、删除与逆置操作，比较两种存储结构的时间复杂度。'},
+        {id:'d2', title:'树与二叉树：遍历方式与递归应用', description:'前中后序与层序遍历，完成 8 道递归应用题。'},
+        {id:'d3', title:'图：存储结构、遍历与最短路径算法', description:'邻接矩阵与邻接表；手推 Dijkstra 与 Floyd 的完整过程。'},
+        {id:'d4', title:'排序算法对比与复杂度分析', description:''}
+      ]
+    },
+    {
+      id:'linear-algebra', name:'线性代数', color:'#5b7fd4', icon:'matrix',
+      items:[
+        {id:'l1', title:'行列式与矩阵：基本运算与性质', description:'梳理行列式展开、矩阵乘法与可逆矩阵的判定方法。'},
+        {id:'l2', title:'向量组的线性相关性', description:'判断线性相关、求极大无关组与秩，整理典型证明题。'},
+        {id:'l3', title:'线性方程组与特征值', description:'把齐次与非齐次方程组的解的判定、特征值与特征向量的计算串成一条复习线。'},
+        {id:'l4', title:'特征值与相似对角化：计算与判定', description:'掌握特征多项式、特征向量与相似对角化的判定流程。'}
+      ]
+    },
+    {
+      id:'computer-network', name:'计算机网络', color:'#2b7f9e', icon:'network',
+      items:[
+        {id:'n1', title:'计算机网络体系结构与分层模型', description:'梳理 OSI 七层与 TCP/IP 四层的对应关系，整理各层典型协议。'},
+        {id:'n2', title:'TCP 三次握手、四次挥手与可靠传输', description:'结合滑动窗口、拥塞控制与超时重传，整理常考细节与容易混淆的选项。'}
+      ]
+    },
+    {
+      id:'computer-organization', name:'计算机组成原理', color:'#8a5a2b', icon:'chip',
+      items:[]
+    }
+  ];
+
+  const state = { query:'', courseId:'all' };
+  const desktopColumns = window.matchMedia('(min-width:1080px)');
+
+  const board = document.getElementById('board');
+  const resultStatus = document.getElementById('resultStatus');
+  const searchInput = document.getElementById('searchInput');
+  const searchBox = document.getElementById('searchBox');
+  const searchClear = document.getElementById('searchClear');
+  const filterBtn = document.getElementById('filterBtn');
+  const filterLabel = document.getElementById('filterLabel');
+  const filterDot = document.getElementById('filterDot');
+  const popoverLayer = document.getElementById('popover-layer');
+  const modalLayer = document.getElementById('modalLayer');
+  const modalEl = document.getElementById('modalEl');
+  const modalContent = document.getElementById('modalContent');
+  const toastEl = document.getElementById('toast');
+  const goalMeta = document.getElementById('goalMeta');
+
+  let popState = null;
+  let modalState = null;
+  let toastTimer = 0;
+
+  /* ── 小工具 ────────────────────────────────────────────── */
+  const esc = (value) => String(value == null ? '' : value).replace(/[&<>"']/g, (ch) => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[ch]));
+
+  const findCourse = (courseId) => DATA.find((course) => course.id === courseId);
+  const findItem = (courseId, itemId) => {
+    const course = findCourse(courseId);
+    return course ? course.items.find((item) => item.id === itemId) : null;
+  };
+  const totalItems = () => DATA.reduce((sum, course) => sum + course.items.length, 0);
+
+  function syncGoalMeta(){
+    goalMeta.textContent = DATA.length + ' 门课程 · ' + totalItems() + ' 个事项';
+  }
+
+  function toast(message){
+    toastEl.textContent = message;
+    toastEl.hidden = false;
+    requestAnimationFrame(() => toastEl.classList.add('is-visible'));
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => {
+      toastEl.classList.remove('is-visible');
+      setTimeout(() => { toastEl.hidden = true; }, 180);
+    }, 2200);
+  }
+
+  /* ── 渲染课程 / 事项 ───────────────────────────────────── */
+  function visibleCourses(){
+    const query = state.query.trim().toLowerCase();
+    const scoped = DATA.filter((course) => state.courseId === 'all' || course.id === state.courseId);
+    if (!query) return scoped;
+    const result = [];
+    for (const course of scoped) {
+      const nameHit = course.name.toLowerCase().includes(query);
+      const items = nameHit
+        ? course.items.slice()
+        : course.items.filter((item) => item.title.toLowerCase().includes(query));
+      if (items.length) result.push(Object.assign({}, course, {items}));
+    }
+    return result;
+  }
+
+  function itemHTML(course, item){
+    return (
+      '<li class="item">' +
+        '<div class="item-copy">' +
+          '<p class="item-title">' + esc(item.title) + '</p>' +
+        '</div>' +
+        '<button class="item-more" type="button" aria-haspopup="menu" aria-expanded="false" ' +
+          'aria-label="「' + esc(item.title) + '」的操作" ' +
+          'data-course="' + esc(course.id) + '" data-item="' + esc(item.id) + '">' +
+          '<svg class="icon" aria-hidden="true"><use href="#i-more"/></svg>' +
+        '</button>' +
+      '</li>'
+    );
+  }
+
+  function courseHTML(course){
+    const original = findCourse(course.id) || course;
+    const count = original.items.length;
+    const shown = course.items.length;
+    const searching = state.query.trim().length > 0;
+    const countText = searching && shown !== count ? shown + ' / ' + count + ' 个事项' : count + ' 个事项';
+    const addLabel = '在' + original.name + '下添加事项';
+    return (
+      '<section class="course" data-course="' + esc(original.id) + '" style="--course:' + original.color + '" aria-labelledby="course-' + esc(original.id) + '">' +
+        '<header class="course-head">' +
+          '<span class="course-icon" aria-hidden="true">' + (COURSE_ICONS[original.icon] || '') + '</span>' +
+          '<div class="course-id">' +
+            '<h2 class="course-name" id="course-' + esc(original.id) + '">' + esc(original.name) + '</h2>' +
+            '<span class="course-count" title="' + (searching ? '匹配 ' + shown + ' 个，共 ' + count + ' 个事项' : '共 ' + count + ' 个事项') + '">' + countText + '</span>' +
+          '</div>' +
+          '<button class="course-add" type="button" aria-label="' + esc(addLabel) + '" data-add-course="' + esc(original.id) + '">' +
+            '<svg class="icon" aria-hidden="true"><use href="#i-plus"/></svg><span>添加事项</span>' +
+          '</button>' +
+        '</header>' +
+        (course.items.length
+          ? '<ul class="items">' + course.items.map((item) => itemHTML(original, item)).join('') + '</ul>'
+          : '<div class="course-empty">' +
+              '<span class="course-empty-note"><svg class="icon" aria-hidden="true"><use href="#i-folder-plus"/></svg>这门课程还没有事项</span>' +
+              '<span class="course-empty-hint">可使用上方「添加事项」创建第一个事项</span>' +
+            '</div>'
+        ) +
+      '</section>'
+    );
+  }
+
+  function emptyBoardHTML(query){
+    const filtered = state.courseId !== 'all';
+    const course = filtered ? findCourse(state.courseId) : null;
+    const hint = filtered
+      ? '当前筛选「' + esc(course ? course.name : '') + '」下没有匹配事项，可以换个关键词、清除搜索，或切换回全部课程。'
+      : '可以换个关键词，或清除搜索查看全部课程与事项。';
+    return (
+      '<div class="board-empty">' +
+        '<span class="board-empty-icon" aria-hidden="true"><svg class="icon"><use href="#i-search"/></svg></span>' +
+        '<p class="board-empty-title">没有找到与「' + esc(query) + '」匹配的事项</p>' +
+        '<p class="board-empty-hint">' + hint + '</p>' +
+        '<div class="board-empty-actions">' +
+          '<button class="btn btn-outline" type="button" data-clear-search>清除搜索</button>' +
+          (filtered ? '<button class="btn btn-ghost" type="button" data-clear-filter>切换全部课程</button>' : '') +
+        '</div>' +
+      '</div>'
+    );
+  }
+
+  function updateResultStatus(visible, query){
+    const shown = visible.reduce((sum, course) => sum + course.items.length, 0);
+    let text = '';
+    if (query){
+      text = shown ? '找到 ' + shown + ' 个事项' : '没有匹配事项';
+    } else if (state.courseId !== 'all'){
+      const course = findCourse(state.courseId);
+      if (course) text = '已筛选 ' + course.name + '，共 ' + course.items.length + ' 个事项';
+    }
+    resultStatus.textContent = text;
+  }
+
+  // 桌面双列使用两条独立列流：左列课程 1/3/5，右列课程 2/4/6。
+  // 每列只对自身高度负责，课程高度不相等时也不会在另一列留下行间空洞。
+  function layoutCourses(visible){
+    if (!desktopColumns.matches || visible.length <= 1){
+      return visible.map(courseHTML).join('');
+    }
+    const left = [];
+    const right = [];
+    visible.forEach((course, index) => {
+      (index % 2 === 0 ? left : right).push(course);
+    });
+    return (
+      '<div class="board-columns">' +
+        '<div class="board-col" data-col="left">' + left.map(courseHTML).join('') + '</div>' +
+        (right.length
+          ? '<div class="board-col" data-col="right">' + right.map(courseHTML).join('') + '</div>'
+          : '') +
+      '</div>'
+    );
+  }
+
+  function renderBoard(){
+    syncGoalMeta();
+    const visible = visibleCourses();
+    const query = state.query.trim();
+    updateResultStatus(visible, query);
+    if (query && visible.length === 0){
+      board.classList.add('is-empty');
+      board.innerHTML = emptyBoardHTML(query);
+      return;
+    }
+    board.classList.remove('is-empty');
+    board.innerHTML = layoutCourses(visible);
+  }
+
+  function focusItem(courseId, itemId){
+    const button = board.querySelector(
+      '.item-more[data-course="' + courseId + '"][data-item="' + itemId + '"]'
+    );
+    if (!button) return;
+    const row = button.closest('.item');
+    if (row){
+      row.classList.add('item-flash');
+      row.scrollIntoView({block:'nearest', behavior:'smooth'});
+      setTimeout(() => row.classList.remove('item-flash'), 1900);
+    }
+    button.focus({preventScroll:true});
+  }
+
+  function focusCourseAdd(courseId){
+    const courseEl = board.querySelector('.course[data-course="' + courseId + '"]');
+    if (!courseEl) return;
+    courseEl.scrollIntoView({block:'nearest', behavior:'smooth'});
+    const add = courseEl.querySelector('.course-add');
+    if (add) add.focus({preventScroll:true});
+  }
+
+  function syncSearchUI(){
+    searchClear.hidden = searchInput.value.length === 0;
+  }
+
+  function syncFilterButton(){
+    const course = findCourse(state.courseId);
+    filterLabel.textContent = course ? course.name : '全部课程';
+    if (course){
+      filterDot.style.background = course.color;
+      filterDot.hidden = false;
+    } else {
+      filterDot.hidden = true;
+    }
+  }
+
+  /* ── 浮层 ──────────────────────────────────────────────── */
+  function positionPopover(pop, anchor){
+    const rect = anchor.getBoundingClientRect();
+    const width = pop.offsetWidth;
+    const height = pop.offsetHeight;
+    let left = rect.right - width;
+    left = Math.max(8, Math.min(left, window.innerWidth - width - 8));
+    let top = rect.bottom + 6;
+    if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 6);
+    pop.style.left = left + 'px';
+    pop.style.top = top + 'px';
+  }
+
+  function focusMenuItems(pop){
+    const items = Array.from(pop.querySelectorAll('.menu-item, .course-option'));
+    if (items.length) items[0].focus({preventScroll:true});
+  }
+
+  function closePopover(options){
+    if (!popState) return;
+    const opts = options || {};
+    const anchor = popState.anchor;
+    anchor.setAttribute('aria-expanded', 'false');
+    popState.pop.remove();
+    popState = null;
+    if (opts.restoreFocus) anchor.focus({preventScroll:true});
+  }
+
+  function openPopover(anchor, html, variant, onAction){
+    closePopover();
+    const pop = document.createElement('div');
+    pop.className = 'popover ' + (variant || '');
+    pop.innerHTML = html;
+    popoverLayer.appendChild(pop);
+    positionPopover(pop, anchor);
+    anchor.setAttribute('aria-expanded', 'true');
+    popState = {anchor, pop};
+
+    pop.addEventListener('click', (event) => {
+      const actionNode = event.target.closest('[data-menu-action]');
+      const courseNode = event.target.closest('[data-course-option]');
+      if (actionNode) onAction('item', actionNode.dataset.menuAction);
+      else if (courseNode) onAction('course', courseNode.dataset.courseOption);
+    });
+    pop.addEventListener('keydown', (event) => {
+      const nodes = Array.from(pop.querySelectorAll('.menu-item, .course-option'));
+      const current = nodes.indexOf(document.activeElement);
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp'){
+        event.preventDefault();
+        if (!nodes.length) return;
+        const delta = event.key === 'ArrowDown' ? 1 : -1;
+        const next = (current + delta + nodes.length) % nodes.length;
+        nodes[next].focus({preventScroll:true});
+      }
+      if (event.key === 'Escape'){
+        event.preventDefault();
+        closePopover({restoreFocus:true});
+      }
+      if (event.key === 'Tab'){
+        // 菜单是临时浮层：Tab 离开时关闭，并把焦点交还触发按钮后继续顺序导航
+        closePopover({restoreFocus:true});
+      }
+    });
+    focusMenuItems(pop);
+    return pop;
+  }
+
+  function courseMenuHTML(){
+    const total = totalItems();
+    const option = (id, name, count, color) => {
+      const selected = state.courseId === id;
+      return (
+        '<button class="course-option' + (selected ? ' is-selected' : '') + '" type="button" ' +
+          'role="menuitemradio" aria-checked="' + selected + '" data-course-option="' + esc(id) + '">' +
+          '<span class="course-option-dot" style="background:' + color + '"></span>' +
+          '<span class="course-option-label">' + esc(name) + '</span>' +
+          '<span class="course-option-count">' + count + '</span>' +
+          '<svg class="icon course-option-check" aria-hidden="true"><use href="#i-check"/></svg>' +
+        '</button>'
+      );
+    };
+    let html = option('all', '全部课程', total, '#9aa8b8');
+    for (const course of DATA) html += option(course.id, course.name, course.items.length, course.color);
+    return '<div role="menu" aria-label="课程筛选">' + html + '</div>';
+  }
+
+  function openItemMenu(anchor, courseId, itemId){
+    const item = findItem(courseId, itemId);
+    if (!item) return;
+    openPopover(anchor,
+      '<div role="menu" aria-label="事项操作">' +
+        '<button class="menu-item" type="button" role="menuitem" data-menu-action="edit">' +
+          '<svg class="icon" aria-hidden="true"><use href="#i-edit"/></svg>编辑事项' +
+        '</button>' +
+        '<button class="menu-item danger" type="button" role="menuitem" data-menu-action="delete">' +
+          '<svg class="icon" aria-hidden="true"><use href="#i-trash"/></svg>删除事项' +
+        '</button>' +
+      '</div>',
+      'popover-item',
+      (kind, action) => {
+        if (kind !== 'item') return;
+        closePopover();
+        if (action === 'edit') openTaskDialog({mode:'edit', courseId, itemId, trigger:anchor});
+        if (action === 'delete') openDeleteDialog({courseId, itemId});
+      }
+    );
+  }
+
+  /* ── 弹窗 ──────────────────────────────────────────────── */
+  function openModal(html, trigger){
+    modalContent.innerHTML = html;
+    modalEl.removeAttribute('aria-describedby');
+    modalLayer.hidden = false;
+    document.body.classList.add('modal-open');
+    modalState = {trigger: trigger || null};
+    modalEl.scrollTop = 0;
+    modalContent.querySelectorAll('[data-modal-cancel]').forEach((node) => {
+      node.addEventListener('click', () => closeModal());
+    });
+  }
+
+  function closeModal(options){
+    if (!modalState) return;
+    const opts = options || {};
+    const trigger = modalState.trigger;
+    modalLayer.hidden = true;
+    modalContent.innerHTML = '';
+    document.body.classList.remove('modal-open');
+    modalState = null;
+    if (opts.restoreFocus !== false && trigger && document.contains(trigger)){
+      trigger.focus({preventScroll:true});
+    }
+  }
+
+  function courseOptionsHTML(selectedId){
+    return DATA.map((course) =>
+      '<option value="' + esc(course.id) + '"' + (course.id === selectedId ? ' selected' : '') + '>' + esc(course.name) + '</option>'
+    ).join('');
+  }
+
+  function taskDialogHTML(options){
+    const editing = options.mode === 'edit';
+    const course = options.courseId ? findCourse(options.courseId) : null;
+    const item = options.item;
+    const presetId = options.presetCourseId || '';
+    const titleValue = item ? item.title : '';
+    const descValue = item ? item.description : '';
+    const selectValue = editing && course ? course.id : presetId;
+    const placeholder = '<option value="" disabled' + (selectValue ? '' : ' selected') + '>请选择课程</option>';
+    return (
+      '<form id="taskForm" novalidate>' +
+        '<div class="modal-head">' +
+          '<h2 id="modalTitle">' + (editing ? '编辑事项' : '新建事项') + '</h2>' +
+          '<button class="modal-close" type="button" data-modal-cancel aria-label="关闭">' +
+            '<svg class="icon" aria-hidden="true"><use href="#i-close"/></svg>' +
+          '</button>' +
+        '</div>' +
+        '<div class="modal-body">' +
+          '<div class="field">' +
+            '<label class="field-label" for="taskTitle">事项名称<span class="label-hint">必填</span></label>' +
+            '<input class="input" id="taskTitle" name="title" type="text" maxlength="60" autocomplete="off" ' +
+              'placeholder="例如：定积分与反常积分综合训练" value="' + esc(titleValue) + '">' +
+          '</div>' +
+          '<div class="field">' +
+            '<label class="field-label" for="taskDesc">说明<span class="label-hint">选填 · 不在列表中展示</span></label>' +
+            '<textarea class="input textarea" id="taskDesc" name="description" rows="3" maxlength="200" ' +
+              'placeholder="学习范围、完成标准或备注…">' + esc(descValue) + '</textarea>' +
+          '</div>' +
+          '<div class="field">' +
+            '<label class="field-label" for="taskCourse">所属课程<span class="label-hint">必填</span></label>' +
+            '<div class="select-wrap">' +
+              '<span class="select-dot" id="courseDot"></span>' +
+              '<select class="select" id="taskCourse" name="course">' + placeholder + courseOptionsHTML(selectValue) + '</select>' +
+              '<svg class="icon select-chevron" aria-hidden="true"><use href="#i-chevron-down"/></svg>' +
+            '</div>' +
+            (presetId && !editing
+              ? '<p class="field-note"><svg class="icon" aria-hidden="true"><use href="#i-check"/></svg>已自动带入所属课程</p>'
+              : '') +
+          '</div>' +
+        '</div>' +
+        '<div class="modal-foot">' +
+          '<button class="btn btn-ghost" type="button" data-modal-cancel>取消</button>' +
+          '<button class="btn btn-primary" type="submit" disabled>保存</button>' +
+        '</div>' +
+      '</form>'
+    );
+  }
+
+  function openTaskDialog(options){
+    const opts = options || {};
+    const mode = opts.mode === 'edit' ? 'edit' : 'new';
+    let courseId = opts.courseId || null;
+    let item = null;
+    if (mode === 'edit'){
+      item = findItem(opts.courseId, opts.itemId);
+      if (!item) return;
+    } else if (opts.presetCourseId){
+      courseId = opts.presetCourseId;
+    }
+    openModal(taskDialogHTML({
+      mode,
+      courseId,
+      item,
+      presetCourseId: mode === 'new' ? courseId : ''
+    }), opts.trigger);
+
+    const form = modalContent.querySelector('#taskForm');
+    const titleInput = form.querySelector('#taskTitle');
+    const descInput = form.querySelector('#taskDesc');
+    const courseSelect = form.querySelector('#taskCourse');
+    const courseDot = form.querySelector('#courseDot');
+    const saveBtn = form.querySelector('button[type="submit"]');
+
+    const syncCourseDot = () => {
+      const selected = findCourse(courseSelect.value);
+      courseDot.style.background = selected ? selected.color : '#c3ceda';
+    };
+    const validate = () => {
+      saveBtn.disabled = !titleInput.value.trim() || !courseSelect.value;
+    };
+    titleInput.addEventListener('input', validate);
+    courseSelect.addEventListener('change', () => { syncCourseDot(); validate(); });
+    syncCourseDot();
+    validate();
+    titleInput.focus({preventScroll:true});
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (saveBtn.disabled) return;
+      const title = titleInput.value.trim();
+      const description = descInput.value.trim();
+      const targetCourse = findCourse(courseSelect.value);
+      if (!targetCourse) return;
+
+      if (mode === 'edit'){
+        const sourceCourse = findCourse(courseId);
+        const currentIndex = sourceCourse.items.findIndex((entry) => entry.id === opts.itemId);
+        if (currentIndex < 0) { closeModal(); renderBoard(); return; }
+        if (sourceCourse.id === targetCourse.id){
+          const entry = sourceCourse.items[currentIndex];
+          entry.title = title;
+          entry.description = description;
+          closeModal({restoreFocus:false});
+          renderBoard();
+          toast('已保存「' + title + '」');
+          focusItem(targetCourse.id, entry.id);
+        } else {
+          const [moved] = sourceCourse.items.splice(currentIndex, 1);
+          moved.title = title;
+          moved.description = description;
+          targetCourse.items.push(moved);
+          closeModal({restoreFocus:false});
+          renderBoard();
+          toast('已保存「' + title + '」');
+          focusItem(targetCourse.id, moved.id);
+        }
+      } else {
+        const newItem = {id:'item-' + Date.now(), title, description};
+        targetCourse.items.push(newItem);
+        closeModal({restoreFocus:false});
+        renderBoard();
+        toast('已添加「' + title + '」');
+        focusItem(targetCourse.id, newItem.id);
+      }
+    });
+  }
+
+  function openCourseDialog(options){
+    const opts = options || {};
+    let selectedColor = COURSE_COLORS[0];
+    const swatches = COURSE_COLORS.map((color, index) =>
+      '<button class="swatch" type="button" role="radio" aria-checked="' + (index === 0) + '" ' +
+        'aria-label="课程颜色：' + COURSE_COLOR_NAMES[index] + '" data-color="' + color + '" ' +
+        'style="--swatch:' + color + '"></button>'
+    ).join('');
+    openModal(
+      '<form id="courseForm" novalidate>' +
+        '<div class="modal-head">' +
+          '<h2 id="modalTitle">新建课程</h2>' +
+          '<button class="modal-close" type="button" data-modal-cancel aria-label="关闭">' +
+            '<svg class="icon" aria-hidden="true"><use href="#i-close"/></svg>' +
+          '</button>' +
+        '</div>' +
+        '<div class="modal-body">' +
+          '<div class="field">' +
+            '<label class="field-label" for="courseName">课程名称<span class="label-hint">必填</span></label>' +
+            '<input class="input" id="courseName" name="courseName" type="text" maxlength="24" autocomplete="off" ' +
+              'placeholder="例如：概率论与数理统计">' +
+          '</div>' +
+          '<div class="field">' +
+            '<span class="field-label">课程颜色<span class="label-hint">用于课程图标与左侧书脊</span></span>' +
+            '<div class="swatches" role="radiogroup" aria-label="课程颜色">' + swatches + '</div>' +
+          '</div>' +
+          '<p class="field-note muted"><svg class="icon" aria-hidden="true"><use href="#i-folder-plus"/></svg>创建后会得到一个空课程文件夹，可继续添加事项</p>' +
+        '</div>' +
+        '<div class="modal-foot">' +
+          '<button class="btn btn-ghost" type="button" data-modal-cancel>取消</button>' +
+          '<button class="btn btn-primary" type="submit" disabled>创建课程</button>' +
+        '</div>' +
+      '</form>',
+      opts.trigger || null
+    );
+
+    const form = modalContent.querySelector('#courseForm');
+    const nameInput = form.querySelector('#courseName');
+    const saveBtn = form.querySelector('button[type="submit"]');
+    const swatchGroup = form.querySelector('.swatches');
+    const validate = () => { saveBtn.disabled = !nameInput.value.trim(); };
+    nameInput.addEventListener('input', validate);
+    validate();
+    nameInput.focus({preventScroll:true});
+
+    swatchGroup.addEventListener('click', (event) => {
+      const swatch = event.target.closest('.swatch');
+      if (!swatch) return;
+      selectedColor = swatch.dataset.color;
+      swatchGroup.querySelectorAll('.swatch').forEach((node) => {
+        node.setAttribute('aria-checked', node === swatch ? 'true' : 'false');
+      });
+    });
+
+    form.addEventListener('submit', (event) => {
+      event.preventDefault();
+      if (saveBtn.disabled) return;
+      const name = nameInput.value.trim();
+      const newCourse = {
+        id: 'course-' + Date.now(),
+        name,
+        color: selectedColor,
+        icon: 'book',
+        items: []
+      };
+      DATA.push(newCourse);
+      // 新课程必须可见：清除可能把它过滤掉的搜索与课程筛选
+      state.query = '';
+      state.courseId = 'all';
+      searchInput.value = '';
+      syncSearchUI();
+      syncFilterButton();
+      closeModal({restoreFocus:false});
+      renderBoard();
+      toast('已创建课程「' + name + '」');
+      focusCourseAdd(newCourse.id);
+    });
+  }
+
+  function openDeleteDialog(options){    const course = findCourse(options.courseId);
+    const item = findItem(options.courseId, options.itemId);
+    if (!course || !item) return;
+    openModal(
+      '<div class="modal-head">' +
+        '<h2 id="modalTitle">删除事项</h2>' +
+        '<button class="modal-close" type="button" data-modal-cancel aria-label="关闭">' +
+          '<svg class="icon" aria-hidden="true"><use href="#i-close"/></svg>' +
+        '</button>' +
+      '</div>' +
+      '<div class="modal-body">' +
+        '<p class="confirm-text">确定要删除「<strong>' + esc(item.title) + '</strong>」吗？</p>' +
+        '<p class="confirm-sub" id="deleteWarning">删除后无法恢复，请谨慎操作。</p>' +
+      '</div>' +
+      '<div class="modal-foot">' +
+        '<button class="btn btn-ghost" type="button" data-modal-cancel>取消</button>' +
+        '<button class="btn btn-danger" type="button" id="confirmDelete">确认删除</button>' +
+      '</div>',
+      options.trigger || null
+    );
+    modalEl.setAttribute('aria-describedby', 'deleteWarning');
+    const cancelButton = modalContent.querySelector('.modal-foot [data-modal-cancel]');
+    if (cancelButton) cancelButton.focus({preventScroll:true});
+    const confirm = modalContent.querySelector('#confirmDelete');
+    confirm.addEventListener('click', () => {
+      const index = course.items.findIndex((entry) => entry.id === options.itemId);
+      if (index >= 0) course.items.splice(index, 1);
+      const next = course.items[index] || course.items[index - 1] || null;
+      closeModal({restoreFocus:false});
+      renderBoard();
+      toast('已删除「' + item.title + '」');
+      if (next) focusItem(course.id, next.id);
+      else focusCourseAdd(course.id);
+    });
+  }
+
+  /* ── 事件绑定 ──────────────────────────────────────────── */
+  function clearSearch(){
+    state.query = '';
+    searchInput.value = '';
+    syncSearchUI();
+    renderBoard();
+    searchInput.focus({preventScroll:true});
+  }
+
+  board.addEventListener('click', (event) => {
+    const more = event.target.closest('.item-more');
+    if (more){
+      event.stopPropagation();
+      if (popState && popState.anchor === more){ closePopover({restoreFocus:true}); return; }
+      openItemMenu(more, more.dataset.course, more.dataset.item);
+      return;
+    }
+    const add = event.target.closest('[data-add-course]');
+    if (add){
+      if (popState && popState.anchor === add){ closePopover({restoreFocus:true}); return; }
+      openTaskDialog({mode:'new', presetCourseId:add.dataset.addCourse, trigger:add});
+      return;
+    }
+    if (event.target.closest('[data-clear-search]')){ clearSearch(); return; }
+    if (event.target.closest('[data-clear-filter]')){
+      state.courseId = 'all';
+      syncFilterButton();
+      renderBoard();
+      filterBtn.focus({preventScroll:true});
+    }
+  });
+
+  searchInput.addEventListener('input', () => {
+    state.query = searchInput.value;
+    syncSearchUI();
+    renderBoard();
+  });
+  searchInput.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && searchInput.value){ event.preventDefault(); clearSearch(); }
+  });
+  searchClear.addEventListener('click', clearSearch);
+  searchBox.addEventListener('click', (event) => {
+    if (!event.target.closest('button')) searchInput.focus();
+  });
+
+  filterBtn.addEventListener('click', () => {
+    if (popState && popState.anchor === filterBtn){ closePopover({restoreFocus:true}); return; }
+    openPopover(filterBtn, courseMenuHTML(), 'popover-course', (kind, id) => {
+      if (kind !== 'course') return;
+      state.courseId = id;
+      closePopover({restoreFocus:true});
+      syncFilterButton();
+      renderBoard();
+    });
+  });
+
+  document.querySelectorAll('[data-new-course]').forEach((button) => {
+    button.addEventListener('click', () => openCourseDialog({trigger:button}));
+  });
+
+  document.addEventListener('pointerdown', (event) => {
+    if (!popState) return;
+    if (popState.pop.contains(event.target) || popState.anchor.contains(event.target)) return;
+    closePopover();
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (!modalLayer.hidden){
+      if (event.key === 'Escape'){ event.preventDefault(); closeModal(); return; }
+      if (event.key === 'Tab'){
+        const focusables = Array.from(modalContent.querySelectorAll(
+          'button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled])'
+        )).filter((node) => node.offsetParent !== null);
+        if (!focusables.length) return;
+        const first = focusables[0];
+        const last = focusables[focusables.length - 1];
+        if (event.shiftKey && document.activeElement === first){
+          event.preventDefault(); last.focus();
+        } else if (!event.shiftKey && document.activeElement === last){
+          event.preventDefault(); first.focus();
+        }
+      }
+      return;
+    }
+    if (popState && event.key === 'Escape'){
+      event.preventDefault();
+      closePopover({restoreFocus:true});
+    }
+  });
+
+  window.addEventListener('resize', () => closePopover());
+  window.addEventListener('scroll', () => closePopover(), true);
+  if (desktopColumns.addEventListener){
+    desktopColumns.addEventListener('change', () => {
+      closePopover();
+      renderBoard();
+    });
+  }
+
+  /* ── 初始化 ────────────────────────────────────────────── */
+  syncSearchUI();
+  syncFilterButton();
+  renderBoard();
+})();
+</script>
+</body>
+</html>

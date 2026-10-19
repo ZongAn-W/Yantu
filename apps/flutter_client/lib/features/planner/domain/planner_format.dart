@@ -145,13 +145,6 @@ const fixedEventRepeatLabels = {
   EventRepeat.weekly: '每周',
 };
 
-const completionStatusLabels = {
-  CompletionStatus.notStarted: '未开始',
-  CompletionStatus.partial: '部分完成',
-  CompletionStatus.completed: '已完成',
-  CompletionStatus.skipped: '跳过',
-};
-
 /// `HH:mm` for a minute-of-day value.
 String clockTime(int minutes) =>
     '${(minutes ~/ 60).toString().padLeft(2, '0')}:'

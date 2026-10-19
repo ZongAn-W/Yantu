@@ -11,6 +11,11 @@ const ACCESS_COOKIE = "planner_access";
 const REFRESH_COOKIE = "planner_refresh";
 
 export type AuthUser = { id: string; email: string; username: string };
+export class AccountDeletedError extends Error {
+  readonly statusCode = 410;
+  readonly code = "ACCOUNT_DELETED";
+  constructor() { super("账号已注销，请重新登录"); }
+}
 export type BearerTokens = {
   accessToken: string;
   refreshToken: string;
@@ -71,16 +76,24 @@ async function verify(raw: string, key: Uint8Array, type: string): Promise<AuthU
   return { id: payload.sub, email: payload.email, username: payload.username };
 }
 
-export async function userFromRequest(request: FastifyRequest): Promise<AuthUser | null> {
+export async function userFromRequest(request: FastifyRequest, options: { allowDeleted?: boolean } = {}): Promise<AuthUser | null> {
   const authorization = request.headers.authorization;
   const bearer = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+  let user: AuthUser;
   if (authorization !== undefined) {
     if (!bearer) return null;
-    try { return await verify(bearer, accessKey, "access"); } catch { return null; }
+    try { user = await verify(bearer, accessKey, "access"); } catch { return null; }
+  } else {
+    const raw = request.cookies[ACCESS_COOKIE];
+    if (!raw) return null;
+    try { user = await verify(raw, accessKey, "access"); } catch { return null; }
   }
-  const raw = request.cookies[ACCESS_COOKIE];
-  if (!raw) return null;
-  try { return await verify(raw, accessKey, "access"); } catch { return null; }
+  // Deletion retries need only the signed identity; every protected data route
+  // checks the database so all devices lose access as soon as deletion commits.
+  if (options.allowDeleted) return user;
+  const found = await query<AuthUser>("select id,email,username from users where id=$1", [user.id]);
+  if (!found.rows[0]) throw new AccountDeletedError();
+  return found.rows[0];
 }
 
 export async function refreshBearerSession(rawRefreshToken: string): Promise<{ user: AuthUser; tokens: BearerTokens } | null> {
@@ -90,6 +103,10 @@ export async function refreshBearerSession(rawRefreshToken: string): Promise<{ u
   } catch { return null; }
   if (payload.type !== "refresh" || !payload.sub || typeof payload.username !== "string" || !payload.jti) return null;
   return transaction(async client => {
+    // Use the same user -> token lock order as account deletion. In particular,
+    // never hold a refresh row while waiting for a deleting user's FK lock.
+    const owner = await client.query("select id from users where id=$1 for key share", [payload.sub]);
+    if (!owner.rowCount) throw new AccountDeletedError();
     const found = await client.query<AuthUser>(
       "select u.id,u.email,u.username from auth_refresh_tokens r join users u on u.id=r.user_id where r.user_id=$1 and r.jti=$2 and r.token_hash=$3 and r.revoked_at is null and r.expires_at>now() for update of r",
       [payload.sub, payload.jti, hashRefreshToken(rawRefreshToken)],
@@ -124,11 +141,11 @@ export async function refreshSession(request: FastifyRequest, reply: FastifyRepl
     if (payload.jti) return null;
     const user = await verify(raw, refreshKey, "refresh");
     const found = await query<AuthUser>("select id, email, username from users where id = $1", [user.id]);
-    if (!found.rows[0]) return null;
+    if (!found.rows[0]) throw new AccountDeletedError();
     const current = found.rows[0];
     await issueSession(reply, current);
     return current;
-  } catch { return null; }
+  } catch (error) { if (error instanceof AccountDeletedError) throw error; return null; }
 }
 
 export async function loginUser(email: string, password: string) {

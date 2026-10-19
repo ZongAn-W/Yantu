@@ -82,16 +82,53 @@ class PlannerSession {
   Future<void> edit(PlannerData Function(PlannerData) change) =>
       coordinator.edit(change);
 
+  /// Creates an empty course that can then receive items from the tasks page.
+  ///
+  /// Courses otherwise arrive through the planning flow; this is the explicit
+  /// directory action. The document-level sync already carries `subjects`, so no
+  /// separate endpoint is needed.
+  Future<String> createCourse({
+    required String name,
+    required String color,
+  }) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) throw StateError('请填写课程名称');
+    if (!RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(color)) {
+      throw StateError('课程颜色格式不正确');
+    }
+    if (data.subjects.any(
+      (subject) => subject.name.trim().toLowerCase() == trimmed.toLowerCase(),
+    )) {
+      throw StateError('已存在同名课程');
+    }
+    final courseId = 'course-${DateTime.now().microsecondsSinceEpoch}';
+    await edit(
+      (data) => data.copyWith(
+        subjects: [
+          ...data.subjects,
+          Subject(
+            id: courseId,
+            userId: data.profile.userId,
+            name: trimmed,
+            color: color,
+            priority: 2,
+          ),
+        ],
+      ),
+    );
+    return courseId;
+  }
+
   // ------------------------------------------------------------------ tasks
 
-  Future<void> createTask(TaskDraft draft) => edit(
-    (data) => applyTaskDraft(
-      data,
-      draft,
-      taskId: scheduler.SchedulerRuntime().ids(),
-      updatedAt: nowIso(),
-    ),
-  );
+  Future<String> createTask(TaskDraft draft) async {
+    final taskId = scheduler.SchedulerRuntime().ids();
+    await edit(
+      (data) =>
+          applyTaskDraft(data, draft, taskId: taskId, updatedAt: nowIso()),
+    );
+    return taskId;
+  }
 
   Future<void> updateTask(String taskId, TaskDraft draft) => edit(
     (data) => applyTaskDraft(data, draft, taskId: taskId, updatedAt: nowIso()),
@@ -112,11 +149,6 @@ class PlannerSession {
       actualMinutes: actualMinutes,
     ),
   );
-
-  Future<void> setTaskDayCompletion(
-    Iterable<ScheduleBlock> blocks,
-    bool completed,
-  ) => edit((data) => day_ops.setTaskDayCompletion(data, blocks, completed));
 
   // --------------------------------------------------------------- schedule
 
@@ -220,37 +252,18 @@ class PlannerSession {
     return result;
   }
 
-  Future<void> saveDailyReview(
-    String date, {
-    required List<day_ops.TaskDayReview> original,
-    required List<day_ops.TaskDayReview> edited,
-    required String originalFeedback,
-    required String feedback,
-  }) => edit(
-    (data) => day_ops.applyDailyReview(
-      data,
-      date,
-      original: original,
-      edited: edited,
-      originalFeedback: originalFeedback,
-      feedback: feedback,
-    ),
-  );
-
   // ------------------------------------------------------------ plan cycle
 
   /// 延展本次规划周期，并只把本期安排边界类事项的日期跟随新周期。
-  Future<void> updatePlanCycle({
-    required String start,
-    required String end,
-  }) => edit(
-    (data) => extendPlanCycle(
-      data,
-      start: start,
-      end: end,
-      today: shanghaiToday(),
-    ),
-  );
+  Future<void> updatePlanCycle({required String start, required String end}) =>
+      edit(
+        (data) => extendPlanCycle(
+          data,
+          start: start,
+          end: end,
+          today: shanghaiToday(),
+        ),
+      );
 
   /// 生成 [from] 到 [to] 的每日安排；重复执行不会重复生成已有安排。
   Future<PlanGenerationResult> generateSchedule({

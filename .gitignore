@@ -26,6 +26,8 @@ playwright-report/
 blob-report/
 .playwright-browsers/
 .playwright-cli/
+.playwright/
+/design/**/screens/
 
 # 本地验证的临时脚本、截图与日志
 .dsh-verify/
@@ -33,6 +35,8 @@ blob-report/
 .impeccable/
 work/
 output/
+.tmp/
+.temp/
 
 # 日志与临时文件
 *.log
@@ -42,12 +46,15 @@ yarn-error.log*
 *.bak
 *.orig
 *.rej
+*.tmp-*
 
 # 环境变量，保留示例文件
 .env
 .env.local
 .env.*.local
+.env.*
 !.env.example
+!.env.*.example
 
 # 编辑器与操作系统
 .idea/

@@ -6,8 +6,8 @@ import 'theme.dart';
 /// body. Keeping it shared avoids duplicated nested-card layouts.
 class PlannerPage extends StatelessWidget {
   const PlannerPage({
-    required this.title,
-    required this.subtitle,
+    this.title = '',
+    this.subtitle = '',
     required this.children,
     this.actions = const [],
     this.scrollable = true,
@@ -25,8 +25,10 @@ class PlannerPage extends StatelessWidget {
     final content = Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _Heading(title: title, subtitle: subtitle, actions: actions),
-        const SizedBox(height: 16),
+        if (title.isNotEmpty || subtitle.isNotEmpty || actions.isNotEmpty) ...[
+          _Heading(title: title, subtitle: subtitle, actions: actions),
+          const SizedBox(height: 16),
+        ],
         ...children,
       ],
     );
@@ -61,23 +63,26 @@ class _Heading extends StatelessWidget {
       spacing: 16,
       runSpacing: 8,
       children: [
-        ConstrainedBox(
-          constraints: const BoxConstraints(minWidth: 200),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(title, style: text.headlineSmall),
-              if (subtitle.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text(
-                  subtitle,
-                  style: text.bodyMedium?.copyWith(color: PlannerColors.muted),
-                ),
+        if (title.isNotEmpty || subtitle.isNotEmpty)
+          ConstrainedBox(
+            constraints: const BoxConstraints(minWidth: 200),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (title.isNotEmpty) Text(title, style: text.headlineSmall),
+                if (subtitle.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    subtitle,
+                    style: text.bodyMedium?.copyWith(
+                      color: PlannerColors.muted,
+                    ),
+                  ),
+                ],
               ],
-            ],
+            ),
           ),
-        ),
         if (actions.isNotEmpty)
           Wrap(spacing: 8, runSpacing: 8, children: actions),
       ],
@@ -175,10 +180,7 @@ class PlannerNotice extends StatelessWidget {
           border: Border.all(color: border),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Text(
-          message,
-          style: TextStyle(color: foreground),
-        ),
+        child: Text(message, style: TextStyle(color: foreground)),
       ),
     );
   }
@@ -452,16 +454,8 @@ class _AsyncActionButtonState extends State<AsyncActionButton> {
     final label = Text(widget.label);
     final onPressed = widget.enabled && !_running ? _run : null;
     final button = widget.filled
-        ? FilledButton.icon(
-            onPressed: onPressed,
-            icon: child,
-            label: label,
-          )
-        : OutlinedButton.icon(
-            onPressed: onPressed,
-            icon: child,
-            label: label,
-          );
+        ? FilledButton.icon(onPressed: onPressed, icon: child, label: label)
+        : OutlinedButton.icon(onPressed: onPressed, icon: child, label: label);
     return widget.tooltip == null
         ? button
         : Tooltip(message: widget.tooltip!, child: button);

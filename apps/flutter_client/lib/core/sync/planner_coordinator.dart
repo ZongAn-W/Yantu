@@ -69,6 +69,18 @@ class PlannerCoordinator extends ChangeNotifier {
   Future<void> _writes = Future.value();
   Future<void>? _syncing;
   bool _disposed = false;
+  bool _accountDeletionSuspended = false;
+
+  Future<void> suspendForAccountDeletion() async {
+    _accountDeletionSuspended = true;
+    _cancelScheduledUpload();
+    await _syncing;
+    await _writes;
+  }
+
+  void resumeAfterAccountDeletionFailure() {
+    _accountDeletionSuspended = false;
+  }
 
   /// 服务端明确要求升级客户端（426）后暂停自动同步，避免用旧结构反复覆盖云端。
   bool _upgradeRequired = false;
@@ -81,6 +93,9 @@ class PlannerCoordinator extends ChangeNotifier {
 
   Future<void> _serial(Future<void> Function() operation) {
     final next = _writes.then((_) async {
+      if (_accountDeletionSuspended) {
+        throw StateError('账号注销处理中，已暂停本机修改');
+      }
       if (!_disposed) await operation();
     });
     _writes = next.then<void>((_) {}, onError: (Object _) {});
@@ -238,7 +253,9 @@ class PlannerCoordinator extends ChangeNotifier {
     // `edit()` (the timer flushes its own records), and waiting for that while
     // holding the queue would deadlock. Nothing new can be merged before the
     // handlers finish because the conflict remains active.
-    for (final handler in List<ConflictResolutionHandler>.of(_resolutionHandlers)) {
+    for (final handler in List<ConflictResolutionHandler>.of(
+      _resolutionHandlers,
+    )) {
       await handler(useLocal: useLocal, logConflicts: logConflicts);
     }
     await _serial(() async {
@@ -266,6 +283,7 @@ class PlannerCoordinator extends ChangeNotifier {
 
   /// 立即同步：手动按钮、网络恢复、前台恢复、导入/恢复/冲突处理都会取消合并窗口。
   Future<void> sync() {
+    if (_accountDeletionSuspended || _disposed) return Future.value();
     _cancelScheduledUpload();
     return _syncing ??= _sync().whenComplete(() {
       _syncing = null;
@@ -274,7 +292,7 @@ class PlannerCoordinator extends ChangeNotifier {
 
   /// 合并连续本机编辑：窗口内的后续编辑推迟上传，最长等待不超过 [uploadMaxWait]。
   void _scheduleUpload() {
-    if (_disposed) return;
+    if (_disposed || _accountDeletionSuspended) return;
     if (uploadDebounce <= Duration.zero) {
       unawaited(sync());
       return;
@@ -301,7 +319,13 @@ class PlannerCoordinator extends ChangeNotifier {
   }
 
   Future<void> _sync() async {
-    if (_disposed || !ready || blocked || conflicts.isNotEmpty) return;
+    if (_disposed ||
+        _accountDeletionSuspended ||
+        !ready ||
+        blocked ||
+        conflicts.isNotEmpty) {
+      return;
+    }
     // 收到升级信号后不再自动重试：同一份旧结构数据不可能被服务端接受，
     // 反复上传只会在“旧写入方无法表达新记录”的云文档上制造无意义的 409/426。
     if (_upgradeRequired) return;
@@ -376,10 +400,7 @@ class PlannerCoordinator extends ChangeNotifier {
               // wizard replaces it when the plan is confirmed. Persisting here also
               // proves local storage works before anything is uploaded.
               await _persist(
-                initialPlannerData(
-                  userId: userId,
-                  nextId: scheduler.newUuid,
-                ),
+                initialPlannerData(userId: userId, nextId: scheduler.newUuid),
                 metadata.copyWith(
                   revision: snapshot.revision,
                   base: null,
@@ -429,7 +450,9 @@ class PlannerCoordinator extends ChangeNotifier {
         status = SyncStatus.error;
         message = error.message;
       } else {
-        status = error is OfflineFailure ? SyncStatus.offline : SyncStatus.error;
+        status = error is OfflineFailure
+            ? SyncStatus.offline
+            : SyncStatus.error;
         message = error is AppFailure ? error.message : '同步未完成，本机数据已保留：$error';
       }
     } finally {

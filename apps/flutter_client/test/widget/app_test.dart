@@ -15,14 +15,14 @@ import 'package:sjtu_study_planner_client/core/storage/identity_store.dart';
 import 'package:sjtu_study_planner_client/core/storage/storage_repository.dart';
 import 'package:sjtu_study_planner_client/core/storage/planner_json.dart';
 import 'package:sjtu_study_planner_client/features/auth/application/auth_controller.dart';
+import 'package:sjtu_study_planner_client/features/onboarding/presentation/onboarding_page.dart';
 import 'package:sjtu_study_planner_client/features/planner/application/onboarding_controller.dart';
 
 import '../support/http_adapter.dart';
 import '../support/planner_fixture.dart';
 import '../support/onboarding_fixture.dart';
 
-/// A finished profile: `/api/onboarding/profile` returning it keeps the router on
-/// the workbench instead of the wizard.
+/// A finished profile for flows that also open the optional planning pages.
 const testProfile = {
   'goal_text': '准备计算机专业研究生考试',
   'goal_type': 'exam',
@@ -81,7 +81,7 @@ List<Override> testOverrides(ApiClient client) => [
 
 void main() {
   testWidgets(
-    'a new account does not start cloud sync before onboarding lookup finishes',
+    'a new account reaches quick start without finishing planning first',
     (tester) async {
       final lookup = Completer<ResponseBody>();
       final adapter = TestAdapter((request) async {
@@ -123,7 +123,7 @@ void main() {
       );
       await tester.enterText(find.byType(TextFormField).at(1), 'Study4089');
       await tester.tap(find.widgetWithText(FilledButton, '登录'));
-      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pumpAndSettle();
       expect(
         container
             .read(appRouterProvider)
@@ -131,14 +131,21 @@ void main() {
             .value
             .uri
             .path,
-        '/loading',
+        '/',
       );
       expect(
         adapter.requests.where(
           (request) => request.path == '/api/planner/sync',
         ),
-        isEmpty,
+        isNotEmpty,
       );
+      expect(container.read(onboardingStatusProvider).isLoading, isTrue);
+      expect(find.byKey(const Key('dashboard-quick-start')), findsOneWidget);
+      expect(find.text('正在读取学习目标…'), findsNothing);
+      final router = container.read(appRouterProvider);
+      router.go('/login');
+      await tester.pumpAndSettle();
+      expect(router.routeInformationProvider.value.uri.path, '/');
       lookup.complete(jsonResponse({'profile': null}));
       await tester.pumpAndSettle();
       expect(
@@ -148,14 +155,44 @@ void main() {
             .value
             .uri
             .path,
-        '/onboarding',
+        '/',
       );
       expect(
         adapter.requests.where(
           (request) => request.path == '/api/planner/sync',
         ),
+        isNotEmpty,
+      );
+      expect(container.read(onboardingStatusProvider).valueOrNull, isNull);
+      expect(find.text('还没有长期计划，也没关系'), findsOneWidget);
+      expect(find.byKey(const Key('dashboard-quick-start')), findsOneWidget);
+      expect(find.byKey(const Key('dashboard-ai-planning')), findsOneWidget);
+      expect(find.text('开始计时'), findsOneWidget);
+      expect(find.text('AI 长期规划'), findsOneWidget);
+      await tester.tap(find.byKey(const Key('dashboard-quick-start')));
+      await tester.pumpAndSettle();
+      expect(find.text('今天想学什么？'), findsOneWidget);
+      expect(find.byKey(const Key('ad-hoc-title')), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      final beforePlanning = container.read(plannerSyncProvider).data;
+      await tester.tap(find.byKey(const Key('dashboard-ai-planning')));
+      await tester.pumpAndSettle();
+      expect(router.routeInformationProvider.value.uri.path, '/interview');
+      expect(find.byType(OnboardingPage), findsOneWidget);
+      expect(container.read(plannerSyncProvider).data, beforePlanning);
+      expect(
+        adapter.requests.where(
+          (request) => request.path.startsWith('/api/ai/'),
+        ),
         isEmpty,
       );
+      for (final path in ['/onboarding', '/interview']) {
+        router.go(path);
+        await tester.pumpAndSettle();
+        expect(router.routeInformationProvider.value.uri.path, path);
+        expect(find.byType(OnboardingPage), findsOneWidget);
+      }
     },
   );
   testWidgets(
@@ -238,9 +275,8 @@ void main() {
   );
 
   testWidgets(
-    'profile lookup errors without a cache show retry instead of onboarding',
+    'profile lookup errors do not block direct entry or optional planning',
     (tester) async {
-      var failed = true;
       final client = ApiClient(
         config: const AppConfig(apiBaseUrl: 'http://api.test'),
         tokenStore: MemoryTokenStore(),
@@ -250,15 +286,10 @@ void main() {
               return jsonResponse({'session': onboardingFixture()});
             }
             if (request.path == '/api/onboarding/profile') {
-              return failed
-                  ? jsonResponse({'error': 'unavailable'}, 503)
-                  : jsonResponse({'profile': null});
+              return jsonResponse({'error': 'unavailable'}, 503);
             }
             if (request.path == '/api/planner/sync') {
-              throw DioException.connectionError(
-                requestOptions: request,
-                reason: 'offline',
-              );
+              return jsonResponse({'data': null, 'revision': 0});
             }
             if (request.path == '/api/auth/login') {
               return jsonResponse({
@@ -295,11 +326,15 @@ void main() {
             .value
             .uri
             .path,
-        '/loading',
+        '/',
       );
-      expect(find.text('重试读取学习目标'), findsOneWidget);
-      failed = false;
-      await tester.tap(find.text('重试读取学习目标'));
+      // A profile lookup failure no longer traps the account on a loading page:
+      // the workbench bootstraps an editable plan and offers the quick actions.
+      expect(container.read(onboardingStatusProvider).hasError, isTrue);
+      expect(find.byKey(const Key('dashboard-quick-start')), findsOneWidget);
+      expect(find.text('重试读取学习目标'), findsNothing);
+      // Optional planning stays reachable through the workbench.
+      await tester.tap(find.byKey(const Key('dashboard-ai-planning')));
       await tester.pumpAndSettle();
       expect(
         container
@@ -308,7 +343,7 @@ void main() {
             .value
             .uri
             .path,
-        '/onboarding',
+        '/interview',
       );
     },
   );
@@ -334,6 +369,9 @@ void main() {
 
       // The authentication guard keeps every workbench route behind the login page.
       final router = container.read(appRouterProvider);
+      router.go('/');
+      await tester.pumpAndSettle();
+      expect(router.routeInformationProvider.value.uri.path, '/login');
       router.go('/settings');
       await tester.pumpAndSettle();
       expect(router.routeInformationProvider.value.uri.path, '/login');
@@ -346,10 +384,9 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, '登录'));
       await tester.pumpAndSettle();
 
-      // A finished profile goes straight to today's plan, not the wizard.
+      // A finished profile also goes straight to the workbench.
       expect(router.routeInformationProvider.value.uri.path, '/');
-      expect(find.text('今天，专注眼前的一步'), findsOneWidget);
-      expect(find.textContaining('项达标'), findsWidgets);
+      expect(find.text('开始计时'), findsOneWidget);
 
       await client.clearSession();
       await tester.pumpAndSettle();

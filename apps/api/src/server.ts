@@ -4,7 +4,7 @@ import cookie from "@fastify/cookie";
 import rateLimit from "@fastify/rate-limit";
 import { config } from "./config.js";
 import { query, transaction } from "./db.js";
-import { requireUser } from "./auth.js";
+import { AccountDeletedError, clearSession, requireUser } from "./auth.js";
 import { authRoutes } from "./auth-routes.js";
 import { syncRoutes } from "./sync.js";
 import { commitPlannerState, PlannerRevisionConflict, readPlannerState } from "./sync.js";
@@ -182,6 +182,10 @@ app.get("/api/replan-runs", async (request, reply) => { const user = await requi
 app.post("/api/replan-runs/:id/undo", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const params = request.params as { id: string }; try { return await undoRun(user.id, params.id); } catch (error) { return reply.code(400).send({ error: errorMessage(error) }); } });
 
 app.setErrorHandler((error, _request, reply) => {
+  if (error instanceof AccountDeletedError) {
+    clearSession(reply);
+    return reply.code(410).send({ error: error.message, code: error.code });
+  }
   const status = (error as { statusCode?: number }).statusCode;
   if (status === 429) return reply.code(429).send({ error: "操作过于频繁，请稍后重试" });
   app.log.error(error);

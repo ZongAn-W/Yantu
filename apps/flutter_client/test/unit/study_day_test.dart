@@ -221,31 +221,7 @@ void main() {
     });
   });
 
-  group('toggle and delete', () {
-    test('setTaskDayCompletion rewrites only the given blocks', () {
-      final data = twoTaskFixture();
-      final blocks = data.blocks
-          .where((block) => block.date == '2026-10-16')
-          .toList();
-      final completed = setTaskDayCompletion(
-        data,
-        blocks,
-        true,
-        updatedAt: '2026-10-17T00:00:00.000Z',
-      );
-      expect(
-        completed.blocks.every(
-          (block) => block.status == BlockStatus.completed,
-        ),
-        isTrue,
-      );
-      final reopened = setTaskDayCompletion(completed, blocks, false);
-      expect(
-        reopened.blocks.every((block) => block.status == BlockStatus.planned),
-        isTrue,
-      );
-    });
-
+  group('delete', () {
     test('deleteTask removes the task, its blocks and its logs', () {
       final data = plannerFixture();
       final id = data.tasks.single.id;
