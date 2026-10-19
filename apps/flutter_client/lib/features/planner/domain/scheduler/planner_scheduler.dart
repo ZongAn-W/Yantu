@@ -70,17 +70,8 @@ String dateToday([DateTime? now]) {
 String _dateOnly(DateTime value) =>
     '${value.toUtc().year.toString().padLeft(4, '0')}-${value.toUtc().month.toString().padLeft(2, '0')}-${value.toUtc().day.toString().padLeft(2, '0')}';
 
-bool eventOccursOn(FixedEvent event, String date) {
-  if (date.compareTo(event.date) < 0) return false;
-  if (event.repeat == EventRepeat.daily) return true;
-  if (event.repeat == EventRepeat.weekly) {
-    final current = _parseDate(date);
-    final start = _parseDate(event.date);
-    if (current == null || start == null) return false;
-    return current.difference(start).inDays % 7 == 0;
-  }
-  return event.date == date;
-}
+/// Compatibility helper for imported plans. Fixed events no longer recur or reserve time.
+bool eventOccursOn(FixedEvent event, String date) => false;
 
 int _finite(int value) => value < 0 ? 0 : value;
 
@@ -161,28 +152,15 @@ int _occupiedUnionMinutes(
   return total;
 }
 
-/// Occupied intervals of every fixed event on [date], clamped to the day.
+/// Compatibility helper for imported plans; legacy events never occupy time.
 List<(int, int)> fixedEventOccupiedIntervals(
   List<FixedEvent> events,
   String date,
-) {
-  final intervals = <(int, int)>[];
-  for (final event in events.where((event) => eventOccursOn(event, date))) {
-    final start = event.startMinute.clamp(0, 1440);
-    final end = (event.startMinute + _finite(event.durationMinutes)).clamp(
-      0,
-      1440,
-    );
-    if (end > start) intervals.add((start, end));
-  }
-  intervals.sort((a, b) => a.$1.compareTo(b.$1));
-  return intervals;
-}
+) => const [];
 
-/// Capacity occupied on one day, shared by automatic scheduling and manual placement.
-///
-/// Fixed events always count as their union. Timed plans clip the union of events and
-/// block intervals to the study window; daily plans add the per-block occupied load.
+/// Capacity occupied by study blocks on one day, shared by automatic scheduling
+/// and manual placement. Timed plans clip block intervals to the study window;
+/// daily plans add each block's occupied load. Legacy event data is ignored.
 int occupiedDayMinutes({
   required Profile profile,
   required List<FixedEvent> fixedEvents,
@@ -191,17 +169,13 @@ int occupiedDayMinutes({
   required String date,
 }) {
   if (profile.planningMode != PlanningMode.timed) {
-    return fixedEventMinutesForDate(fixedEvents, date) +
-        dayBlocks.fold<int>(
-          0,
-          (sum, block) => sum + _blockOccupiedMinutes(block, logs),
-        );
+    return dayBlocks.fold<int>(
+      0,
+      (sum, block) => sum + _blockOccupiedMinutes(block, logs),
+    );
   }
   return _occupiedUnionMinutes(
-    [
-      ...fixedEventOccupiedIntervals(fixedEvents, date),
-      for (final block in dayBlocks) blockOccupiedInterval(block, logs),
-    ],
+    [for (final block in dayBlocks) blockOccupiedInterval(block, logs)],
     from: profile.studyStartMinute,
     to: profile.studyEndMinute,
   );
@@ -279,7 +253,7 @@ int weekdayIndex(String date) {
   return parsed.weekday % 7;
 }
 
-/// 某一自然日的可用学习预算（应用净/总口径后，未扣固定事件）。
+/// 某一自然日的可用学习预算（应用净/总口径后）。
 ///
 /// 单一入口由 [capacity_core.resolveDayCapacity] 提供：具体日期覆盖、特定周、
 /// 默认模板/周基线共用同一套规则，页面与调度器因此不会各算一份。
@@ -301,49 +275,18 @@ _Limits _limits(Profile profile) => _Limits(
 bool _overlap(int start, int duration, int otherStart, int otherDuration) =>
     start < otherStart + otherDuration && otherStart < start + duration;
 
+/// Compatibility helper for imported plans; fixed events no longer reduce capacity.
 int fixedEventMinutesForDate(
   List<FixedEvent> events,
   String date, {
   bool includeRest = true,
-}) {
-  final intervals =
-      events
-          .where(
-            (event) =>
-                eventOccursOn(event, date) &&
-                (includeRest || event.kind != FixedEventKind.rest),
-          )
-          .map((event) {
-            final start = event.startMinute.clamp(0, 1440);
-            final end = (event.startMinute + _finite(event.durationMinutes))
-                .clamp(0, 1440);
-            return (start: start, end: end);
-          })
-          .where((item) => item.end > item.start)
-          .toList()
-        ..sort((a, b) => a.start.compareTo(b.start));
-  var total = 0;
-  var previousEnd = 0;
-  for (final interval in intervals) {
-    total += math.max(0, interval.end - math.max(interval.start, previousEnd));
-    previousEnd = math.max(previousEnd, interval.end);
-  }
-  return total;
-}
+}) => 0;
 
 int availableDailyMinutes(
   Profile profile,
   List<FixedEvent> events,
   String date,
-) => math.max(
-  0,
-  dailyStudyBudget(profile, date) -
-      fixedEventMinutesForDate(
-        events,
-        date,
-        includeRest: profile.planningMode != PlanningMode.timed,
-      ),
-);
+) => dailyStudyBudget(profile, date);
 
 String? _placementError(
   ReplanInput input,
@@ -433,20 +376,6 @@ String? _placementError(
       )) {
     return '与已有时间块冲突';
   }
-  final events = input.fixedEvents.where(
-    (event) => eventOccursOn(event, candidate.date),
-  );
-  if (timed &&
-      events.any(
-        (event) => _overlap(
-          candidate.startMinute,
-          candidate.durationMinutes,
-          event.startMinute,
-          event.durationMinutes,
-        ),
-      )) {
-    return '与固定课程、考试或休息时间冲突';
-  }
   final orphanLogs = input.logs.where(
     (log) =>
         log.date == candidate.date &&
@@ -454,8 +383,8 @@ String? _placementError(
             !dayBlocks.any((block) => block.id == log.blockId)),
   );
   // The same occupancy accounting is shared with the automatic strategy scheduler:
-  // fixed events count as their union, timed plans clip to the study window, and a
-  // completed block without actual history still reserves its planned slot.
+  // timed plans clip to the study window, and a completed block without actual
+  // history still reserves its planned slot.
   final dailyOccupied = occupiedDayMinutes(
     profile: input.profile,
     fixedEvents: input.fixedEvents,

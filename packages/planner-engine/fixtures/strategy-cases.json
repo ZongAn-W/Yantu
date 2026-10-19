@@ -47,15 +47,15 @@
       "expected":{"scheduled":0,"unscheduled":60,"instances":0,"last_date":null,"issues":["DEPENDENCY_INVALID","DEPENDENCY_INVALID"]}
     },
     {
-      "name":"overlapping fixed events reserve their union once",
+      "name":"legacy overlapping fixed events do not consume daily budget",
       "from":"2026-10-12","to":"2026-10-12",
       "weekly_minutes":{"0":0,"1":150,"2":0,"3":0,"4":0,"5":0,"6":0},
-      "tasks":[{"id":"exercise","estimated_minutes":30}],
+      "tasks":[{"id":"exercise","estimated_minutes":120}],
       "fixed_events":[{"id":"one","start_minute":480,"duration_minutes":60},{"id":"two","start_minute":510,"duration_minutes":60}],
-      "expected":{"scheduled":30,"unscheduled":0,"instances":0,"last_date":"2026-10-12","issues":[]}
+      "expected":{"scheduled":120,"unscheduled":0,"instances":0,"last_date":"2026-10-12","issues":[]}
     },
     {
-      "name":"timed occupancy clips to the study window and unions events with protected blocks",
+      "name":"timed occupancy counts protected study blocks and ignores legacy events",
       "from":"2026-10-12","to":"2026-10-12",
       "profile":{"planning_mode":"timed","study_start_minute":480,"study_end_minute":660},
       "weekly_minutes":{"0":0,"1":210,"2":0,"3":0,"4":0,"5":0,"6":0},
@@ -65,8 +65,8 @@
         {"id":"separate-completed","user_id":"fixture-user","task_id":"legacy","date":"2026-10-12","start_minute":600,"duration_minutes":30,"actual_minutes":0,"is_fixed":false,"status":"completed","created_at":"2026-10-12T00:00:00.000Z","updated_at":"2026-10-12T00:00:00.000Z"}
       ],
       "fixed_events":[{"id":"cross-window","start_minute":300,"duration_minutes":210},{"id":"overlap-block","start_minute":510,"duration_minutes":60},{"id":"outside-window","start_minute":700,"duration_minutes":60}],
-      "expected_new_starts":[570,630],
-      "expected":{"scheduled":60,"unscheduled":60,"instances":0,"last_date":"2026-10-12","issues":["WORK_UNSCHEDULED"]}
+      "expected_new_starts":[540,570,630],
+      "expected":{"scheduled":90,"unscheduled":30,"instances":0,"last_date":"2026-10-12","issues":["WORK_UNSCHEDULED"]}
     },
     {
       "name":"completed legacy blocks without actual history reserve their planned daily load",

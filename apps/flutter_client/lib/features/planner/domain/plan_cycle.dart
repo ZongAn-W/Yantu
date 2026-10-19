@@ -45,10 +45,7 @@ bool isFullPeriodPlan(JsonMap? planning) =>
     planPeriodMode(planning) == PlanPeriodMode.full;
 
 /// 旧滚动计划的每日安排是否已经被用户确认补全到周期末。
-bool planPeriodNeedsCompletion(
-  PlannerData data, {
-  required String today,
-}) {
+bool planPeriodNeedsCompletion(PlannerData data, {required String today}) {
   if (planPeriodMode(data.planning) == PlanPeriodMode.full) return false;
   final end = data.profile.resolvedPlanEnd(today);
   return end.compareTo(today) >= 0;
@@ -92,7 +89,7 @@ PlannerData applyFullPeriodCycle(
 
 /// 把尚未安排的事项排进 [from] 到 [to]（含）的每日安排。
 ///
-/// 只新增与周期相交的安排：已有安排、已完成事项、固定事件和历史学习记录都不改动，
+/// 只新增与周期相交的安排：已有安排、已完成事项和历史学习记录都不改动，
 /// 因此对同一区间重复执行是幂等的，不会重复生成已经存在的每日安排。
 ///
 /// 只有显式标记为滚动（`rolling == true` 或 `mode == "rolling"`）的计划才保留旧的
@@ -434,10 +431,10 @@ ScheduleAdjustment reschedulePlan(
   for (var date = from; date.compareTo(end) <= 0; date = addDate(date, 1)) {
     final monday = capacity.capacityWeekMonday(date);
     if (seenWeeks.add(monday)) {
-      for (final conflict in capacity.resolveWeekCapacity(
-        generated.data.profile,
-        monday,
-      ).conflicts) {
+      for (final conflict
+          in capacity
+              .resolveWeekCapacity(generated.data.profile, monday)
+              .conflicts) {
         notes.add(
           conflict.code == capacity.CapacityConflictCode.weekTotalExceeded
               ? '包含 $monday 的一周容量设置冲突：日期/逐日覆盖合计 '

@@ -144,6 +144,31 @@ describe("API planning scheduler contract", () => {
   }
 });
 
+describe("retired fixed events", () => {
+  it.each(["daily", "timed"])("ignores every legacy event type and repeat rule in %s plans", planning_mode => {
+    const input = buildInput({
+      from: "2026-10-19", to: "2026-10-20",
+      profile: { planning_mode, plan_start_date: "2026-10-19", plan_end_date: "2026-10-20",
+        daily_limit_minutes: 150, study_start_minute: 480, study_end_minute: 720,
+        weekly_minutes: { "0": 0, "1": 150, "2": 150, "3": 0, "4": 0, "5": 0, "6": 0 } },
+      tasks: [{ id: "work", estimated_minutes: 240 }],
+      fixed_events: [
+        { id: "lunch", date: "2026-10-01", start_minute: 0, duration_minutes: 1440, kind: "rest", repeat: "daily" },
+        { id: "course", date: "2026-10-12", start_minute: 0, duration_minutes: 1440, kind: "course", repeat: "weekly" },
+        { id: "exam", date: "2026-10-20", start_minute: 0, duration_minutes: 1440, kind: "official_exam", repeat: "none" },
+      ],
+    });
+    const run = (value: StrategyInput) => {
+      let id = 0;
+      return scheduleStrategy(value, "2026-10-19", "2026-10-20", {
+        now: () => new Date(clock), newId: () => `retired-event-${++id}`,
+      });
+    };
+    expect(run(input)).toEqual(run({ ...input, fixed_events: [] }));
+    expect(run(input).scheduled_minutes).toBe(240);
+  });
+});
+
 describe("flexible capacity scheduling (net / overrides / priority mixing)", () => {
   const profile = (extra: Record<string, unknown> = {}) => ({
     user_id: "user", planning_mode: "daily" as const, daily_limit_minutes: 480, buffer_minutes: 30,

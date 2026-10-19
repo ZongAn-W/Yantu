@@ -124,7 +124,7 @@ class _PlannerRouter {
       GoRoute(
         path: AppRoutes.interview,
         builder: (context, _) => const AppShell(
-          selectedPath: AppRoutes.interview,
+          selectedPath: AppRoutes.adjust,
           child: OnboardingPage(embedded: true),
         ),
       ),

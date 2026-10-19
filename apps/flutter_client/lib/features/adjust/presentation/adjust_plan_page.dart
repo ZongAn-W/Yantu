@@ -153,22 +153,14 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          profile,
-                          const SizedBox(height: 16),
-                          time,
-                        ],
+                        children: [profile, const SizedBox(height: 16), time],
                       ),
                     ),
                     const SizedBox(width: 16),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          progress,
-                          const SizedBox(height: 16),
-                          apply,
-                        ],
+                        children: [progress, const SizedBox(height: 16), apply],
                       ),
                     ),
                   ],
@@ -232,10 +224,7 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
           const SizedBox(height: 12),
           _ProfileField(label: '目标', value: goal),
           _ProfileField(label: '目标日期', value: targetLabel),
-          _ProfileField(
-            label: '院校专业',
-            value: school.isEmpty ? '未填写' : school,
-          ),
+          _ProfileField(label: '院校专业', value: school.isEmpty ? '未填写' : school),
           _ProfileField(
             label: '当前进度',
             value: profile.foundation.isEmpty ? '未填写' : profile.foundation,
@@ -280,14 +269,15 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
     final subjectNames = {
       for (final subject in data.subjects) subject.id: subject.name,
     };
-    final tasks = [
-      for (final task in data.tasks)
-        if (task.status != TaskStatus.archived) task,
-    ]..sort((a, b) {
-        final deadline = a.deadline.compareTo(b.deadline);
-        if (deadline != 0) return deadline;
-        return a.title.compareTo(b.title);
-      });
+    final tasks =
+        [
+          for (final task in data.tasks)
+            if (task.status != TaskStatus.archived) task,
+        ]..sort((a, b) {
+          final deadline = a.deadline.compareTo(b.deadline);
+          if (deadline != 0) return deadline;
+          return a.title.compareTo(b.title);
+        });
     final shown = tasks.take(6).toList();
     final status = metrics.lagging
         ? '落后于计划节奏'
@@ -369,7 +359,9 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
 
   Widget _capacityPanel(PlannerData data, String today) {
     final profile = data.profile;
-    final days = [for (var index = 0; index < 7; index++) addDate(today, index)];
+    final days = [
+      for (var index = 0; index < 7; index++) addDate(today, index),
+    ];
     final scheduledByDate = <String, int>{};
     for (final block in data.blocks) {
       scheduledByDate.update(
@@ -472,14 +464,8 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
             style: tabularFigures.copyWith(fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
-          PlannerStat(
-            label: '剩余天数',
-            value: ended ? '已结束' : '$remainingDays 天',
-          ),
-          PlannerStat(
-            label: '待安排事项',
-            value: '${pendingTasks.length} 个',
-          ),
+          PlannerStat(label: '剩余天数', value: ended ? '已结束' : '$remainingDays 天'),
+          PlannerStat(label: '待安排事项', value: '${pendingTasks.length} 个'),
           PlannerStat(
             label: '剩余工作量',
             value: duration(metrics.remainingMinutes),
@@ -494,7 +480,7 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
           ],
           const Text(
             'AI 会审查目标所需时长与当前计划是否匹配，必要时调整周期、强度和工作量，'
-            '可能需要 1–2 分钟。历史日期、已完成安排、固定事件和有实际用时的记录'
+            '可能需要 1–2 分钟。历史日期、已完成安排和有实际用时的记录'
             '保持不变；事项范围与真实截止日期不会被改写。',
             style: TextStyle(color: PlannerColors.muted, fontSize: 12),
           ),
@@ -504,9 +490,7 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
             child: FilledButton.icon(
               key: const Key('adjust-apply'),
               onPressed: enabled ? _applyAdjustment : null,
-              icon: Icon(
-                _applying ? Icons.hourglass_top : Icons.auto_fix_high,
-              ),
+              icon: Icon(_applying ? Icons.hourglass_top : Icons.auto_fix_high),
               label: Text(_applying ? 'AI 正在调整…' : '一键调整后续计划'),
             ),
           ),

@@ -26,10 +26,13 @@ enum ContinueCycleMode {
 /// - 旧滚动计划：显示“补全本周期安排”，把未来缺失的每日安排补齐到周期末，
 ///   确认后写入 full 模式元数据（`mode: full`、`rolling: false`、
 ///   `detail_days` 覆盖整个周期、`detailed_until` 为周期末、`forecast: null`）。
-///   已有安排、固定事件、已完成事项和历史学习记录全部保持不变。
+///   已有安排、已完成事项和历史学习记录全部保持不变。
 /// - 全量计划：显示“继续安排下一周期”，确认后延展周期并生成新周期的每日安排。
 class ContinueCycleDialog extends ConsumerStatefulWidget {
-  const ContinueCycleDialog({this.mode = ContinueCycleMode.nextCycle, super.key});
+  const ContinueCycleDialog({
+    this.mode = ContinueCycleMode.nextCycle,
+    super.key,
+  });
 
   final ContinueCycleMode mode;
 
@@ -55,7 +58,8 @@ class ContinueCycleDialog extends ConsumerStatefulWidget {
   static Future<bool> show(BuildContext context) => showNextCycle(context);
 
   @override
-  ConsumerState<ContinueCycleDialog> createState() => _ContinueCycleDialogState();
+  ConsumerState<ContinueCycleDialog> createState() =>
+      _ContinueCycleDialogState();
 }
 
 class _ContinueCycleDialogState extends ConsumerState<ContinueCycleDialog> {
@@ -133,7 +137,7 @@ class _ContinueCycleDialogState extends ConsumerState<ContinueCycleDialog> {
         ),
       const SizedBox(height: 8),
       const Text(
-        '已有安排、固定事件、历史学习记录和已完成事项保持不变；'
+        '已有安排、历史学习记录和已完成事项保持不变；'
         '不会编造不存在的内容或改变真实截止日期。',
         style: TextStyle(color: PlannerColors.muted, fontSize: 12),
       ),
@@ -224,8 +228,7 @@ class _ContinueCycleDialogState extends ConsumerState<ContinueCycleDialog> {
       PlannerStat(label: '剩余工作量', value: duration(remaining)),
       PlannerStat(
         label: '本次新增安排',
-        value:
-            '${preview.blocks} 段 · ${duration(preview.scheduledMinutes)}',
+        value: '${preview.blocks} 段 · ${duration(preview.scheduledMinutes)}',
       ),
       PlannerStat(
         label: '仍未安排',
@@ -241,7 +244,7 @@ class _ContinueCycleDialogState extends ConsumerState<ContinueCycleDialog> {
         ),
       const SizedBox(height: 8),
       const Text(
-        '已有安排、固定事件、历史学习记录和已完成事项保持不变。',
+        '已有安排、历史学习记录和已完成事项保持不变。',
         style: TextStyle(color: PlannerColors.muted, fontSize: 12),
       ),
     ];

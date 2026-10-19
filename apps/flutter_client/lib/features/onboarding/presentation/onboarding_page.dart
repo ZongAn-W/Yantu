@@ -98,8 +98,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               ? session.recommendations.weeklyMinutes
               : session.profile.weeklyMinutes),
         };
-        final currentProfileJson =
-            session.currentPlan?['profile'] is Map
+        final currentProfileJson = session.currentPlan?['profile'] is Map
             ? JsonMap.from(session.currentPlan!['profile'] as Map)
             : const <String, dynamic>{};
         _legacyGross =
@@ -740,7 +739,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       studyStartMinute: 480,
       studyEndMinute: 1320,
       foundation: '',
-      capacityBasis: _netCapacity ? CapacityBasis.net : CapacityBasis.grossBuffer,
+      capacityBasis: _netCapacity
+          ? CapacityBasis.net
+          : CapacityBasis.grossBuffer,
       weeklyBaselineMinutes: _adoptedBaseline,
       weeklyRangeMinMinutes: _useRange ? _rangeMin : null,
       weeklyRangeMaxMinutes: _useRange ? _rangeMax : null,
@@ -936,7 +937,10 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                 _netCapacity
                     ? '按净学习时间填写：输入的就是真正能用于学习的净预算，程序不会再机械扣除七天机动。'
                     : '旧计划沿用总预算口径：安排前会先扣除每日机动时间。',
-                style: const TextStyle(color: PlannerColors.muted, fontSize: 12),
+                style: const TextStyle(
+                  color: PlannerColors.muted,
+                  fontSize: 12,
+                ),
               ),
               if (_useRange) ...[
                 const SizedBox(height: 12),
@@ -987,7 +991,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                         ),
                         validator: (value) {
                           final minutes = int.tryParse(value ?? '');
-                          if (minutes == null || minutes < 0 || minutes > 10080) {
+                          if (minutes == null ||
+                              minutes < 0 ||
+                              minutes > 10080) {
                             return '填写0至10080分钟';
                           }
                           if (_rangeMin != null && minutes < _rangeMin!) {
@@ -1011,8 +1017,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                     controlAffinity: ListTileControlAffinity.leading,
                     onChanged: busy
                         ? null
-                        : (value) =>
-                              setState(() => _baselineConfirmed = value ?? false),
+                        : (value) => setState(
+                            () => _baselineConfirmed = value ?? false,
+                          ),
                     title: Text(
                       '采用保守基线 ${duration(_adoptedBaseline!)} 作为初始排程依据',
                     ),
@@ -1095,40 +1102,6 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
           '本次将一次生成 $_start 至 $_end 的全周期每日安排（含首尾），不会只生成近期窗口。',
           style: const TextStyle(color: PlannerColors.muted),
         ),
-        if (constraints) ...[
-          const SizedBox(height: 16),
-          if (planningEntries(session.currentPlan?['fixed_events']).isEmpty)
-            const Text(
-              '当前没有固定课程、考试或休息占用。',
-              style: TextStyle(color: PlannerColors.muted),
-            )
-          else
-            ExpansionTile(
-              tilePadding: EdgeInsets.zero,
-              title: Text(
-                '现有固定占用 ${planningEntries(session.currentPlan?['fixed_events']).length} 项',
-              ),
-              children: [
-                for (final event in planningEntries(
-                  session.currentPlan?['fixed_events'],
-                ))
-                  ListTile(
-                    contentPadding: EdgeInsets.zero,
-                    dense: true,
-                    title: Text(planningText(event['title'])),
-                    subtitle: Text(
-                      '${event['date']} · ${clockTime((event['start_minute'] as num? ?? 0).toInt())} · '
-                      '${duration((event['duration_minutes'] as num? ?? 0).toInt())} · '
-                      '${switch (event['repeat']) {
-                        'daily' => '每天',
-                        'weekly' => '每周',
-                        _ => '单次',
-                      }}',
-                    ),
-                  ),
-              ],
-            ),
-        ],
         if (!constraints && _end!.isNotEmpty && budget > capacity) ...[
           const SizedBox(height: 12),
           PlannerNotice(
@@ -1163,8 +1136,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
             ),
             if (!constraints)
               OutlinedButton.icon(
-                onPressed:
-                    busy || _capacityNeedsConfirmation
+                onPressed: busy || _capacityNeedsConfirmation
                     ? null
                     : () async {
                         if (!_form.currentState!.validate()) return;

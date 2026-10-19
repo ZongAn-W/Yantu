@@ -248,7 +248,7 @@ describe("保守重排", () => {
     expect(sum(preview.after)).toBe(600);
   });
 
-  it("固定课程、休息、正式考试和固定时间块不被覆盖", () => {
+  it("遗留课程、休息和考试不影响重排，固定学习块仍原样保留", () => {
     const fixed = block("fixed", "math", {
       date: "2026-10-14",
       start_minute: 660,
@@ -271,30 +271,21 @@ describe("保守重排", () => {
         kind: "official_exam",
       }),
     ];
-    const preview = generateReplanPreview(
-      input({
+    const source = input({
         tasks: [task("math", { estimated_minutes: 240 })],
         blocks: [block("today", "math", { duration_minutes: 210 }), fixed],
         fixed_events: events,
-      }),
-    );
+      });
+    const runtime = () => {
+      let id = 0;
+      return { now: () => new Date(timestamp), newId: () => `legacy-event-${++id}` };
+    };
+    const preview = generateReplanPreview(source, runtime());
+    const withoutEvents = generateReplanPreview({ ...source, fixed_events: [] }, runtime());
+    expect(preview).toEqual(withoutEvents);
     expect(preview.after.find((item) => item.id === "fixed")).toEqual(fixed);
-    for (const item of planned(preview.after).filter(
-      (item) => !item.is_fixed,
-    )) {
-      expect(
-        events
-          .filter((evt) => eventOccursOn(evt, item.date))
-          .some(
-            (evt) =>
-              item.start_minute < evt.start_minute + evt.duration_minutes &&
-              evt.start_minute < item.start_minute + item.duration_minutes,
-          ),
-      ).toBe(false);
-    }
-    expect(preview.after.some((item) => item.date === "2026-10-15")).toBe(
-      false,
-    );
+    expect(preview.after.some(item => !item.is_fixed && item.date === "2026-10-14" && item.start_minute === 480)).toBe(true);
+    expect(source.fixed_events).toEqual(events);
   });
 
   it("固定任务和已完成块原封不动保留", () => {
@@ -654,16 +645,16 @@ describe("日期与手动调整约束", () => {
     expect(dateToday(new Date(2026, 9, 13, 23, 30))).toBe(TODAY);
   });
 
-  it("重复事件只从起始日期生效，并正确识别每周与每日重复", () => {
+  it("遗留每日和每周重复事件均不再生效", () => {
     expect(eventOccursOn(event({ repeat: "daily" }), TODAY)).toBe(false);
-    expect(eventOccursOn(event({ repeat: "daily" }), "2026-10-15")).toBe(true);
-    expect(eventOccursOn(event({ repeat: "weekly" }), "2026-10-21")).toBe(true);
+    expect(eventOccursOn(event({ repeat: "daily" }), "2026-10-15")).toBe(false);
+    expect(eventOccursOn(event({ repeat: "weekly" }), "2026-10-21")).toBe(false);
     expect(eventOccursOn(event({ repeat: "weekly" }), "2026-10-20")).toBe(
       false,
     );
   });
 
-  it("拖拽拒绝时间重叠、固定事件及每日上限，允许首尾相接", () => {
+  it("放置仍拒绝学习块重叠及超出每日上限，允许与遗留事件重叠", () => {
     const initial = data(
       input({
         blocks: [
@@ -691,7 +682,7 @@ describe("日期与手动调整约束", () => {
         initial,
         block("candidate", "math", { date: "2026-10-14", start_minute: 600 }),
       ),
-    ).toContain("固定");
+    ).toBeNull();
     const limited = {
       ...initial,
       profile: { ...profile, daily_limit_minutes: 60 },

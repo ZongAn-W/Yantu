@@ -57,7 +57,7 @@
       }
     },
     {
-      "name": "timed occupancy clips to the study window and unions events with protected blocks",
+      "name": "timed occupancy counts protected study blocks and ignores legacy events",
       "from": "2026-10-12",
       "to": "2026-10-12",
       "profile": {
@@ -80,10 +80,11 @@
         {"id": "outside-window", "start_minute": 700, "duration_minutes": 60}
       ],
       "expected_auto": {
-        "scheduled": 60,
-        "unscheduled": 60,
+        "scheduled": 90,
+        "unscheduled": 30,
         "issues": ["WORK_UNSCHEDULED"],
         "new_blocks": [
+          {"task_id": "exercise", "date": "2026-10-12", "start_minute": 540, "duration_minutes": 30},
           {"task_id": "exercise", "date": "2026-10-12", "start_minute": 570, "duration_minutes": 30},
           {"task_id": "exercise", "date": "2026-10-12", "start_minute": 630, "duration_minutes": 30}
         ]

@@ -35,6 +35,22 @@ beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-17T04:
 afterEach(() => vi.useRealTimers());
 
 describe("learning budget and strategy quality", () => {
+  it.each(["daily", "timed"] as const)("ignores legacy fixed events during %s replanning and independent validation", planning_mode => {
+    const { session, current } = existingFixture();
+    current.profile.planning_mode = planning_mode;
+    const baseline = buildPlanningDocument(session, current);
+    current.fixed_events = [{ id: "legacy-lunch", user_id: current.profile.user_id, title: "午休与午餐",
+      date: session.start_date, start_minute: 0, duration_minutes: 1440, kind: "rest", repeat: "daily",
+      created_at: "2026-10-01T00:00:00Z", updated_at: "2026-10-01T00:00:00Z" }];
+    const actual = buildPlanningDocument(session, current);
+    const allocations = (value: typeof actual) => value.document.blocks.map(({ id, ...block }) => block);
+    expect(allocations(actual)).toEqual(allocations(baseline));
+    expect(actual.document.fixed_events).toEqual(current.fixed_events);
+    expect(checkScheduledPlan(actual.document, session.start_date, session.end_date)).toEqual(
+      checkScheduledPlan(baseline.document, session.start_date, session.end_date),
+    );
+  });
+
   it("independently rejects new allocations outside the cycle or above capacity", () => {
     const trial = buildPlanningDocument(fixture()).document;
     const block = trial.blocks[0];

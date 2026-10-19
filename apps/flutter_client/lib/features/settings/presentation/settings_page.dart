@@ -568,7 +568,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ),
           const SizedBox(height: 8),
           const Text(
-            '每天只安排事项和时长，不指定学习开始时间。固定课程、考试和休息可保留具体时间。',
+            '每天只安排事项和时长，不指定学习开始时间。可用学习时间按每周模板与日期覆盖计算。',
             style: TextStyle(color: PlannerColors.muted, fontSize: 12),
           ),
           const Divider(height: 24),

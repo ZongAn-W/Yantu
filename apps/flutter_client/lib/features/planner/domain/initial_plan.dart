@@ -1,6 +1,5 @@
 import '../../../shared/models/planner_models.dart';
 import 'planner_format.dart';
-import 'scheduler/planner_scheduler.dart' as scheduler;
 
 /// A brand new local plan for one account: no courses, no items and no exam events.
 ///
@@ -15,8 +14,6 @@ PlannerData initialPlannerData({
   String? timestamp,
   String Function()? nextId,
 }) {
-  final stamp = timestamp ?? nowIso();
-  final id = nextId ?? scheduler.newUuid;
   final start = planStartDate ?? today ?? shanghaiToday();
   return PlannerData(
     version: 1,
@@ -38,21 +35,7 @@ PlannerData initialPlannerData({
     tasks: const [],
     blocks: const [],
     logs: const [],
-    // 午休只是可修改的默认建议，不属于任何考试或院校。
-    fixedEvents: [
-      FixedEvent(
-        id: id(),
-        userId: userId,
-        title: '午休与午餐',
-        date: start,
-        startMinute: 720,
-        durationMinutes: 60,
-        kind: FixedEventKind.rest,
-        repeat: EventRepeat.daily,
-        createdAt: stamp,
-        updatedAt: stamp,
-      ),
-    ],
+    fixedEvents: const [],
     replanRuns: const [],
     phases: const [],
   );

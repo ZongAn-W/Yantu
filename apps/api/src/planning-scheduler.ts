@@ -54,6 +54,7 @@ export interface StrategyInput {
     study_start_minute: number; study_end_minute: number; plan_start_date?: string; plan_end_date?: string };
   tasks: StrategyTask[]; blocks: StrategyBlock[];
   logs: Array<{ task_id: string | null; block_id: string | null; date: string; minutes: number }>;
+  /** Legacy sync payload only; fixed events no longer reserve time. */
   fixed_events: Array<{ date: string; start_minute: number; duration_minutes: number; repeat: string; kind: string }>;
 }
 export interface StrategyIssue {
@@ -85,19 +86,6 @@ const compare = (a: string, b: string) => a < b ? -1 : a > b ? 1 : 0;
 const taskOrder = (a: StrategyTask, b: StrategyTask) => compare(a.deadline, b.deadline)
   || b.priority - a.priority || compare(a.title, b.title) || compare(a.id, b.id);
 
-/** Whether a fixed event occupies time on [date]; mirrors `eventOccursOn` in the engine. */
-export function eventOccursOnDate(event: StrategyInput["fixed_events"][number], date: string): boolean {
-  return date >= event.date && (date === event.date || event.repeat === "daily"
-    || event.repeat === "weekly" && weekday(date) === weekday(event.date));
-}
-
-/** Occupied intervals of every fixed event on a date, clamped to the calendar day. */
-export function fixedEventIntervals(events: StrategyInput["fixed_events"], date: string): number[][] {
-  return events.filter(event => eventOccursOnDate(event, date))
-    .map(event => [Math.max(0, event.start_minute), Math.min(1440, event.start_minute + event.duration_minutes)])
-    .sort((a, b) => a[0] - b[0]);
-}
-
 /** Logs and the block counter are two views of the same recorded work, never added. */
 export function blockActualMinutes(block: StrategyBlock, logs: StrategyInput["logs"]): number {
   return Math.max(minutes(block.actual_minutes),
@@ -120,17 +108,15 @@ export function blockInterval(block: StrategyBlock, logs: StrategyInput["logs"])
 
 /**
  * Capacity occupied on one day, shared by the automatic scheduler and manual placement.
- * Fixed events always count as their union. Timed plans clip the union of events and
- * block intervals to the study window; daily plans add the per-block occupied load.
+ * Timed plans clip the union of block intervals to the study window; daily plans
+ * add the per-block occupied load. Legacy event data has no scheduling effect.
  */
-export function occupiedDayMinutes(profile: StrategyInput["profile"], events: StrategyInput["fixed_events"],
-  dayBlocks: StrategyBlock[], logs: StrategyInput["logs"], date: string): number {
+export function occupiedDayMinutes(profile: StrategyInput["profile"], _legacyEvents: StrategyInput["fixed_events"],
+  dayBlocks: StrategyBlock[], logs: StrategyInput["logs"], _date: string): number {
   if (profile.planning_mode !== "timed") {
-    return occupiedMinutes(fixedEventIntervals(events, date))
-      + dayBlocks.reduce((sum, block) => sum + blockOccupiedMinutes(block, logs), 0);
+    return dayBlocks.reduce((sum, block) => sum + blockOccupiedMinutes(block, logs), 0);
   }
   return occupiedMinutes([
-    ...fixedEventIntervals(events, date),
     ...dayBlocks.map(block => blockInterval(block, logs)),
   ], profile.study_start_minute, profile.study_end_minute);
 }
@@ -208,7 +194,7 @@ export function scheduleStrategy(input: StrategyInput, from: string, to: string,
     const day = blocks.filter(block => block.date === date);
     const orphanLogs = input.logs.filter(log => log.date === date && (!log.block_id || !day.some(block => block.id === log.block_id)));
     const courseBlocks = day.filter(block => byId.get(block.task_id)?.subject_id === task.subject_id);
-    // The same occupancy accounting is used by manual placement; timed records and events
+    // The same occupancy accounting is used by manual placement; timed records
     // that overlap each other count once and are clipped to the study window.
     const dailyOccupied = occupiedDayMinutes(input.profile, input.fixed_events, day, input.logs, date);
     const courseOccupied = occupiedDayMinutes(input.profile, [], courseBlocks, input.logs, date);
@@ -224,8 +210,8 @@ export function scheduleStrategy(input: StrategyInput, from: string, to: string,
     if (room(task, date) < duration) return false;
     let start = 0;
     if (input.profile.planning_mode === "timed") {
-      const intervals = [...fixedEventIntervals(input.fixed_events, date),
-        ...blocks.filter(block => block.date === date).map(block => blockInterval(block, input.logs))].sort((a, b) => a[0] - b[0]);
+      const intervals = blocks.filter(block => block.date === date)
+        .map(block => blockInterval(block, input.logs)).sort((a, b) => a[0] - b[0]);
       const quantum = Math.max(30, input.profile.granularity_minutes);
       start = Math.ceil(input.profile.study_start_minute / quantum) * quantum;
       for (const [a, b] of intervals) {

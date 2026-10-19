@@ -300,14 +300,11 @@ export function replanDocument(current: PlannerDocument, session: OnboardingSess
   for (let date = session.start_date; date <= boundary; date = dateAdd(date, 1)) {
     const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
     const protectedBlocks = document.blocks.filter(block => block.date === date);
-    const events = document.fixed_events.filter(event => event.date <= date && (event.date === date
-      || event.repeat === "daily" || event.repeat === "weekly" && new Date(`${event.date}T00:00:00Z`).getUTCDay() === weekday));
-    const eventIntervals = events.map(event => [event.start_minute, event.start_minute + event.duration_minutes]);
-    const intervals = [...eventIntervals, ...protectedBlocks.map(block => [block.start_minute,
-      block.start_minute + Math.max(block.duration_minutes, block.actual_minutes)])].sort((a, b) => a[0] - b[0]);
+    const intervals = protectedBlocks.map(block => [block.start_minute,
+      block.start_minute + Math.max(block.duration_minutes, block.actual_minutes)]).sort((a, b) => a[0] - b[0]);
     const reserved = document.profile.planning_mode === "timed"
       ? occupiedMinutes(intervals, document.profile.study_start_minute, document.profile.study_end_minute)
-      : occupiedMinutes(eventIntervals) + protectedBlocks.reduce((sum, block) => sum + Math.max(block.duration_minutes, block.actual_minutes), 0);
+      : protectedBlocks.reduce((sum, block) => sum + Math.max(block.duration_minutes, block.actual_minutes), 0);
     let capacity = Math.max(0, Math.min(480, session.profile.weekly_minutes[String(weekday)] ?? 0)
       - Math.max(30, document.profile.buffer_minutes) - reserved);
     const usedCourse = new Map<string, number>();

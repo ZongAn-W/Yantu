@@ -282,31 +282,6 @@ void main() {
     );
   });
 
-  test('an overlapping fixed event is refused in timed mode', () async {
-    final timed = local().copyWith(
-      profile: local().profile.copyWith(storedPlanningMode: PlanningMode.timed),
-      blocks: [local().blocks.first.copyWith(startMinute: 600)],
-    );
-    await coordinator.edit((_) => timed);
-    await expectLater(
-      session.createFixedEvent(
-        FixedEvent(
-          id: 'event-x',
-          userId: local().profile.userId,
-          title: '晚课',
-          date: '2026-10-16',
-          startMinute: 620,
-          durationMinutes: 60,
-          kind: FixedEventKind.course,
-          repeat: EventRepeat.none,
-          createdAt: '2026-10-16T00:00:00.000Z',
-          updatedAt: '2026-10-16T00:00:00.000Z',
-        ),
-      ),
-      throwsA(isA<StateError>()),
-    );
-  });
-
   test('preview, confirm and undo move the plan through the coordinator', () async {
     final preview = await session.previewReplan(today: '2026-10-16');
     expect(coordinator.replanProposal?.preview.id, preview.id);

@@ -355,7 +355,7 @@ npm test -- apps/api/src/auth.integration.test.ts
 await coordinator.recordDayMinutes(taskId, '2026-10-17', 90);
 ```
 
-容量口径按 `capacity_basis` 解析：旧数据为 `gross_buffer`（每日预算扣至少 30 分钟缓冲），新计划为 `net`（净学习预算，不再机械扣机动）；同科最多 240 分钟，支持周/日期覆盖与显式休息日。daily 模式固定事件含休息按并集扣容量，timed 模式休息只占时间窗口、不扣同一预算。已执行记录留在原日，固定/已完成/窗口外块保护。
+容量口径按 `capacity_basis` 解析：旧数据为 `gross_buffer`（每日预算扣至少 30 分钟缓冲），新计划为 `net`（净学习预算，不再机械扣机动）；同科最多 240 分钟，支持周/日期覆盖与显式休息日。固定事件机制已取消；旧 fixed_events 字段仅用于兼容导入与同步，不再展示、扣减容量或阻挡排程。已执行记录留在原日，固定/已完成/窗口外块保护。
 
 续排下一周期一次生成完整周期安排。旧 rolling 计划（`planning.rolling == true`）通过一次“补全本周期安排”预览确认后写入 `mode: "full"`、`rolling: false`、`detail_days = 周期天数`、`detailed_until = 周期末`、`forecast: null`；旧计划在确认前不改动。全周期计划不再显示“其后待细化”的预测区间。
 
@@ -389,7 +389,7 @@ lib/features/
   shell/app_shell.dart                 侧栏（≥900px）/ 底部导航、同步条、账号对话框
   dashboard/presentation/              今日：计划/已学/剩余、完成环、逐事项行
   tasks/presentation/                  事项：课程目录、搜索/课程筛选、新建课程、增删改
-  calendar/presentation/               日历：日/周视图、固定事件、容量、拖动/改日期
+  calendar/presentation/               只读日历：周负载色带、选中日安排与已完成事项
   progress/presentation/               进度：课程进度、周对比、热力图、燃尽
   onboarding/presentation/             学习目标访谈 + 课程/事项确认 + 日期与容量确认
   adjust/presentation/                 调整：画像/进度/近期时间 + AI 一键调整预览与确认
@@ -401,7 +401,7 @@ lib/features/
 
 路由沿用 `/`、`/calendar`、`/tasks`、`/progress`、`/settings`，新增 `/onboarding`；认证与备考资料守卫在 `app/router/app_router.dart`。
 
-有意的行为差异：本机不自动导入 Web 的整套预设课程与事项，新账号的课程/事项由学习目标访谈生成；本机初始化只预置可修改的休息固定事件，不写入任何考试、院校或专业信息。
+有意的行为差异：本机不自动导入 Web 的整套预设课程与事项，新账号的课程/事项由学习目标访谈生成；本机初始化不预置固定事件，也不写入任何考试、院校或专业信息。
 
 ## 10. 测试与验收记录
 

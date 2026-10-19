@@ -635,8 +635,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('记录用时'), findsNothing);
     expect(find.text('修改用时'), findsNothing);
-    expect(tester.widget<Text>(clock).data, '00:02:07');
+    expect(action, findsNothing);
+    expect(find.textContaining('实学 2分钟'), findsWidgets);
 
+    container.read(appRouterProvider).go('/');
+    await tester.pumpAndSettle();
     await tester.ensureVisible(action);
     await tester.tap(action);
     await tester.pump(const Duration(milliseconds: 100));
@@ -662,19 +665,26 @@ void main() {
     expect(find.text('学习执行台'), findsOneWidget);
     expect(find.textContaining('2027-12-25'), findsWidgets);
     expect(container.read(plannerSyncProvider).metadata.revision, 9);
+    const navigationLabels = ['今日', '日历', '事项', '进度', '调整', '设置'];
+    for (final label in navigationLabels) {
+      expect(find.text(label), findsOneWidget, reason: '侧栏缺少「$label」');
+    }
+    expect(find.text('访谈'), findsNothing);
 
-    // Narrow: bottom navigation, no overflow, all five destinations reachable.
+    // Narrow: bottom navigation, no overflow, all six destinations reachable.
     tester.view.physicalSize = const Size(390, 844);
     await tester.pumpAndSettle();
     expect(find.byType(NavigationBar), findsOneWidget);
     expect(tester.takeException(), isNull);
-    for (final label in const ['今日', '日历', '事项', '进度', '设置']) {
+    for (final label in navigationLabels) {
       expect(
         find.widgetWithText(NavigationDestination, label),
         findsOneWidget,
         reason: '底部导航缺少「$label」',
       );
     }
+    expect(find.byType(NavigationDestination), findsNWidgets(6));
+    expect(find.widgetWithText(NavigationDestination, '访谈'), findsNothing);
 
     // Very narrow: the layout still renders without an overflow exception.
     tester.view.physicalSize = const Size(320, 640);

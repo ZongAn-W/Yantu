@@ -58,7 +58,6 @@ const shellDestinations = <ShellDestination>[
     icon: Icons.bar_chart_outlined,
   ),
   ShellDestination(path: '/adjust', label: '调整', icon: Icons.tune_outlined),
-  ShellDestination(path: '/interview', label: '访谈', icon: Icons.forum_outlined),
   ShellDestination(
     path: '/settings',
     label: '设置',
@@ -76,7 +75,7 @@ class AppShell extends StatelessWidget {
   static const sidebarBreakpoint = 900.0;
 
   void _go(BuildContext context, String path) {
-    if (path != selectedPath) context.go(path);
+    if (path != GoRouterState.of(context).uri.path) context.go(path);
   }
 
   @override

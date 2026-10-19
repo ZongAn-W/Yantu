@@ -212,7 +212,7 @@ StrategyResult scheduleStrategy(
       (block) => byId[block.taskId]?.subjectId == task.subjectId,
     );
     // The same occupancy accounting is used by manual placement: overlapping timed
-    // records and events count once and are clipped to the study window.
+    // records count once and are clipped to the study window.
     final dailyOccupied = base.occupiedDayMinutes(
       profile: data.profile,
       fixedEvents: data.fixedEvents,
@@ -245,7 +245,6 @@ StrategyResult scheduleStrategy(
     var start = 0;
     if (data.profile.planningMode == PlanningMode.timed) {
       final intervals = <(int, int)>[
-        ...base.fixedEventOccupiedIntervals(data.fixedEvents, date),
         for (final block in blocks.where((block) => block.date == date))
           base.blockOccupiedInterval(block, data.logs),
       ]..sort((a, b) => a.$1.compareTo(b.$1));

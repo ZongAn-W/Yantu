@@ -242,7 +242,7 @@ class DayCapacityBreakdown {
 
   final String date;
 
-  /// Effective capacity for the day after fixed events (never below zero).
+  /// Effective study capacity for the day (never below zero).
   final int capacity;
   final int planned;
   final int actual;
@@ -257,7 +257,7 @@ class DayCapacityBreakdown {
   final int over;
 }
 
-/// Effective capacity of one day: daily budget minus fixed events, exactly once.
+/// Effective capacity of one day from the configured learning budget.
 int effectiveDayCapacity(PlannerData data, String date) =>
     scheduler.availableDailyMinutes(data.profile, data.fixedEvents, date);
 
@@ -898,7 +898,7 @@ PlannerData deleteTask(PlannerData data, String taskId) {
   );
 }
 
-/// One day of the calendar with its plan, fixed events and capacity information.
+/// One day of the calendar with its learning plan and capacity information.
 class CalendarDay {
   const CalendarDay({
     required this.date,
@@ -919,16 +919,7 @@ class CalendarDay {
 
 CalendarDay calendarDay(PlannerData data, String date) {
   final stats = dayStats(data, date);
-  final fixedMinutes = scheduler.fixedEventMinutesForDate(
-    data.fixedEvents,
-    date,
-    includeRest: data.profile.planningMode != PlanningMode.timed,
-  );
-  final capacity = scheduler.availableDailyMinutes(
-    data.profile,
-    data.fixedEvents,
-    date,
-  );
+  final capacity = scheduler.dailyStudyBudget(data.profile, date);
   final String? warning;
   if (stats.planned > capacity) {
     warning = '已安排 ${duration(stats.planned)}，超出当天可用 ${duration(capacity)}';
@@ -939,16 +930,11 @@ CalendarDay calendarDay(PlannerData data, String date) {
     date: date,
     planned: stats.planned,
     actual: stats.actual,
-    fixedMinutes: fixedMinutes,
+    fixedMinutes: 0,
     capacity: capacity,
     capacityWarning: warning,
   );
 }
 
-List<FixedEvent> fixedEventsOn(PlannerData data, String date) {
-  final events = [
-    for (final event in data.fixedEvents)
-      if (scheduler.eventOccursOn(event, date)) event,
-  ]..sort((a, b) => a.startMinute.compareTo(b.startMinute));
-  return events;
-}
+/// Compatibility helper for imported plans; fixed events are no longer displayed.
+List<FixedEvent> fixedEventsOn(PlannerData data, String date) => const [];

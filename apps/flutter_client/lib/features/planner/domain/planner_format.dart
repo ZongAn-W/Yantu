@@ -132,19 +132,6 @@ const statusLabels = {
 
 const priorityLabels = {1: '普通', 2: '中高', 3: '高'};
 
-const fixedEventKindLabels = {
-  FixedEventKind.rest: '休息',
-  FixedEventKind.course: '固定课程',
-  FixedEventKind.exam: '模拟考试',
-  FixedEventKind.officialExam: '正式考试',
-};
-
-const fixedEventRepeatLabels = {
-  EventRepeat.none: '不重复',
-  EventRepeat.daily: '每天',
-  EventRepeat.weekly: '每周',
-};
-
 /// `HH:mm` for a minute-of-day value.
 String clockTime(int minutes) =>
     '${(minutes ~/ 60).toString().padLeft(2, '0')}:'

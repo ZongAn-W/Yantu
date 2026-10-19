@@ -72,7 +72,6 @@ export function compactPlanContext(session: OnboardingSession, scope: PlanContex
       }),
     items: keptItems.map(item => compactItem(item, scope === "items" ? draftItems.get(text(item.id)) : undefined,
       item.is_fixed === true || fixedIds.has(text(item.id)), scope)),
-    fixed_events: rows(plan.fixed_events).map(event => select(event, ["id", "title", "date", "start_minute", "duration_minutes", "kind", "repeat"])),
     feedback_signals: rows(plan.feedback_signals).filter(signal => included.has(text(signal.item_id)))
       .map(signal => select(signal, ["item_id", "content_units", "content_completed", "difficulty", "valid_samples", "actual_minutes", "observed_minutes_per_unit", "estimated"])),
   };

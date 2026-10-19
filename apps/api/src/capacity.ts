@@ -60,7 +60,7 @@ export interface DayCapacity {
   date: string;
   /** Monday (Shanghai calendar) of the natural week containing [date]. */
   monday: string;
-  /** Effective study budget after the capacity basis is applied (before fixed events). */
+  /** Effective study budget after the capacity basis is applied. */
   minutes: number;
   /** Value before `gross_buffer` deducts the buffer / `net` keeps it whole. */
   raw_minutes: number;
@@ -293,7 +293,7 @@ export function resolveWeekCapacity(profile: CapacityProfile, monday: string): W
   return finish(confirmed);
 }
 
-/** Effective capacity of one calendar date, before fixed events/recorded work. */
+/** Effective capacity of one calendar date, before recorded work. */
 export function resolveDayCapacity(profile: CapacityProfile, date: string): DayCapacity {
   const monday = mondayOf(date);
   const week = resolveWeekCapacity(profile, monday);

@@ -268,13 +268,13 @@
       },
       "expected": {
         "occurs": [
-          true,
-          true,
-          true
+          false,
+          false,
+          false
         ],
-        "union": 180,
-        "without_rest": 120,
-        "available": 270
+        "union": 0,
+        "without_rest": 0,
+        "available": 450
       }
     },
     {
@@ -355,13 +355,13 @@
       },
       "expected": {
         "occurs": [
-          true,
+          false,
           false,
           false
         ],
-        "union": 60,
-        "without_rest": 60,
-        "available": 390
+        "union": 0,
+        "without_rest": 0,
+        "available": 450
       }
     },
     {
@@ -442,13 +442,13 @@
       },
       "expected": {
         "occurs": [
-          true,
-          true,
+          false,
+          false,
           false
         ],
-        "union": 120,
-        "without_rest": 120,
-        "available": 330
+        "union": 0,
+        "without_rest": 0,
+        "available": 450
       }
     },
     {
@@ -541,14 +541,14 @@
       },
       "expected": {
         "occurs": [
-          true,
-          true,
-          true,
-          true
+          false,
+          false,
+          false,
+          false
         ],
-        "union": 120,
-        "without_rest": 120,
-        "available": 330
+        "union": 0,
+        "without_rest": 0,
+        "available": 450
       }
     },
     {
@@ -629,13 +629,13 @@
       },
       "expected": {
         "occurs": [
-          true,
-          true,
-          true
+          false,
+          false,
+          false
         ],
-        "union": 180,
-        "without_rest": 120,
-        "available": 270
+        "union": 0,
+        "without_rest": 0,
+        "available": 450
       }
     },
     {
@@ -8119,13 +8119,13 @@
       },
       "expected": {
         "occurs": [
-          true,
-          true,
-          true
+          false,
+          false,
+          false
         ],
-        "union": 180,
-        "without_rest": 120,
-        "available": 330
+        "union": 0,
+        "without_rest": 0,
+        "available": 450
       }
     },
     {
@@ -14027,7 +14027,7 @@
       },
       "expected": {
         "preview": {
-          "id": "gold-0038",
+          "id": "gold-0014",
           "user_id": "user-1",
           "created_at": "2026-10-16T08:09:10.123Z",
           "before": [
@@ -14051,7 +14051,7 @@
               "user_id": "user-1",
               "task_id": "math",
               "date": "2026-10-17",
-              "start_minute": 660,
+              "start_minute": 480,
               "duration_minutes": 30,
               "actual_minutes": 0,
               "is_fixed": false,
@@ -14060,11 +14060,11 @@
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
             {
-              "id": "gold-0016",
+              "id": "gold-0004",
               "user_id": "user-1",
               "task_id": "math",
               "date": "2026-10-17",
-              "start_minute": 690,
+              "start_minute": 510,
               "duration_minutes": 30,
               "actual_minutes": 0,
               "is_fixed": false,
@@ -14073,11 +14073,11 @@
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
             {
-              "id": "gold-0026",
+              "id": "gold-0008",
               "user_id": "user-1",
               "task_id": "math",
               "date": "2026-10-17",
-              "start_minute": 720,
+              "start_minute": 540,
               "duration_minutes": 30,
               "actual_minutes": 0,
               "is_fixed": false,
@@ -14086,11 +14086,11 @@
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
             {
-              "id": "gold-0037",
+              "id": "gold-0013",
               "user_id": "user-1",
               "task_id": "math",
               "date": "2026-10-17",
-              "start_minute": 750,
+              "start_minute": 570,
               "duration_minutes": 30,
               "actual_minutes": 0,
               "is_fixed": false,
@@ -14101,9 +14101,9 @@
           ],
           "changes": [
             {
-              "id": "gold-0039",
+              "id": "gold-0015",
               "user_id": "user-1",
-              "run_id": "gold-0038",
+              "run_id": "gold-0014",
               "type": "moved",
               "block_id": "today",
               "before": {
@@ -14124,7 +14124,7 @@
                 "user_id": "user-1",
                 "task_id": "math",
                 "date": "2026-10-17",
-                "start_minute": 660,
+                "start_minute": 480,
                 "duration_minutes": 30,
                 "actual_minutes": 0,
                 "is_fixed": false,
@@ -14134,18 +14134,18 @@
               }
             },
             {
-              "id": "gold-0040",
+              "id": "gold-0016",
               "user_id": "user-1",
-              "run_id": "gold-0038",
+              "run_id": "gold-0014",
               "type": "added",
-              "block_id": "gold-0016",
+              "block_id": "gold-0004",
               "before": null,
               "after": {
-                "id": "gold-0016",
+                "id": "gold-0004",
                 "user_id": "user-1",
                 "task_id": "math",
                 "date": "2026-10-17",
-                "start_minute": 690,
+                "start_minute": 510,
                 "duration_minutes": 30,
                 "actual_minutes": 0,
                 "is_fixed": false,
@@ -14155,18 +14155,18 @@
               }
             },
             {
-              "id": "gold-0041",
+              "id": "gold-0017",
               "user_id": "user-1",
-              "run_id": "gold-0038",
+              "run_id": "gold-0014",
               "type": "added",
-              "block_id": "gold-0026",
+              "block_id": "gold-0008",
               "before": null,
               "after": {
-                "id": "gold-0026",
+                "id": "gold-0008",
                 "user_id": "user-1",
                 "task_id": "math",
                 "date": "2026-10-17",
-                "start_minute": 720,
+                "start_minute": 540,
                 "duration_minutes": 30,
                 "actual_minutes": 0,
                 "is_fixed": false,
@@ -14176,18 +14176,18 @@
               }
             },
             {
-              "id": "gold-0042",
+              "id": "gold-0018",
               "user_id": "user-1",
-              "run_id": "gold-0038",
+              "run_id": "gold-0014",
               "type": "added",
-              "block_id": "gold-0037",
+              "block_id": "gold-0013",
               "before": null,
               "after": {
-                "id": "gold-0037",
+                "id": "gold-0013",
                 "user_id": "user-1",
                 "task_id": "math",
                 "date": "2026-10-17",
-                "start_minute": 750,
+                "start_minute": 570,
                 "duration_minutes": 30,
                 "actual_minutes": 0,
                 "is_fixed": false,
@@ -14288,7 +14288,7 @@
               "user_id": "user-1",
               "task_id": "math",
               "date": "2026-10-17",
-              "start_minute": 660,
+              "start_minute": 480,
               "duration_minutes": 30,
               "actual_minutes": 0,
               "is_fixed": false,
@@ -14297,11 +14297,11 @@
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
             {
-              "id": "gold-0016",
+              "id": "gold-0004",
               "user_id": "user-1",
               "task_id": "math",
               "date": "2026-10-17",
-              "start_minute": 690,
+              "start_minute": 510,
               "duration_minutes": 30,
               "actual_minutes": 0,
               "is_fixed": false,
@@ -14310,11 +14310,11 @@
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
             {
-              "id": "gold-0026",
+              "id": "gold-0008",
               "user_id": "user-1",
               "task_id": "math",
               "date": "2026-10-17",
-              "start_minute": 720,
+              "start_minute": 540,
               "duration_minutes": 30,
               "actual_minutes": 0,
               "is_fixed": false,
@@ -14323,11 +14323,11 @@
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
             {
-              "id": "gold-0037",
+              "id": "gold-0013",
               "user_id": "user-1",
               "task_id": "math",
               "date": "2026-10-17",
-              "start_minute": 750,
+              "start_minute": 570,
               "duration_minutes": 30,
               "actual_minutes": 0,
               "is_fixed": false,
@@ -14377,7 +14377,7 @@
           ],
           "replan_runs": [
             {
-              "id": "gold-0038",
+              "id": "gold-0014",
               "user_id": "user-1",
               "created_at": "2026-10-16T08:09:10.123Z",
               "before": [
@@ -14401,7 +14401,7 @@
                   "user_id": "user-1",
                   "task_id": "math",
                   "date": "2026-10-17",
-                  "start_minute": 660,
+                  "start_minute": 480,
                   "duration_minutes": 30,
                   "actual_minutes": 0,
                   "is_fixed": false,
@@ -14410,11 +14410,11 @@
                   "updated_at": "2026-10-16T08:09:10.123Z"
                 },
                 {
-                  "id": "gold-0016",
+                  "id": "gold-0004",
                   "user_id": "user-1",
                   "task_id": "math",
                   "date": "2026-10-17",
-                  "start_minute": 690,
+                  "start_minute": 510,
                   "duration_minutes": 30,
                   "actual_minutes": 0,
                   "is_fixed": false,
@@ -14423,11 +14423,11 @@
                   "updated_at": "2026-10-16T08:09:10.123Z"
                 },
                 {
-                  "id": "gold-0026",
+                  "id": "gold-0008",
                   "user_id": "user-1",
                   "task_id": "math",
                   "date": "2026-10-17",
-                  "start_minute": 720,
+                  "start_minute": 540,
                   "duration_minutes": 30,
                   "actual_minutes": 0,
                   "is_fixed": false,
@@ -14436,11 +14436,11 @@
                   "updated_at": "2026-10-16T08:09:10.123Z"
                 },
                 {
-                  "id": "gold-0037",
+                  "id": "gold-0013",
                   "user_id": "user-1",
                   "task_id": "math",
                   "date": "2026-10-17",
-                  "start_minute": 750,
+                  "start_minute": 570,
                   "duration_minutes": 30,
                   "actual_minutes": 0,
                   "is_fixed": false,
@@ -14451,9 +14451,9 @@
               ],
               "changes": [
                 {
-                  "id": "gold-0039",
+                  "id": "gold-0015",
                   "user_id": "user-1",
-                  "run_id": "gold-0038",
+                  "run_id": "gold-0014",
                   "type": "moved",
                   "block_id": "today",
                   "before": {
@@ -14474,7 +14474,7 @@
                     "user_id": "user-1",
                     "task_id": "math",
                     "date": "2026-10-17",
-                    "start_minute": 660,
+                    "start_minute": 480,
                     "duration_minutes": 30,
                     "actual_minutes": 0,
                     "is_fixed": false,
@@ -14484,18 +14484,18 @@
                   }
                 },
                 {
-                  "id": "gold-0040",
+                  "id": "gold-0016",
                   "user_id": "user-1",
-                  "run_id": "gold-0038",
+                  "run_id": "gold-0014",
                   "type": "added",
-                  "block_id": "gold-0016",
+                  "block_id": "gold-0004",
                   "before": null,
                   "after": {
-                    "id": "gold-0016",
+                    "id": "gold-0004",
                     "user_id": "user-1",
                     "task_id": "math",
                     "date": "2026-10-17",
-                    "start_minute": 690,
+                    "start_minute": 510,
                     "duration_minutes": 30,
                     "actual_minutes": 0,
                     "is_fixed": false,
@@ -14505,18 +14505,18 @@
                   }
                 },
                 {
-                  "id": "gold-0041",
+                  "id": "gold-0017",
                   "user_id": "user-1",
-                  "run_id": "gold-0038",
+                  "run_id": "gold-0014",
                   "type": "added",
-                  "block_id": "gold-0026",
+                  "block_id": "gold-0008",
                   "before": null,
                   "after": {
-                    "id": "gold-0026",
+                    "id": "gold-0008",
                     "user_id": "user-1",
                     "task_id": "math",
                     "date": "2026-10-17",
-                    "start_minute": 720,
+                    "start_minute": 540,
                     "duration_minutes": 30,
                     "actual_minutes": 0,
                     "is_fixed": false,
@@ -14526,18 +14526,18 @@
                   }
                 },
                 {
-                  "id": "gold-0042",
+                  "id": "gold-0018",
                   "user_id": "user-1",
-                  "run_id": "gold-0038",
+                  "run_id": "gold-0014",
                   "type": "added",
-                  "block_id": "gold-0037",
+                  "block_id": "gold-0013",
                   "before": null,
                   "after": {
-                    "id": "gold-0037",
+                    "id": "gold-0013",
                     "user_id": "user-1",
                     "task_id": "math",
                     "date": "2026-10-17",
-                    "start_minute": 750,
+                    "start_minute": 570,
                     "duration_minutes": 30,
                     "actual_minutes": 0,
                     "is_fixed": false,
@@ -14704,7 +14704,7 @@
           ],
           "replan_runs": [
             {
-              "id": "gold-0038",
+              "id": "gold-0014",
               "user_id": "user-1",
               "created_at": "2026-10-16T08:09:10.123Z",
               "before": [
@@ -14728,7 +14728,7 @@
                   "user_id": "user-1",
                   "task_id": "math",
                   "date": "2026-10-17",
-                  "start_minute": 660,
+                  "start_minute": 480,
                   "duration_minutes": 30,
                   "actual_minutes": 0,
                   "is_fixed": false,
@@ -14737,11 +14737,11 @@
                   "updated_at": "2026-10-16T08:09:10.123Z"
                 },
                 {
-                  "id": "gold-0016",
+                  "id": "gold-0004",
                   "user_id": "user-1",
                   "task_id": "math",
                   "date": "2026-10-17",
-                  "start_minute": 690,
+                  "start_minute": 510,
                   "duration_minutes": 30,
                   "actual_minutes": 0,
                   "is_fixed": false,
@@ -14750,11 +14750,11 @@
                   "updated_at": "2026-10-16T08:09:10.123Z"
                 },
                 {
-                  "id": "gold-0026",
+                  "id": "gold-0008",
                   "user_id": "user-1",
                   "task_id": "math",
                   "date": "2026-10-17",
-                  "start_minute": 720,
+                  "start_minute": 540,
                   "duration_minutes": 30,
                   "actual_minutes": 0,
                   "is_fixed": false,
@@ -14763,11 +14763,11 @@
                   "updated_at": "2026-10-16T08:09:10.123Z"
                 },
                 {
-                  "id": "gold-0037",
+                  "id": "gold-0013",
                   "user_id": "user-1",
                   "task_id": "math",
                   "date": "2026-10-17",
-                  "start_minute": 750,
+                  "start_minute": 570,
                   "duration_minutes": 30,
                   "actual_minutes": 0,
                   "is_fixed": false,
@@ -14778,9 +14778,9 @@
               ],
               "changes": [
                 {
-                  "id": "gold-0039",
+                  "id": "gold-0015",
                   "user_id": "user-1",
-                  "run_id": "gold-0038",
+                  "run_id": "gold-0014",
                   "type": "moved",
                   "block_id": "today",
                   "before": {
@@ -14801,7 +14801,7 @@
                     "user_id": "user-1",
                     "task_id": "math",
                     "date": "2026-10-17",
-                    "start_minute": 660,
+                    "start_minute": 480,
                     "duration_minutes": 30,
                     "actual_minutes": 0,
                     "is_fixed": false,
@@ -14811,18 +14811,18 @@
                   }
                 },
                 {
-                  "id": "gold-0040",
+                  "id": "gold-0016",
                   "user_id": "user-1",
-                  "run_id": "gold-0038",
+                  "run_id": "gold-0014",
                   "type": "added",
-                  "block_id": "gold-0016",
+                  "block_id": "gold-0004",
                   "before": null,
                   "after": {
-                    "id": "gold-0016",
+                    "id": "gold-0004",
                     "user_id": "user-1",
                     "task_id": "math",
                     "date": "2026-10-17",
-                    "start_minute": 690,
+                    "start_minute": 510,
                     "duration_minutes": 30,
                     "actual_minutes": 0,
                     "is_fixed": false,
@@ -14832,18 +14832,18 @@
                   }
                 },
                 {
-                  "id": "gold-0041",
+                  "id": "gold-0017",
                   "user_id": "user-1",
-                  "run_id": "gold-0038",
+                  "run_id": "gold-0014",
                   "type": "added",
-                  "block_id": "gold-0026",
+                  "block_id": "gold-0008",
                   "before": null,
                   "after": {
-                    "id": "gold-0026",
+                    "id": "gold-0008",
                     "user_id": "user-1",
                     "task_id": "math",
                     "date": "2026-10-17",
-                    "start_minute": 720,
+                    "start_minute": 540,
                     "duration_minutes": 30,
                     "actual_minutes": 0,
                     "is_fixed": false,
@@ -14853,18 +14853,18 @@
                   }
                 },
                 {
-                  "id": "gold-0042",
+                  "id": "gold-0018",
                   "user_id": "user-1",
-                  "run_id": "gold-0038",
+                  "run_id": "gold-0014",
                   "type": "added",
-                  "block_id": "gold-0037",
+                  "block_id": "gold-0013",
                   "before": null,
                   "after": {
-                    "id": "gold-0037",
+                    "id": "gold-0013",
                     "user_id": "user-1",
                     "task_id": "math",
                     "date": "2026-10-17",
-                    "start_minute": 750,
+                    "start_minute": 570,
                     "duration_minutes": 30,
                     "actual_minutes": 0,
                     "is_fixed": false,
@@ -15314,7 +15314,7 @@
           "updated_at": "2026-09-01T00:00:00Z"
         }
       },
-      "expected": "与固定课程、考试或休息时间冲突"
+      "expected": null
     },
     {
       "name": "timed actual extends overlap",

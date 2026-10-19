@@ -324,13 +324,13 @@ void main() {
   });
 
   group('calendar day', () {
-    test('subtracts the daily fixed events and warns when over capacity', () {
+    test('uses the study budget and warns when over capacity', () {
       final data = plannerFixture();
       final day = calendarDay(data, '2026-10-16');
       // 30 planned minutes are inside the 450 minute daily budget.
       expect(day.capacityWarning, isNull);
-      expect(day.capacity, 480 - 30 - 60);
-      expect(day.fixedMinutes, 60);
+      expect(day.capacity, 480 - 30);
+      expect(day.fixedMinutes, 0);
       final overloaded = data.copyWith(
         blocks: [
           data.blocks.single.copyWith(durationMinutes: 600),
@@ -339,11 +339,11 @@ void main() {
       expect(calendarDay(overloaded, '2026-10-16').capacityWarning, isNotNull);
     });
 
-    test('fixedEventsOn returns repeating events in start order', () {
+    test('legacy fixed events are absent from the calendar', () {
       final data = plannerFixture();
       expect(fixedEventsOn(data, '2026-10-15'), isEmpty);
-      expect(fixedEventsOn(data, '2026-10-16'), hasLength(1));
-      expect(fixedEventsOn(data, '2027-01-01'), hasLength(1));
+      expect(fixedEventsOn(data, '2026-10-16'), isEmpty);
+      expect(fixedEventsOn(data, '2027-01-01'), isEmpty);
     });
   });
 
@@ -545,50 +545,6 @@ void main() {
       final data = plannerFixture();
       expect(resolveSubjectId(data, '高数'), 'calculus');
       expect(resolveSubjectId(data, ' 政治 '), '政治');
-    });
-  });
-
-  group('fixed events', () {
-    test('daily mode accepts an overlapping event', () {
-      final data = plannerFixture();
-      final event = FixedEvent(
-        id: 'event-1',
-        userId: data.profile.userId,
-        title: '晚课',
-        date: '2026-10-16',
-        startMinute: 720,
-        durationMinutes: 60,
-        kind: FixedEventKind.course,
-        repeat: EventRepeat.none,
-        createdAt: '2026-10-16T00:00:00.000Z',
-        updatedAt: '2026-10-16T00:00:00.000Z',
-      );
-      expect(fixedEventConflict(data, event), isNull);
-      expect(addFixedEvent(data, event).fixedEvents, hasLength(2));
-    });
-
-    test('timed mode refuses an event that overlaps a study block', () {
-      final data = plannerFixture();
-      final timed = data.copyWith(
-        profile: data.profile.copyWith(storedPlanningMode: PlanningMode.timed),
-        blocks: [data.blocks.single.copyWith(startMinute: 600)],
-      );
-      final event = FixedEvent(
-        id: 'event-2',
-        userId: timed.profile.userId,
-        title: '晚课',
-        date: '2026-10-16',
-        startMinute: 615,
-        durationMinutes: 60,
-        kind: FixedEventKind.course,
-        repeat: EventRepeat.none,
-        createdAt: '2026-10-16T00:00:00.000Z',
-        updatedAt: '2026-10-16T00:00:00.000Z',
-      );
-      expect(fixedEventConflict(timed, event), contains('学习时间块'));
-      expect(() => addFixedEvent(timed, event), throwsA(isA<StateError>()));
-      final clear = event.copyWith(date: '2026-10-17');
-      expect(fixedEventConflict(timed, clear), isNull);
     });
   });
 

@@ -70,7 +70,7 @@ describe("compactPlanContext", () => {
     expect(resultItems(result)[0]).toMatchObject({ deadline: "2026-12-01", completed_minutes: 170, planning });
     expect(resultItems(result)[0]).not.toHaveProperty("deadline_kind");
     expect(result?.feedback_signals).toEqual(signals);
-    expect(result?.fixed_events).toEqual([event]);
+    expect(result).not.toHaveProperty("fixed_events");
   });
 
   it("omits only duplicated draft descriptions and retains unique scope and constraints", () => {

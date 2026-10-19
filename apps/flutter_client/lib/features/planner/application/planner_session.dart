@@ -18,8 +18,7 @@ export '../domain/task_editing.dart'
         ScheduleOutcome,
         TaskDraft,
         validateTaskDraft,
-        resolveSubjectId,
-        fixedEventConflict;
+        resolveSubjectId;
 
 /// Immutable view of the sync coordinator for widgets.
 ///
@@ -197,17 +196,6 @@ class PlannerSession {
       return current.copyWith(blocks: result.blocks);
     });
   }
-
-  Future<void> createFixedEvent(FixedEvent event) =>
-      edit((data) => addFixedEvent(data, event));
-
-  Future<void> deleteFixedEvent(String eventId) => edit(
-    (data) => data.copyWith(
-      fixedEvents: data.fixedEvents
-          .where((event) => event.id != eventId)
-          .toList(),
-    ),
-  );
 
   // ---------------------------------------------------------------- records
 

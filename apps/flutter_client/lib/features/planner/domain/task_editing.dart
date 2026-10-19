@@ -327,25 +327,6 @@ ScheduleBlock _block({
   updatedAt: timestamp,
 );
 
-/// Refuses a fixed event that overlaps an existing timed study block.
-String? fixedEventConflict(PlannerData data, FixedEvent event) {
-  if (data.profile.planningMode != PlanningMode.timed) return null;
-  final clash = data.blocks.any(
-    (block) =>
-        block.date == event.date &&
-        block.startMinute < event.startMinute + event.durationMinutes &&
-        block.startMinute + block.durationMinutes > event.startMinute,
-  );
-  return clash ? '该时段已有学习时间块，请先移动时间块再添加固定事件' : null;
-}
-
-/// Adds a fixed event after validating it against the current plan.
-PlannerData addFixedEvent(PlannerData data, FixedEvent event) {
-  final conflict = fixedEventConflict(data, event);
-  if (conflict != null) throw StateError(conflict);
-  return data.copyWith(fixedEvents: [...data.fixedEvents, event]);
-}
-
 /// Resolves the raw subject id the editor should send for a typed course name.
 String resolveSubjectId(PlannerData data, String typed) {
   final trimmed = typed.trim();

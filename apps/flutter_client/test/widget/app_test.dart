@@ -398,6 +398,9 @@ void main() {
   testWidgets('bottom navigation and sidebar reach every workbench route', (
     tester,
   ) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
     final adapter = TestAdapter(plannerAdapter());
     final client = ApiClient(
       config: const AppConfig(apiBaseUrl: 'http://api.test'),
@@ -424,6 +427,7 @@ void main() {
 
     final router = container.read(appRouterProvider);
     // Narrow layout: every workbench destination remains available.
+    expect(find.widgetWithText(NavigationDestination, '访谈'), findsNothing);
     await tester.tap(find.widgetWithText(NavigationDestination, '事项'));
     await tester.pumpAndSettle();
     expect(router.routeInformationProvider.value.uri.path, '/tasks');
@@ -432,7 +436,7 @@ void main() {
     await tester.tap(find.widgetWithText(NavigationDestination, '日历'));
     await tester.pumpAndSettle();
     expect(router.routeInformationProvider.value.uri.path, '/calendar');
-    expect(find.text('学习日历'), findsOneWidget);
+    expect(find.byKey(const ValueKey('calendar-week-river')), findsOneWidget);
 
     await tester.tap(find.widgetWithText(NavigationDestination, '进度'));
     await tester.pumpAndSettle();
@@ -449,19 +453,42 @@ void main() {
     expect(router.routeInformationProvider.value.uri.path, '/settings');
     expect(find.text('学习目标与规划'), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(NavigationDestination, '访谈'));
+    await tester.tap(find.widgetWithText(NavigationDestination, '调整'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byKey(const Key('adjust-interview')));
+    await tester.tap(find.byKey(const Key('adjust-interview')));
     await tester.pumpAndSettle();
     expect(router.routeInformationProvider.value.uri.path, '/interview');
     expect(find.text('继续访谈'), findsOneWidget);
     expect(find.text('重新访谈'), findsOneWidget);
+    expect(
+      tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
+      4,
+    );
+    expect(
+      find.descendant(of: find.byType(AppBar), matching: find.text('调整')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.widgetWithText(NavigationDestination, '调整'));
+    await tester.pumpAndSettle();
+    expect(router.routeInformationProvider.value.uri.path, '/adjust');
+    await tester.ensureVisible(find.byKey(const Key('adjust-interview')));
+    await tester.tap(find.byKey(const Key('adjust-interview')));
+    await tester.pumpAndSettle();
+    expect(router.routeInformationProvider.value.uri.path, '/interview');
 
     // Wide layout: the sidebar replaces the bottom bar on Web and Windows.
     tester.view.physicalSize = const Size(1400, 1000);
     tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
     await tester.pumpAndSettle();
     expect(find.byType(NavigationBar), findsNothing);
     expect(find.text('学习执行台'), findsOneWidget);
+    expect(find.text('访谈'), findsNothing);
+    expect(
+      tester.widget<Text>(find.text('调整')).style?.fontWeight,
+      FontWeight.w600,
+    );
     await tester.tap(find.text('今日'));
     await tester.pumpAndSettle();
     expect(router.routeInformationProvider.value.uri.path, '/');

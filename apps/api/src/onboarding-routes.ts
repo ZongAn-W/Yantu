@@ -31,7 +31,7 @@ async function writeSession<T>(operation: (client: pg.PoolClient) => Promise<T>)
 function planContext(document: PlannerDocument) {
   const fixed = new Set(document.blocks.filter(block => block.is_fixed).map(block => block.task_id));
   return { profile: document.profile, courses: document.subjects, items: document.tasks.map(task => ({ ...task, is_fixed: task.is_fixed || fixed.has(task.id) })),
-    fixed_events: document.fixed_events, planning: document.planning,
+    planning: document.planning,
     feedback_signals: document.tasks.flatMap(task => {
       const feedback = task.planning?.feedback;
       if (!feedback) return [];

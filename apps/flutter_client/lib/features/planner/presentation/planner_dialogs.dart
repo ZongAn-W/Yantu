@@ -9,7 +9,6 @@ import '../application/planner_session.dart';
 import '../application/study_timer.dart';
 import '../domain/planner_format.dart';
 import '../domain/planning_feedback.dart';
-import '../domain/scheduler/planner_scheduler.dart' as scheduler;
 import '../domain/study_day.dart' as day_ops;
 import '../domain/study_day.dart' show unscheduledTaskMinutes;
 
@@ -891,191 +890,6 @@ class _CompleteTaskDialogState extends ConsumerState<CompleteTaskDialog> {
   }
 }
 
-/// "创建固定事件" dialog, including the timed-mode overlap check.
-class FixedEventDialog extends ConsumerStatefulWidget {
-  const FixedEventDialog({this.date, super.key});
-
-  final String? date;
-
-  static Future<void> show(BuildContext context, {String? date}) =>
-      showDialog<void>(
-        context: context,
-        builder: (context) => FixedEventDialog(date: date),
-      );
-
-  @override
-  ConsumerState<FixedEventDialog> createState() => _FixedEventDialogState();
-}
-
-class _FixedEventDialogState extends ConsumerState<FixedEventDialog> {
-  late String _date;
-  final _title = TextEditingController();
-  final _minutes = TextEditingController(text: '60');
-  TimeOfDay _time = const TimeOfDay(hour: 12, minute: 0);
-  FixedEventKind _kind = FixedEventKind.rest;
-  EventRepeat _repeat = EventRepeat.none;
-  String? _error;
-  bool _saving = false;
-
-  @override
-  void initState() {
-    super.initState();
-    _date = widget.date ?? shanghaiToday();
-  }
-
-  @override
-  void dispose() {
-    _title.dispose();
-    _minutes.dispose();
-    super.dispose();
-  }
-
-  Future<void> _save() async {
-    if (_saving) return;
-    final minutes = int.tryParse(_minutes.text.trim());
-    if (_title.text.trim().isEmpty) {
-      setState(() => _error = '请填写事件名称');
-      return;
-    }
-    if (minutes == null || minutes < 30 || minutes > 840) {
-      setState(() => _error = '时长需要在 30 至 840 分钟之间');
-      return;
-    }
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
-    final data = ref.read(plannerSessionProvider).data;
-    final event = FixedEvent(
-      id: scheduler.newUuid(),
-      userId: data.profile.userId,
-      title: _title.text.trim(),
-      date: _date,
-      startMinute: _time.hour * 60 + _time.minute,
-      durationMinutes: minutes,
-      kind: _kind,
-      repeat: _repeat,
-      createdAt: nowIso(),
-      updatedAt: nowIso(),
-    );
-    try {
-      await ref.read(plannerSessionProvider).createFixedEvent(event);
-      if (mounted) Navigator.pop(context);
-    } catch (error) {
-      if (mounted) {
-        setState(() {
-          _saving = false;
-          _error = error is StateError ? error.message : '$error';
-        });
-      }
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AlertDialog(
-      title: const Text('创建固定事件'),
-      content: SizedBox(
-        width: 460,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: _title,
-                enabled: !_saving,
-                maxLength: 100,
-                decoration: const InputDecoration(
-                  labelText: '事件名称',
-                  counterText: '',
-                ),
-                onChanged: (_) => setState(() => _error = null),
-              ),
-              const SizedBox(height: 12),
-              DateField(
-                label: '日期',
-                value: _date,
-                enabled: !_saving,
-                onChanged: (value) => setState(() => _date = value),
-              ),
-              const SizedBox(height: 12),
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('开始时间'),
-                subtitle: Text(_time.format(context)),
-                trailing: const Icon(Icons.schedule),
-                onTap: _saving
-                    ? null
-                    : () async {
-                        final picked = await showTimePicker(
-                          context: context,
-                          initialTime: _time,
-                          helpText: '开始时间',
-                        );
-                        if (picked != null) setState(() => _time = picked);
-                      },
-              ),
-              TextField(
-                controller: _minutes,
-                enabled: !_saving,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: const InputDecoration(labelText: '时长（分钟）'),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<FixedEventKind>(
-                initialValue: _kind,
-                decoration: const InputDecoration(labelText: '类型'),
-                items: [
-                  for (final kind in FixedEventKind.values)
-                    DropdownMenuItem(
-                      value: kind,
-                      child: Text(fixedEventKindLabels[kind]!),
-                    ),
-                ],
-                onChanged: _saving
-                    ? null
-                    : (value) => setState(() => _kind = value!),
-              ),
-              const SizedBox(height: 12),
-              DropdownButtonFormField<EventRepeat>(
-                initialValue: _repeat,
-                decoration: const InputDecoration(labelText: '重复'),
-                items: [
-                  for (final repeat in EventRepeat.values)
-                    DropdownMenuItem(
-                      value: repeat,
-                      child: Text(fixedEventRepeatLabels[repeat]!),
-                    ),
-                ],
-                onChanged: _saving
-                    ? null
-                    : (value) => setState(() => _repeat = value!),
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                PlannerNotice(_error!, tone: PlannerNoticeTone.error),
-              ],
-            ],
-          ),
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: _saving ? null : () => Navigator.pop(context),
-          child: const Text('取消'),
-        ),
-        FilledButton.icon(
-          onPressed: _saving ? null : _save,
-          icon: const Icon(Icons.lock_outline, size: 18),
-          label: const Text('保存固定事件'),
-        ),
-      ],
-    );
-  }
-}
-
 /// 今日“开始学习”入口：把三类学习关系摆在同一处，用户无需先绕去设置或新建事项。
 ///
 /// - 今日原定学习：按今天已有的安排开始计时；
@@ -1222,7 +1036,9 @@ class _StartStudyDialogState extends ConsumerState<StartStudyDialog> {
                 key: Key('start-arranged-${task.id}'),
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(Icons.play_circle_outline),
-                title: Text('${subjectNameOf(data, task.subjectId)} · ${task.title}'),
+                title: Text(
+                  '${subjectNameOf(data, task.subjectId)} · ${task.title}',
+                ),
                 subtitle: Text(
                   '原定 ${duration(planned)} · 已达成 ${duration(achieved)}'
                   '${done ? ' · 已完成' : ''}',
@@ -1284,13 +1100,14 @@ class TaskPickerDialog extends ConsumerStatefulWidget {
       ) ==
       true;
 
-  static Future<bool> showLinkAdHoc(BuildContext context, String adHocId) async =>
+  static Future<bool> showLinkAdHoc(
+    BuildContext context,
+    String adHocId,
+  ) async =>
       await showDialog<bool>(
         context: context,
-        builder: (context) => TaskPickerDialog(
-          mode: TaskPickerMode.linkAdHoc,
-          adHocId: adHocId,
-        ),
+        builder: (context) =>
+            TaskPickerDialog(mode: TaskPickerMode.linkAdHoc, adHocId: adHocId),
       ) ==
       true;
 
@@ -1365,10 +1182,7 @@ class _TaskPickerDialogState extends ConsumerState<TaskPickerDialog> {
             .linkAdHocToTask(adHocId: adHocId, taskId: task.id);
         await timer.adoptAdHocConversion(adHocId, result.taskId);
         if (mounted) {
-          showPlannerMessage(
-            context,
-            '已关联到「${task.title}」，历史记录仍保留临时学习关系。',
-          );
+          showPlannerMessage(context, '已关联到「${task.title}」，历史记录仍保留临时学习关系。');
         }
       }
       if (mounted) Navigator.pop(context, true);
@@ -1431,10 +1245,7 @@ class _TaskPickerDialogState extends ConsumerState<TaskPickerDialog> {
                   key: const Key('task-picker-status'),
                   value: _status,
                   items: const [
-                    DropdownMenuItem(
-                      value: 'actionable',
-                      child: Text('可执行事项'),
-                    ),
+                    DropdownMenuItem(value: 'actionable', child: Text('可执行事项')),
                     DropdownMenuItem(
                       value: 'completed',
                       child: Text('已完成（可复习）'),
@@ -1515,7 +1326,10 @@ class AdHocStudyDialog extends ConsumerStatefulWidget {
 
   final String? initialTitle;
 
-  static Future<bool> show(BuildContext context, {String? initialTitle}) async =>
+  static Future<bool> show(
+    BuildContext context, {
+    String? initialTitle,
+  }) async =>
       await showDialog<bool>(
         context: context,
         builder: (context) => AdHocStudyDialog(initialTitle: initialTitle),
@@ -1552,10 +1366,12 @@ class _AdHocStudyDialogState extends ConsumerState<AdHocStudyDialog> {
       _error = null;
     });
     try {
-      await ref.read(studyTimerProvider).startAdHoc(
-        title: title,
-        subjectId: _subject.isEmpty ? null : _subject,
-      );
+      await ref
+          .read(studyTimerProvider)
+          .startAdHoc(
+            title: title,
+            subjectId: _subject.isEmpty ? null : _subject,
+          );
       if (mounted) Navigator.pop(context, true);
     } catch (error) {
       if (mounted) {
@@ -1680,7 +1496,9 @@ class _ContentFeedbackDialogState extends ConsumerState<ContentFeedbackDialog> {
   void initState() {
     super.initState();
     final data = ref.read(plannerSessionProvider).data;
-    final task = data.tasks.where((item) => item.id == widget.taskId).firstOrNull;
+    final task = data.tasks
+        .where((item) => item.id == widget.taskId)
+        .firstOrNull;
     final feedback = task?.planning?['feedback'];
     _units = feedback is Map ? '${feedback['content_units'] ?? 0}' : '0';
     _completed = feedback is Map && feedback['content_completed'] == true;
@@ -1698,16 +1516,18 @@ class _ContentFeedbackDialogState extends ConsumerState<ContentFeedbackDialog> {
       _error = null;
     });
     try {
-      await ref.read(plannerSessionProvider).edit(
-        (data) => recordPlanningFeedback(
-          data,
-          widget.taskId,
-          contentUnits: value,
-          contentCompleted: _completed,
-          difficulty: _difficulty,
-          sampledAt: nowIso(),
-        ),
-      );
+      await ref
+          .read(plannerSessionProvider)
+          .edit(
+            (data) => recordPlanningFeedback(
+              data,
+              widget.taskId,
+              contentUnits: value,
+              contentCompleted: _completed,
+              difficulty: _difficulty,
+              sampledAt: nowIso(),
+            ),
+          );
       if (mounted) Navigator.pop(context);
     } catch (error) {
       if (mounted) {
@@ -1722,7 +1542,9 @@ class _ContentFeedbackDialogState extends ConsumerState<ContentFeedbackDialog> {
   @override
   Widget build(BuildContext context) {
     final data = ref.watch(plannerSessionProvider).data;
-    final task = data.tasks.where((item) => item.id == widget.taskId).firstOrNull;
+    final task = data.tasks
+        .where((item) => item.id == widget.taskId)
+        .firstOrNull;
     return AlertDialog(
       title: const Text('记录内容进度与困难'),
       content: SizedBox(
@@ -2023,4 +1845,3 @@ class _AdHocConvertDialogState extends ConsumerState<AdHocConvertDialog> {
     );
   }
 }
-

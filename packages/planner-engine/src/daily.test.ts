@@ -137,14 +137,14 @@ describe("每日任务与时长模式", () => {
     ).toBeNull();
   });
 
-  it("固定事件含休息按时长扣减当天容量，重叠区间只计一次", () => {
+  it("遗留课程和休息事件不扣减当天容量，学习事项仍受每日上限限制", () => {
     const events = [
       event("course", { start_minute: 480, duration_minutes: 120 }),
       event("rest", { start_minute: 540, duration_minutes: 120, kind: "rest" }),
       event("duplicate", { start_minute: 480, duration_minutes: 120 }),
     ];
-    expect(fixedEventMinutesForDate(events, date)).toBe(180);
-    expect(availableDailyMinutes(profile, events, date)).toBe(270);
+    expect(fixedEventMinutesForDate(events, date)).toBe(0);
+    expect(availableDailyMinutes(profile, events, date)).toBe(450);
     const source = data(
       input({
         tasks: [task(), task("english", { subject_id: "english" })],
@@ -155,18 +155,18 @@ describe("每日任务与时长模式", () => {
     expect(
       validateBlockPlacement(
         source,
-        block("fits", { task_id: "english", duration_minutes: 30 }),
+        block("fits", { task_id: "english", duration_minutes: 210 }),
       ),
     ).toBeNull();
     expect(
       validateBlockPlacement(
         source,
-        block("too-much", { task_id: "english", duration_minutes: 60 }),
+        block("too-much", { task_id: "english", duration_minutes: 240 }),
       ),
     ).toContain("每日上限");
   });
 
-  it("每日和每周重复固定事件按发生日期扣减容量，开始日期之前不生效", () => {
+  it("遗留每日和每周重复事件在所有日期均不生效", () => {
     const events = [
       event("daily", {
         repeat: "daily",
@@ -180,12 +180,12 @@ describe("每日任务与时长模式", () => {
       }),
     ];
     expect(fixedEventMinutesForDate(events, today)).toBe(0);
-    expect(fixedEventMinutesForDate(events, date)).toBe(120);
-    expect(fixedEventMinutesForDate(events, "2026-10-16")).toBe(60);
-    expect(fixedEventMinutesForDate(events, "2026-10-22")).toBe(120);
+    expect(fixedEventMinutesForDate(events, date)).toBe(0);
+    expect(fixedEventMinutesForDate(events, "2026-10-16")).toBe(0);
+    expect(fixedEventMinutesForDate(events, "2026-10-22")).toBe(0);
   });
 
-  it("正式考试占满每日可用容量时重排跳过该日，固定事件保持原状", () => {
+  it("遗留正式考试不阻止当天重排，兼容数据保持原状", () => {
     const events = [
       event("official", { duration_minutes: 480, kind: "official_exam" }),
     ];
@@ -195,11 +195,11 @@ describe("每日任务与时长模式", () => {
     });
     const preview = generateReplanPreview(source);
     expect(preview.after.map((item) => item.date)).toEqual([
-      "2026-10-16",
-      "2026-10-16",
+      date,
+      date,
     ]);
     expect(source.fixed_events).toEqual(events);
-    expect(availableDailyMinutes(profile, events, date)).toBe(0);
+    expect(availableDailyMinutes(profile, events, date)).toBe(450);
   });
 
   it("找每日容量而不是时段空隙，即便遗留学习窗口为空也可重排", () => {
@@ -280,7 +280,7 @@ describe("每日任务与时长模式", () => {
     }
   });
 
-  it("截止日期前的固定事件扣减后不足容量生成冲突，不超排", () => {
+  it("遗留固定事件不制造截止日期前的虚假容量冲突", () => {
     const preview = generateReplanPreview(
       input({
         tasks: [task("math", { estimated_minutes: 120, deadline: date })],
@@ -288,10 +288,8 @@ describe("每日任务与时长模式", () => {
         fixed_events: [event("blocked", { duration_minutes: 390 })],
       }),
     );
-    expect(total(preview.after)).toBe(60);
-    expect(preview.conflicts).toEqual([
-      expect.objectContaining({ task_id: "math", minutes: 60 }),
-    ]);
+    expect(total(preview.after)).toBe(120);
+    expect(preview.conflicts).toEqual([]);
     expect(preview.after.every((item) => item.date === date)).toBe(true);
   });
 
@@ -326,7 +324,7 @@ describe("每日任务与时长模式", () => {
     ).toContain("截止日期");
   });
 
-  it("超额完成只从未来7天提前且受当天事件剩余容量约束", () => {
+  it("超额完成只从未来7天提前，遗留事件不扣减当天容量", () => {
     const future = block("near", { date: "2026-10-21", duration_minutes: 60 });
     const far = block("far", { date: "2026-10-22", duration_minutes: 60 });
     const preview = generateReplanPreview(
@@ -339,17 +337,17 @@ describe("每日任务与时长模式", () => {
         ],
       }),
     );
-    expect(total(preview.after.filter((item) => item.date === today))).toBe(30);
+    expect(total(preview.after.filter((item) => item.date === today))).toBe(60);
     expect(total(preview.after)).toBe(120);
     expect(preview.after.find((item) => item.id === far.id)).toEqual(far);
   });
 
-  it("事件区间裁切到当天范围，相接区间合并不重复扣减", () => {
+  it("跨日和相接的遗留事件均不占学习容量", () => {
     const events = [
       event("before", { start_minute: -30, duration_minutes: 60 }),
       event("adjacent", { start_minute: 30, duration_minutes: 60 }),
       event("late", { start_minute: 1410, duration_minutes: 60 }),
     ];
-    expect(fixedEventMinutesForDate(events, date)).toBe(120);
+    expect(fixedEventMinutesForDate(events, date)).toBe(0);
   });
 });

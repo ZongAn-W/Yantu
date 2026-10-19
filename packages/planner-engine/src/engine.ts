@@ -40,18 +40,9 @@ export function dateToday(now = new Date()): string {
 }
 export const getDate = dateToday;
 
-export function eventOccursOn(event: FixedEvent, date: string): boolean {
-  if (date < event.date) return false;
-  if (event.repeat === "daily") return true;
-  if (event.repeat === "weekly")
-    return (
-      ((Date.parse(`${date}T00:00:00Z`) -
-        Date.parse(`${event.date}T00:00:00Z`)) /
-        DAY) %
-        7 ===
-      0
-    );
-  return event.date === date;
+/** Compatibility export: legacy fixed events no longer participate in planning. */
+export function eventOccursOn(_event: FixedEvent, _date: string): boolean {
+  return false;
 }
 
 /** Logs and the task counter are two views of the same work, never added together. */
@@ -119,55 +110,22 @@ const overlap = (
   otherDuration: number,
 ) => start < otherStart + otherDuration && otherStart < start + duration;
 
-/** Repeating events occupy their union of minutes, so overlapping events count once. */
+/** Compatibility export for older callers; legacy events occupy no study budget. */
 export function fixedEventMinutesForDate(
-  events: FixedEvent[],
-  date: string,
-  includeRest = true,
+  _events: FixedEvent[],
+  _date: string,
+  _includeRest = true,
 ): number {
-  const intervals = events
-    .filter(
-      (event) =>
-        eventOccursOn(event, date) && (includeRest || event.kind !== "rest"),
-    )
-    .map(
-      (event) =>
-        [
-          Math.max(0, Math.min(1440, event.start_minute)),
-          Math.max(
-            0,
-            Math.min(
-              1440,
-              event.start_minute + finiteMinutes(event.duration_minutes),
-            ),
-          ),
-        ] as const,
-    )
-    .filter(
-      ([start, end]) =>
-        Number.isFinite(start) && Number.isFinite(end) && end > start,
-    )
-    .sort((a, b) => a[0] - b[0]);
-  let total = 0;
-  let previousEnd = 0;
-  for (const [start, end] of intervals) {
-    total += Math.max(0, end - Math.max(start, previousEnd));
-    previousEnd = Math.max(previousEnd, end);
-  }
-  return total;
+  return 0;
 }
 
-/** Daily plans do not impose start/end times; all fixed events reduce the daily budget. */
+/** Available budget is supplied by the user's day/week capacity settings. */
 export function availableDailyMinutes(
   profile: Profile,
-  events: FixedEvent[],
+  _events: FixedEvent[],
   date: string,
 ): number {
-  return Math.max(
-    0,
-    dailyStudyBudget(profile, date) -
-      fixedEventMinutesForDate(events, date, profile.planning_mode !== "timed"),
-  );
+  return dailyStudyBudget(profile, date);
 }
 
 function placementError(
@@ -246,21 +204,6 @@ function placementError(
     )
   )
     return "与已有时间块冲突";
-  const events = input.fixed_events.filter((event) =>
-    eventOccursOn(event, candidate.date),
-  );
-  if (
-    timed &&
-    events.some((event) =>
-      overlap(
-        candidate.start_minute,
-        candidate.duration_minutes,
-        event.start_minute,
-        event.duration_minutes,
-      ),
-    )
-  )
-    return "与固定课程、考试或休息时间冲突";
   const orphanLogs = input.logs.filter(
     (log) =>
       log.date === candidate.date &&

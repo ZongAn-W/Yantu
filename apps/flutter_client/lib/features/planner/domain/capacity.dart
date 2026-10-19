@@ -64,8 +64,8 @@ class CapacityConflict {
 
 /// 某一自然日解析后的容量。
 ///
-/// [minutes] 已应用净/总口径（gross_buffer 扣机动、net 不扣），但**未**扣固定事件
-/// 与已占用分钟；调用方只扣一次。
+/// [minutes] 已应用净/总口径（gross_buffer 扣机动、net 不扣），但未扣已占用分钟；
+/// 调用方只扣一次。
 class DayCapacity {
   const DayCapacity({
     required this.date,
@@ -83,7 +83,7 @@ class DayCapacity {
   /// 该自然日所属自然周的周一日期（上海时区周一到周日）。
   final String monday;
 
-  /// 应用口径后的净学习预算分钟（未扣固定事件/已占用）。
+  /// 应用口径后的净学习预算分钟（未扣已占用）。
   final int minutes;
 
   /// 应用口径前的分钟数（模板/覆盖原始值）。

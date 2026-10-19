@@ -149,7 +149,7 @@ void main() {
   );
   for (final width in [390.0, 1440.0]) {
     testWidgets(
-      'interview navigation resumes, preserves drafts and confirms restart at width $width',
+      'interview from adjustments resumes, preserves drafts and confirms restart at width $width',
       (tester) async {
         tester.view.physicalSize = Size(width, 1000);
         tester.view.devicePixelRatio = 1;
@@ -231,7 +231,12 @@ void main() {
         await tester.enterText(find.byType(TextFormField).at(1), 'Study4089');
         await tester.tap(find.widgetWithText(FilledButton, '登录'));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('访谈').last);
+        expect(find.text('访谈'), findsNothing);
+        await tester.tap(find.text('调整').last);
+        await tester.pumpAndSettle();
+        final interviewEntry = find.byKey(const Key('adjust-interview'));
+        await tester.ensureVisible(interviewEntry);
+        await tester.tap(interviewEntry);
         await tester.pumpAndSettle();
         expect(
           container
@@ -254,7 +259,10 @@ void main() {
         expect(find.text('新计划确认前，当前计划保持生效。'), findsOneWidget);
         await tester.tap(find.text('今日').last);
         await tester.pumpAndSettle();
-        await tester.tap(find.text('访谈').last);
+        await tester.tap(find.text('调整').last);
+        await tester.pumpAndSettle();
+        await tester.ensureVisible(interviewEntry);
+        await tester.tap(interviewEntry);
         await tester.pumpAndSettle();
         expect(find.text('最近有哪些准备情况需要补充？'), findsOneWidget);
         expect(find.text('不白学助手'), findsOneWidget);

@@ -27,7 +27,7 @@ function replanFixture() {
 }
 
 describe("interview replanning", () => {
-  it("deducts overlapping fixed events once when allocating the revised daily budget", () => {
+  it("ignores legacy fixed events when allocating the revised daily budget", () => {
     const { document, session } = replanFixture();
     document.tasks = [document.tasks[0]];
     document.blocks = [];
@@ -38,7 +38,7 @@ describe("interview replanning", () => {
     session.profile.weekly_minutes = Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(day => [String(day), 360]));
     const result = replanDocument(document, session);
     const firstDay = result.document.blocks.filter(block => block.date === session.start_date);
-    expect(firstDay.reduce((sum, block) => sum + block.duration_minutes, 0)).toBe(150);
+    expect(firstDay.reduce((sum, block) => sum + block.duration_minutes, 0)).toBe(240);
   });
   it("archives replaced tasks while retaining history, actual logs, fixed data and reused identities", () => {
     const { document, session } = replanFixture();
@@ -52,7 +52,7 @@ describe("interview replanning", () => {
     expect(result.document.logs).toEqual(document.logs);
     expect(result.document.fixed_events).toEqual(document.fixed_events);
     const firstDay = result.document.blocks.filter(block => block.date === "2026-10-18");
-    expect(firstDay.reduce((sum, block) => sum + block.duration_minutes, 0)).toBeLessThanOrEqual(180);
+    expect(firstDay.reduce((sum, block) => sum + block.duration_minutes, 0)).toBeLessThanOrEqual(210);
     expect(document).toEqual(before);
   });
 
@@ -144,7 +144,7 @@ describe("interview replanning", () => {
     expect(normalizeWeek({ "1": 90 })).toEqual({ "0": 0, "1": 0, "2": 0, "3": 0, "4": 0, "5": 0, "6": 0 });
   });
 
-  it("retains time slots and creates timed blocks around protected events", () => {
+  it("retains time slots and creates timed blocks around protected study blocks", () => {
     const { document, session } = replanFixture();
     document.profile.planning_mode = "timed";
     const result = replanDocument(document, session);
@@ -152,7 +152,10 @@ describe("interview replanning", () => {
     for (const block of result.document.blocks.filter(block => !old.has(block.id))) {
       expect(block.start_minute).toBeGreaterThanOrEqual(480);
       expect(block.start_minute + block.duration_minutes).toBeLessThanOrEqual(1320);
-      expect(block.start_minute >= 630 || block.start_minute + block.duration_minutes <= 600).toBe(true);
+      for (const protectedBlock of result.document.blocks.filter(previous => old.has(previous.id) && previous.date === block.date)) {
+        expect(block.start_minute >= protectedBlock.start_minute + Math.max(protectedBlock.duration_minutes, protectedBlock.actual_minutes)
+          || block.start_minute + block.duration_minutes <= protectedBlock.start_minute).toBe(true);
+      }
     }
   });
 });

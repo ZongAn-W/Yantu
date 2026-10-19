@@ -273,13 +273,9 @@ export function checkScheduledPlan(document: PlannerDocument, from: string, to: 
   }
   for (const [date, day] of blocksByDate) {
     if (day.every(block => protectedIds.has(block.id))) continue;
-    const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
-    const events = document.fixed_events.filter(event => date >= event.date && (date === event.date || event.repeat === "daily"
-      || event.repeat === "weekly" && new Date(`${event.date}T00:00:00Z`).getUTCDay() === weekday));
     const timed = document.profile.planning_mode === "timed";
     const loadOf = (block: PlannerDocument["blocks"][number]) => Math.max(block.actual_minutes, block.duration_minutes);
     const intervalOf = (block: PlannerDocument["blocks"][number]) => [block.start_minute, block.start_minute + loadOf(block)];
-    const eventIntervals = events.map(event => [event.start_minute, event.start_minute + event.duration_minutes]);
     const union = (intervals: number[][]) => {
       const begin = timed ? document.profile.study_start_minute : 0, endOfDay = timed ? document.profile.study_end_minute : 1440;
       let total = 0, last = begin;
@@ -289,11 +285,10 @@ export function checkScheduledPlan(document: PlannerDocument, from: string, to: 
       }
       return total;
     };
-    const fixed = union(eventIntervals);
-    // Same capacity resolution as scheduleStrategy.room(); fixed events are subtracted once.
-    const budget = Math.max(0, resolveDayCapacity(document.profile, date).minutes - fixed);
-    const load = timed ? union([...eventIntervals, ...day.map(intervalOf)]) - fixed : day.reduce((sum, block) => sum + loadOf(block), 0);
-    const protectedLoad = timed ? union([...eventIntervals, ...day.filter(block => protectedIds.has(block.id)).map(intervalOf)]) - fixed
+    // Same capacity resolution as scheduleStrategy.room(); only study blocks occupy it.
+    const budget = resolveDayCapacity(document.profile, date).minutes;
+    const load = timed ? union(day.map(intervalOf)) : day.reduce((sum, block) => sum + loadOf(block), 0);
+    const protectedLoad = timed ? union(day.filter(block => protectedIds.has(block.id)).map(intervalOf))
       : day.filter(block => protectedIds.has(block.id)).reduce((sum, block) => sum + loadOf(block), 0);
     if (load > Math.max(budget, protectedLoad)) fail("DAILY_CAPACITY", "每日安排超出有效容量", undefined, date, budget, load);
     for (const subject of new Set(day.map(block => taskById.get(block.task_id)?.subject_id))) {
