@@ -126,7 +126,7 @@ JsonMap normalizePlannerJson(JsonMap json) {
   final rawTags = normalized['tags'];
   final rawSubjects = normalized['subjects'];
   final tags = <JsonMap>[];
-  final tagIdByLegacySubject = <String, String>{};
+  final tagIdAliases = <String, String>{};
   final seenNames = <String, String>{};
 
   final sourceRows = [
@@ -143,7 +143,7 @@ JsonMap normalizePlannerJson(JsonMap json) {
     if (name.isEmpty) continue;
     final key = name.toLowerCase();
     final canonicalId = seenNames.putIfAbsent(key, () => id);
-    if (rawSubjects is List) tagIdByLegacySubject[id] = canonicalId;
+    tagIdAliases[id] = canonicalId;
     if (canonicalId != id) continue;
     tags.add({
       'id': canonicalId,
@@ -165,9 +165,15 @@ JsonMap normalizePlannerJson(JsonMap json) {
             if (!task.containsKey('tag_ids')) {
               final legacyId = task['subjectId'] ?? task['subject_id'];
               final tagId = legacyId is String
-                  ? tagIdByLegacySubject[legacyId]
+                  ? tagIdAliases[legacyId]
                   : null;
               task['tag_ids'] = tagId == null ? <String>[] : <String>[tagId];
+            } else {
+              task['tag_ids'] = (task['tag_ids'] as List)
+                  .whereType<String>()
+                  .map((id) => tagIdAliases[id] ?? id)
+                  .toSet()
+                  .toList(growable: false);
             }
             task.remove('subjectId');
             task.remove('subject_id');

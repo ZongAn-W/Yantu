@@ -142,7 +142,7 @@ class TaskStudyTimer extends ConsumerWidget {
       value: '已学 $clock，$targetLabel',
       child: ExcludeSemantics(
         child: SizedBox.square(
-          dimension: 92,
+          dimension: 104,
           child: DecoratedBox(
             decoration: BoxDecoration(
               shape: BoxShape.circle,
@@ -256,14 +256,18 @@ class TaskStudyTimer extends ConsumerWidget {
                       ? null
                       : () => _toggle(context, ref, timer),
                   icon: const Icon(Icons.stop, size: 15),
-                  label: const Text('结束'),
+                  label: const Text('结束计时'),
                 ),
               if (last != null)
-                PlannerIconAction(
+                IconButton(
                   key: Key('undo-study-session-$_ownerKey-$date'),
                   tooltip: last.isLegacy ? '删除历史计时累计' : '撤销上一段计时',
-                  icon: Icons.undo,
-                  iconSize: 16,
+                  icon: const Icon(Icons.undo, size: 16),
+                  constraints: const BoxConstraints.tightFor(
+                    width: 30,
+                    height: 30,
+                  ),
+                  padding: EdgeInsets.zero,
                   onPressed:
                       timer.ready &&
                           !timer.busy &&

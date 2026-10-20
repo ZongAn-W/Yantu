@@ -160,9 +160,9 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
         return PlannerPage(
           children: [
             _toolbar(weekView),
-            const SizedBox(height: 12),
+            const SizedBox(height: PlannerSpace.lg),
             if (metrics != null) CalendarOverview(metrics: metrics),
-            const SizedBox(height: 16),
+            const SizedBox(height: PlannerSpace.lg),
             ...switch (_mode) {
               CalendarMode.day => _dayScope(data),
               CalendarMode.week => _weekScope(data, weekView),
@@ -175,94 +175,120 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
   }
 
   Widget _toolbar(CalendarWeekView weekView) => LayoutBuilder(
-    builder: (context, constraints) => Wrap(
-      alignment: WrapAlignment.spaceBetween,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: 12,
-      runSpacing: 8,
-      children: [
-        SizedBox(
-          width: constraints.maxWidth < 360 ? constraints.maxWidth : 340,
-          child: Row(
-            children: [
-              IconButton(
-                key: ValueKey(_previousKey),
-                tooltip: _previousLabel,
-                icon: const Icon(Icons.chevron_left),
-                visualDensity: VisualDensity.compact,
-                onPressed: () => _stepDate(-1),
-              ),
-              Expanded(
-                child: Tooltip(
-                  message: _periodSemantics,
-                  // Manual only: an automatic hover tooltip would cover the
-                  // compact mode/chart controls below it.
-                  triggerMode: TooltipTriggerMode.manual,
-                  child: TextButton(
-                    key: const ValueKey('calendar-date-picker'),
-                    onPressed: _pickDate,
-                    child: Text(
-                      _periodLabel,
-                      style: tabularFigures,
-                      textAlign: TextAlign.center,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
+    builder: (context, constraints) {
+      final compact = constraints.maxWidth < 620;
+      final navigation = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          PlannerIconAction(
+            key: ValueKey(_previousKey),
+            tooltip: _previousLabel,
+            icon: Icons.chevron_left,
+            iconSize: 19,
+            onPressed: () => _stepDate(-1),
+          ),
+          Flexible(
+            child: Tooltip(
+              message: _periodSemantics,
+              // Manual only: an automatic hover tooltip would cover the
+              // compact mode/chart controls below it.
+              triggerMode: TooltipTriggerMode.manual,
+              child: TextButton(
+                key: const ValueKey('calendar-date-picker'),
+                onPressed: _pickDate,
+                style: TextButton.styleFrom(
+                  foregroundColor: PlannerColors.text,
+                  minimumSize: const Size(0, 32),
+                  padding: const EdgeInsets.symmetric(horizontal: 10),
+                  shape: const RoundedRectangleBorder(
+                    borderRadius: BorderRadius.all(
+                      Radius.circular(PlannerRadius.small),
                     ),
                   ),
                 ),
-              ),
-              IconButton(
-                key: ValueKey(_nextKey),
-                tooltip: _nextLabel,
-                icon: const Icon(Icons.chevron_right),
-                visualDensity: VisualDensity.compact,
-                onPressed: () => _stepDate(1),
-              ),
-              TextButton(
-                key: ValueKey(_todayKey),
-                onPressed: () => _chooseDate(shanghaiToday()),
-                child: Text(_todayLabel),
-              ),
-            ],
-          ),
-        ),
-        Semantics(
-          container: true,
-          explicitChildNodes: true,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: constraints.maxWidth),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                SegmentedButton<CalendarMode>(
-                  key: const ValueKey('calendar-mode-switch'),
-                  showSelectedIcon: false,
-                  style: const ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                child: Text(
+                  _periodLabel,
+                  style: tabularFigures.copyWith(
+                    fontSize: 15,
+                    height: 1.4,
+                    fontWeight: FontWeight.w600,
+                    color: PlannerColors.text,
                   ),
-                  segments: [
-                    for (final mode in CalendarMode.values)
-                      ButtonSegment(value: mode, label: Text(mode.label)),
-                  ],
-                  selected: {_mode},
-                  onSelectionChanged: (values) => _chooseMode(values.single),
+                  textAlign: TextAlign.center,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
                 ),
-                if (_mode == CalendarMode.week)
-                  _WeekChartSelector(
-                    value: weekView,
-                    onChanged: (view) => ref
-                        .read(calendarWeekViewProvider.notifier)
-                        .select(view),
-                  ),
-              ],
+              ),
             ),
           ),
-        ),
-      ],
-    ),
+          PlannerIconAction(
+            key: ValueKey(_nextKey),
+            tooltip: _nextLabel,
+            icon: Icons.chevron_right,
+            iconSize: 19,
+            onPressed: () => _stepDate(1),
+          ),
+          const SizedBox(width: PlannerSpace.xs),
+          TextButton(
+            key: ValueKey(_todayKey),
+            onPressed: () => _chooseDate(shanghaiToday()),
+            style: TextButton.styleFrom(
+              minimumSize: const Size(0, 30),
+              padding: const EdgeInsets.symmetric(horizontal: 8),
+            ),
+            child: Text(
+              _todayLabel,
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      );
+      final controls = Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: compact ? 168 : 204,
+            height: 30,
+            child: PlannerSegmented<CalendarMode>(
+              key: const ValueKey('calendar-mode-switch'),
+              value: _mode,
+              items: [
+                for (final mode in CalendarMode.values) (mode, mode.label),
+              ],
+              onChanged: _chooseMode,
+            ),
+          ),
+          if (_mode == CalendarMode.week) ...[
+            const SizedBox(width: PlannerSpace.sm),
+            _WeekChartSelector(
+              value: weekView,
+              onChanged: (view) =>
+                  ref.read(calendarWeekViewProvider.notifier).select(view),
+            ),
+          ],
+        ],
+      );
+      if (compact) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            navigation,
+            const SizedBox(height: PlannerSpace.sm),
+            controls,
+          ],
+        );
+      }
+      return Row(
+        children: [
+          Expanded(child: navigation),
+          const SizedBox(width: PlannerSpace.md),
+          controls,
+        ],
+      );
+    },
   );
 
   List<Widget> _dayScope(PlannerData data) {
@@ -273,16 +299,15 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
         key: ValueKey('calendar-day-$_selectedDate'),
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
-            child: CalendarDayTotals(
-              key: const ValueKey('calendar-day-totals'),
-              day: day,
-              capacityMinutes: capacity,
-            ),
+          CalendarDayTotals(
+            key: const ValueKey('calendar-day-totals'),
+            day: day,
+            capacityMinutes: capacity,
           ),
+          const SizedBox(height: PlannerSpace.md),
           for (final view in CalendarView.values) ...[
-            if (view != CalendarView.values.first) const SizedBox(height: 16),
+            if (view != CalendarView.values.first)
+              const SizedBox(height: PlannerSpace.md),
             CalendarDayChart(
               key: ValueKey('calendar-day-card-${view.name}'),
               day: day,
@@ -321,6 +346,8 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
   }
 }
 
+/// Menu-style week graphic selector: a hairline control that opens the shared
+/// popup menu instead of a Material [DropdownButton].
 class _WeekChartSelector extends StatelessWidget {
   const _WeekChartSelector({required this.value, required this.onChanged});
 
@@ -328,21 +355,74 @@ class _WeekChartSelector extends StatelessWidget {
   final ValueChanged<CalendarWeekView> onChanged;
 
   @override
-  Widget build(BuildContext context) => DropdownButtonHideUnderline(
-    child: DropdownButton<CalendarWeekView>(
+  Widget build(BuildContext context) {
+    final hairline = plannerHairline(context);
+    return PopupMenuButton<CalendarWeekView>(
       key: const ValueKey('calendar-week-view-switch'),
-      value: value,
-      isDense: true,
-      borderRadius: BorderRadius.circular(8),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      icon: const Icon(Icons.unfold_more, size: 18),
-      items: [
+      tooltip: '切换周视图图表',
+      position: PopupMenuPosition.under,
+      onSelected: onChanged,
+      itemBuilder: (context) => [
         for (final option in CalendarWeekView.values)
-          DropdownMenuItem(value: option, child: Text(option.label)),
+          PopupMenuItem<CalendarWeekView>(
+            value: option,
+            height: 36,
+            child: Row(
+              children: [
+                SizedBox(
+                  width: 18,
+                  child: option == value
+                      ? const Icon(
+                          Icons.check,
+                          size: 14,
+                          color: PlannerColors.blue,
+                        )
+                      : null,
+                ),
+                Text(
+                  option.label,
+                  style: TextStyle(
+                    fontSize: 12.5,
+                    fontWeight: option == value
+                        ? FontWeight.w500
+                        : FontWeight.w400,
+                    color: option == value
+                        ? PlannerColors.text
+                        : PlannerColors.muted,
+                  ),
+                ),
+              ],
+            ),
+          ),
       ],
-      onChanged: (selected) {
-        if (selected != null) onChanged(selected);
-      },
-    ),
-  );
+      child: Container(
+        height: 30,
+        padding: const EdgeInsets.only(left: 10, right: 8),
+        decoration: BoxDecoration(
+          color: PlannerColors.surface,
+          borderRadius: PlannerRadius.controlRadius,
+          border: Border.all(color: PlannerColors.border, width: hairline),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              value.label,
+              style: const TextStyle(
+                fontSize: 12.5,
+                fontWeight: FontWeight.w500,
+                color: PlannerColors.muted,
+              ),
+            ),
+            const SizedBox(width: 4),
+            const Icon(
+              Icons.expand_more,
+              size: 16,
+              color: PlannerColors.subtle,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

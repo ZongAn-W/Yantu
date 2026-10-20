@@ -12,7 +12,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)("account deletion against P
   const password = "DeleteStudy4089";
   const accessSecret = "delete-test-access-01234567890123456789";
   const refreshSecret = "delete-test-refresh-01234567890123456789";
-  const ownedTables = ["profiles", "courses", "items", "daily_plan_items", "study_logs", "daily_reviews", "replan_runs", "plan_versions", "ai_jobs", "onboarding_sessions", "planner_sync_state", "auth_refresh_tokens", "account_deletion_attempts"];
+  const ownedTables = ["profiles", "tags", "task_tags", "items", "daily_plan_items", "study_logs", "daily_reviews", "replan_runs", "plan_versions", "ai_jobs", "onboarding_sessions", "planner_sync_state", "auth_refresh_tokens", "account_deletion_attempts"];
   async function signed(id: string, email: string, type = "access") {
     return new SignJWT({ type, email, username: id }).setProtectedHeader({ alg: "HS256" }).setSubject(id).setExpirationTime("1h")
       .sign(new TextEncoder().encode(type === "access" ? accessSecret : refreshSecret));
@@ -31,10 +31,11 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)("account deletion against P
     method: "POST", url: "/api/auth/delete-account", headers: { ...user.headers, "x-forwarded-for": address }, payload: { password: entered },
   });
   async function populate(user: Account) {
-    const course = randomUUID(), item = randomUUID(), block = randomUUID();
+    const tag = randomUUID(), item = randomUUID(), block = randomUUID();
     await db.query("insert into profiles(user_id,goal_text) values($1,'注销测试')", [user.id]);
-    await db.query("insert into courses(id,user_id,name) values($1,$2,'课程')", [course, user.id]);
-    await db.query("insert into items(id,user_id,course_id,title,estimated_minutes,deadline) values($1,$2,$3,'事项',60,'2026-10-25')", [item, user.id, course]);
+    await db.query("insert into tags(id,user_id,name) values($1,$2,'标签')", [tag, user.id]);
+    await db.query("insert into items(id,user_id,title,estimated_minutes,deadline) values($1,$2,'事项',60,'2026-10-25')", [item, user.id]);
+    await db.query("insert into task_tags(user_id,task_id,tag_id) values($1,$2,$3)", [user.id, item, tag]);
     await db.query("insert into daily_plan_items(id,user_id,item_id,date,planned_minutes) values($1,$2,$3,'2026-10-19',30)", [block, user.id, item]);
     await db.query("insert into study_logs(user_id,item_id,daily_plan_item_id,date,minutes) values($1,$2,$3,'2026-10-19',10)", [user.id, item, block]);
     // 第二条日志没有日程关联，只归属事项（加学），用于验证级联删除覆盖到所有学习事实。
@@ -46,7 +47,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)("account deletion against P
     await db.query("insert into onboarding_sessions(user_id,payload) values($1,'{}')", [user.id]);
     await db.query("update planner_sync_state set document='{\"private\":true}',projection='{}' where user_id=$1", [user.id]);
     await db.query("insert into registration_codes(email,code_hash,expires_at,sent_at,window_started_at,consumed) values($1,'private',now()+interval '10 minutes',now(),now(),true)", [user.email]);
-    return { course, item, block };
+    return { tag, item, block };
   }
   async function expectGone(user: Account) {
     expect((await db.query("select 1 from users where id=$1", [user.id])).rowCount).toBe(0);

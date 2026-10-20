@@ -118,14 +118,14 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                       ),
                       const SizedBox(height: PlannerSpace.xl),
                       Text(
-                        _register ? '创建账号' : '登录',
-                        style: text.headlineSmall,
+                        _register ? '创建账号' : '登录不白学 · 学习执行台',
+                        style: text.titleLarge?.copyWith(fontSize: 18.5),
                       ),
                       const SizedBox(height: 4),
                       Text(
                         _register
                             ? '注册后开始记录每天的真实学习用时'
-                            : '继续你的学习计划：登录后多端同步，离线也能记录',
+                            : '登录后多端同步；计时、事项与日历属于同一个学习计划。',
                         style: text.bodySmall?.copyWith(
                           color: PlannerColors.muted,
                           fontSize: 12.5,
@@ -186,7 +186,8 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                                 onPressed: busy || auth.retrySeconds > 0
                                     ? null
                                     : () {
-                                        if (_emailKey.currentState!.validate()) {
+                                        if (_emailKey.currentState!
+                                            .validate()) {
                                           ref
                                               .read(
                                                 authControllerProvider.notifier,
@@ -224,7 +225,8 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                           labelText: '密码',
                           helperText: _register ? '至少 9 位，包含英文字母和数字' : null,
                           suffixIcon: IconButton(
-                            onPressed: () => setState(() => _visible = !_visible),
+                            onPressed: () =>
+                                setState(() => _visible = !_visible),
                             tooltip: _visible ? '隐藏密码' : '显示密码',
                             icon: Icon(
                               _visible
@@ -292,7 +294,9 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                         icon: auth.loading
                             ? const SizedBox.square(
                                 dimension: 18,
-                                child: CircularProgressIndicator(strokeWidth: 2),
+                                child: CircularProgressIndicator(
+                                  strokeWidth: 2,
+                                ),
                               )
                             : Icon(
                                 _register

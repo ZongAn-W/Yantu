@@ -58,12 +58,7 @@ class PlannerPage extends StatelessWidget {
         child: ConstrainedBox(
           constraints: BoxConstraints(maxWidth: maxWidth),
           child: scrollable
-              ? Scrollbar(
-                  child: ListView(
-                    padding: padding,
-                    children: [content],
-                  ),
-                )
+              ? ListView(padding: padding, children: [content])
               : SingleChildScrollView(padding: padding, child: content),
         ),
       ),
@@ -126,7 +121,11 @@ class PageHeader extends StatelessWidget {
             ),
           ),
         if (actions.isNotEmpty)
-          Wrap(spacing: PlannerSpace.sm, runSpacing: PlannerSpace.sm, children: actions),
+          Wrap(
+            spacing: PlannerSpace.sm,
+            runSpacing: PlannerSpace.sm,
+            children: actions,
+          ),
       ],
     );
   }
@@ -175,7 +174,8 @@ class PlannerPanel extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        if (title != null) Text(title!, style: text.titleMedium),
+                        if (title != null)
+                          Text(title!, style: text.titleMedium),
                         if (subtitle != null) ...[
                           const SizedBox(height: 2),
                           Text(
@@ -234,7 +234,10 @@ class SectionHeader extends StatelessWidget {
               ),
               if (count != null && count! > 0)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 1,
+                  ),
                   decoration: BoxDecoration(
                     color: PlannerColors.surfaceMuted,
                     borderRadius: BorderRadius.circular(PlannerRadius.xs),
@@ -750,7 +753,9 @@ class PlannerIconAction extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final enabled = onPressed != null;
-    final color = enabled ? (tone ?? PlannerColors.muted) : PlannerColors.subtle;
+    final color = enabled
+        ? (tone ?? PlannerColors.muted)
+        : PlannerColors.subtle;
     return Tooltip(
       message: tooltip,
       child: Material(

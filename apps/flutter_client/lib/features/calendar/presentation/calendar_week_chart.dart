@@ -9,34 +9,42 @@ import '../domain/calendar_day_data.dart';
 import '../domain/calendar_view.dart';
 import '../domain/calendar_week_data.dart';
 
-/// Item colors follow the item identity. Tags never affect chart grouping or
-/// color, since a task can carry more than one tag.
-Color _itemColor(CalendarDayItem item) => _stableItemColor(item.id);
-
-Color _stableItemColor(String seed) {
-  // String.hashCode is not a persistent contract on every Flutter target, so
-  // keep the explicit 31-based hash the day views already use.
-  var hash = 0;
-  for (final code in seed.codeUnits) {
-    hash = (hash * 31 + code) & 0x7fffffff;
-  }
-  const palette = [
-    Color(0xff537c87),
-    Color(0xff7d629f),
-    Color(0xffa06145),
-    Color(0xff537e52),
-    Color(0xff985c78),
-    Color(0xff66739b),
-  ];
-  return palette[hash % palette.length];
-}
-
+/// Semantic colour of one week chart layer.
+///
+/// Planned reference is ink-blue, extra study is amber and the sample points
+/// stay near-black. Item identity no longer drives a rainbow palette; the hatch
+/// pattern (not only the colour) still separates the effort kinds.
 Color _layerColor(CalendarWeekLayer layer) => switch (layer.kind) {
   CalendarEffortKind.scheduled => PlannerColors.blue,
   CalendarEffortKind.extra => PlannerColors.orange,
-  CalendarEffortKind.unscheduled => PlannerColors.green,
-  CalendarEffortKind.legacyUnknown => PlannerColors.muted,
+  CalendarEffortKind.unscheduled => PlannerColors.orange,
+  CalendarEffortKind.legacyUnknown => PlannerColors.subtle,
 };
+
+/// Accent of one owner row in the on-demand day detail.
+Color _itemColor(CalendarDayItem item) {
+  if (item.plannedMinutes > 0 || item.scheduledMinutes > 0) {
+    return PlannerColors.blue;
+  }
+  if (item.actualMinutes > 0) return PlannerColors.orange;
+  return PlannerColors.subtle;
+}
+
+/// The fill of a planned reference block.
+Color _planFill() => PlannerColors.blueSoft;
+
+/// The hairline accent of a planned reference block.
+Color _planStroke() => PlannerColors.blue.withValues(alpha: .38);
+
+/// Shared placement of a single effort-kind mark inside a legend or row.
+Color _kindColor(CalendarEffortKind? kind) => kind == null
+    ? PlannerColors.blue
+    : switch (kind) {
+        CalendarEffortKind.scheduled => PlannerColors.blue,
+        CalendarEffortKind.extra => PlannerColors.orange,
+        CalendarEffortKind.unscheduled => PlannerColors.orange,
+        CalendarEffortKind.legacyUnknown => PlannerColors.subtle,
+      };
 
 /// One read-only week graphic with compact legends and day details on demand.
 ///
@@ -144,24 +152,31 @@ class _CalendarWeekChartState extends State<CalendarWeekChart> {
             ],
       child: PlannerPanel(
         key: _panel,
-        padding: const EdgeInsets.all(12),
+        padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Wrap(
-              spacing: 16,
+              spacing: 22,
               runSpacing: 4,
               crossAxisAlignment: WrapCrossAlignment.center,
               children: [
                 Text(
                   '周计划 ${duration(week.plannedMinutes)}',
                   key: const ValueKey('calendar-week-planned-total'),
-                  style: tabularFigures.copyWith(color: PlannerColors.muted),
+                  style: tabularFigures.copyWith(
+                    fontSize: 12.5,
+                    color: PlannerColors.muted,
+                  ),
                 ),
                 Text(
                   '周实学 ${duration(week.actualMinutes)}',
                   key: const ValueKey('calendar-week-actual-total'),
-                  style: tabularFigures.copyWith(fontWeight: FontWeight.w600),
+                  style: tabularFigures.copyWith(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                    color: PlannerColors.text,
+                  ),
                 ),
               ],
             ),
@@ -170,13 +185,13 @@ class _CalendarWeekChartState extends State<CalendarWeekChart> {
             if (week.isEmpty)
               const Padding(
                 key: ValueKey('calendar-week-empty'),
-                padding: EdgeInsets.only(top: 6),
+                padding: EdgeInsets.only(top: 8),
                 child: Text(
                   '本周没有学习计划或学习记录',
-                  style: TextStyle(fontSize: 12, color: PlannerColors.muted),
+                  style: TextStyle(fontSize: 12.5, color: PlannerColors.muted),
                 ),
               ),
-            const SizedBox(height: 8),
+            const SizedBox(height: 10),
             switch (widget.view) {
               CalendarWeekView.mirror => _MirrorChart(
                 week: week,
@@ -267,7 +282,7 @@ class _PlanLegendItem extends StatelessWidget {
     children: [
       ExcludeSemantics(
         child: SizedBox(
-          width: 18,
+          width: 14,
           height: 10,
           child: CustomPaint(
             key: const ValueKey('calendar-week-kind-planned'),
@@ -275,10 +290,14 @@ class _PlanLegendItem extends StatelessWidget {
           ),
         ),
       ),
-      const SizedBox(width: 4),
+      const SizedBox(width: 5),
       Text(
         view == CalendarWeekView.mirror ? '计划 ↑' : '计划',
-        style: const TextStyle(fontSize: 11, color: PlannerColors.muted),
+        style: const TextStyle(
+          fontSize: 11.5,
+          height: 1.35,
+          color: PlannerColors.muted,
+        ),
       ),
     ],
   );
@@ -292,9 +311,15 @@ class _PlanLegendPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     if (view == CalendarWeekView.mirror) {
-      canvas.drawRect(
-        Offset.zero & size,
-        Paint()..color = PlannerColors.blue.withValues(alpha: .14),
+      final rect = Rect.fromLTWH(0, 0, size.width, size.height - 2);
+      final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(2.5));
+      canvas.drawRRect(rrect, Paint()..color = _planFill());
+      canvas.drawRRect(
+        rrect,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1
+          ..color = _planStroke(),
       );
     } else {
       _drawDashedPolyline(
@@ -302,7 +327,7 @@ class _PlanLegendPainter extends CustomPainter {
         [Offset(0, size.height / 2), Offset(size.width, size.height / 2)],
         Paint()
           ..color = PlannerColors.blue
-          ..strokeWidth = 1.6,
+          ..strokeWidth = 1.5,
         dash: 4,
         gap: 3,
       );
@@ -326,7 +351,7 @@ class _KindLegendItem extends StatelessWidget {
     children: [
       ExcludeSemantics(
         child: SizedBox(
-          width: 16,
+          width: 10,
           height: 10,
           child: CustomPaint(
             key: ValueKey('calendar-week-kind-${kind?.name ?? 'planned'}'),
@@ -334,10 +359,14 @@ class _KindLegendItem extends StatelessWidget {
           ),
         ),
       ),
-      const SizedBox(width: 4),
+      const SizedBox(width: 5),
       Text(
         label,
-        style: const TextStyle(fontSize: 11, color: PlannerColors.muted),
+        style: const TextStyle(
+          fontSize: 11.5,
+          height: 1.35,
+          color: PlannerColors.muted,
+        ),
       ),
     ],
   );
@@ -473,7 +502,11 @@ class _MirrorChart extends StatelessWidget {
         children: [
           const Text(
             '分钟',
-            style: TextStyle(fontSize: 11, color: PlannerColors.muted),
+            style: TextStyle(
+              fontSize: 10.5,
+              height: 1.3,
+              color: PlannerColors.subtle,
+            ),
           ),
           const SizedBox(height: 2),
           _WeekGraphic(
@@ -515,11 +548,15 @@ class _MirrorPainter extends CustomPainter {
     final zeroY = _topPad + half;
     final unit = half / week.scaleMinutes;
     final columnWidth = plotWidth / 7;
-    final barWidth = math.max(2.0, columnWidth - 3);
+    // A visible gutter between day columns keeps neighbouring bars readable
+    // without drawing vertical gridlines.
+    final barWidth = math.max(2.0, columnWidth - 6);
 
-    final grid = Paint()..color = PlannerColors.border.withValues(alpha: .5);
+    final grid = Paint()..color = PlannerColors.border.withValues(alpha: .8);
     final faintGrid = Paint()
-      ..color = PlannerColors.border.withValues(alpha: .28);
+      ..color = PlannerColors.border.withValues(alpha: .45);
+    // Horizontal hairlines only: a calendar plot with vertical rules reads like
+    // a spreadsheet, so the seven columns stay implied by the bars.
     for (final fraction in const [0.0, .5, 1.0]) {
       final dy = half * fraction;
       canvas.drawLine(
@@ -533,14 +570,6 @@ class _MirrorPainter extends CustomPainter {
         fraction == 0 ? grid : faintGrid,
       );
     }
-    for (var index = 0; index <= 7; index++) {
-      final x = plotLeft + columnWidth * index;
-      canvas.drawLine(
-        Offset(x, _topPad),
-        Offset(x, _topPad + plotHeight),
-        faintGrid,
-      );
-    }
 
     // Highlight the selected/hovered day column without hiding the data.
     final highlightIndex = week.days.indexWhere(
@@ -549,8 +578,8 @@ class _MirrorPainter extends CustomPainter {
     if (highlightIndex >= 0) {
       final left = plotLeft + columnWidth * highlightIndex;
       canvas.drawRect(
-        Rect.fromLTWH(left, _topPad, columnWidth, plotHeight),
-        Paint()..color = const Color(0x0f275e91),
+        Rect.fromLTWH(left + 1, _topPad, columnWidth - 2, plotHeight),
+        Paint()..color = PlannerColors.blueSoft.withValues(alpha: .55),
       );
     }
 
@@ -566,15 +595,29 @@ class _MirrorPainter extends CustomPainter {
         if (item.plannedMinutes <= 0) continue;
         final height = item.plannedMinutes * unit;
         final rect = Rect.fromLTWH(left, plannedTop - height, barWidth, height);
-        final color = _itemColor(item);
-        canvas.drawRect(rect, Paint()..color = color.withValues(alpha: .14));
+        canvas.drawRect(rect, Paint()..color = _planFill());
+        canvas.drawLine(
+          Offset(left, plannedTop - height),
+          Offset(left + barWidth, plannedTop - height),
+          Paint()
+            ..color = _planStroke()
+            ..strokeWidth = 1,
+        );
         plannedTop -= height;
+      }
+      if (plannedTop < zeroY) {
+        canvas.drawRect(
+          Rect.fromLTWH(left, plannedTop, barWidth, zeroY - plannedTop),
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1
+            ..color = _planStroke(),
+        );
       }
       // Actual study: positive minutes drawn downward, full over-plan amount.
       var actualTop = zeroY;
       for (var itemIndex = 0; itemIndex < day.day.items.length; itemIndex++) {
         final item = day.day.items[itemIndex];
-        final color = _itemColor(item);
         var drewItem = false;
         for (final effort in item.efforts) {
           if (effort.minutes <= 0) continue;
@@ -582,9 +625,9 @@ class _MirrorPainter extends CustomPainter {
           _drawEffortSegment(
             canvas,
             Rect.fromLTWH(left, actualTop, barWidth, height),
-            color,
+            _kindColor(effort.kind),
             effort.kind,
-            textureAlpha: .72,
+            textureAlpha: .42,
           );
           actualTop += height;
           drewItem = true;
@@ -598,7 +641,7 @@ class _MirrorPainter extends CustomPainter {
             Offset(left, actualTop),
             Offset(left + barWidth, actualTop),
             Paint()
-              ..color = Colors.white.withValues(alpha: .65)
+              ..color = Colors.white.withValues(alpha: .75)
               ..strokeWidth = 1,
           );
         }
@@ -610,8 +653,8 @@ class _MirrorPainter extends CustomPainter {
       Offset(0, zeroY),
       Offset(size.width, zeroY),
       Paint()
-        ..color = PlannerColors.text.withValues(alpha: .55)
-        ..strokeWidth = 1.4,
+        ..color = PlannerColors.borderStrong
+        ..strokeWidth = 1,
     );
     _paintLeftLabel(canvas, '0', zeroY, plotLeft, align: _LabelAlign.center);
   }
@@ -717,9 +760,11 @@ class _MountainPainter extends CustomPainter {
     final unit = plotHeight / week.scaleMinutes;
     final columnWidth = plotWidth / 7;
 
-    final grid = Paint()..color = PlannerColors.border.withValues(alpha: .45);
+    final grid = Paint()..color = PlannerColors.border.withValues(alpha: .8);
     final faintGrid = Paint()
-      ..color = PlannerColors.border.withValues(alpha: .25);
+      ..color = PlannerColors.border.withValues(alpha: .4);
+    // Horizontal hairlines only; the seven day positions stay implied by the
+    // contour and the day axis below the plot.
     for (final fraction in const [0.0, .25, .5, .75, 1.0]) {
       final y = baselineY - plotHeight * fraction;
       canvas.drawLine(
@@ -727,10 +772,6 @@ class _MountainPainter extends CustomPainter {
         Offset(size.width, y),
         fraction == 0 ? grid : faintGrid,
       );
-    }
-    for (var index = 0; index <= 7; index++) {
-      final x = plotLeft + columnWidth * index;
-      canvas.drawLine(Offset(x, _topPad), Offset(x, baselineY), faintGrid);
     }
     _paintMountainAxis(canvas, size, baselineY, plotHeight, plotLeft);
 
@@ -740,8 +781,8 @@ class _MountainPainter extends CustomPainter {
     if (highlightIndex >= 0) {
       final left = plotLeft + columnWidth * highlightIndex;
       canvas.drawRect(
-        Rect.fromLTWH(left, _topPad, columnWidth, plotHeight),
-        Paint()..color = const Color(0x0f275e91),
+        Rect.fromLTWH(left + 1, _topPad, columnWidth - 2, plotHeight),
+        Paint()..color = PlannerColors.blueSoft.withValues(alpha: .45),
       );
     }
 
@@ -809,7 +850,7 @@ class _MountainPainter extends CustomPainter {
       final total = cumulative[index];
       final y = baselineY - total * unit;
       if (total > 0) {
-        canvas.drawCircle(Offset(x, y), 3, Paint()..color = PlannerColors.text);
+        canvas.drawCircle(Offset(x, y), 3, Paint()..color = PlannerColors.blue);
         canvas.drawCircle(Offset(x, y), 1.2, Paint()..color = Colors.white);
       } else {
         canvas.drawCircle(
@@ -818,7 +859,7 @@ class _MountainPainter extends CustomPainter {
           Paint()
             ..style = PaintingStyle.stroke
             ..strokeWidth = 1
-            ..color = PlannerColors.muted.withValues(alpha: .7),
+            ..color = PlannerColors.subtle.withValues(alpha: .8),
         );
       }
     }
@@ -827,8 +868,8 @@ class _MountainPainter extends CustomPainter {
       Offset(0, baselineY),
       Offset(size.width, baselineY),
       Paint()
-        ..color = PlannerColors.text.withValues(alpha: .5)
-        ..strokeWidth = 1.2,
+        ..color = PlannerColors.borderStrong
+        ..strokeWidth = 1,
     );
   }
 
@@ -916,6 +957,7 @@ class _WeekDayButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final description = _dayDescription(day);
+    final isToday = day.date == shanghaiToday();
     return Semantics(
       key: ValueKey('calendar-week-day-${day.date}'),
       button: true,
@@ -932,18 +974,19 @@ class _WeekDayButton extends StatelessWidget {
         excludeFromSemantics: true,
         child: InkWell(
           onTap: onSelect,
-          borderRadius: BorderRadius.circular(6),
+          borderRadius: BorderRadius.circular(8),
           splashFactory: reduceMotion ? NoSplash.splashFactory : null,
           child: Container(
             margin: const EdgeInsets.symmetric(horizontal: 1),
             constraints: const BoxConstraints(minHeight: 48),
-            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 1),
+            padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 1),
             decoration: BoxDecoration(
-              border: Border(
-                bottom: BorderSide(
-                  color: selected ? PlannerColors.blue : Colors.transparent,
-                  width: 2,
-                ),
+              color: selected ? PlannerColors.blueSoft : null,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(
+                color: selected ? PlannerColors.blue : Colors.transparent,
+                width: 2,
+                strokeAlign: BorderSide.strokeAlignInside,
               ),
             ),
             child: Column(
@@ -954,20 +997,53 @@ class _WeekDayButton extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.clip,
                   style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w400,
-                    color: selected ? PlannerColors.blue : PlannerColors.muted,
+                    fontSize: 10.5,
+                    height: 1.3,
+                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                    color: selected ? PlannerColors.blue : PlannerColors.subtle,
                   ),
                 ),
-                Text(
-                  day.date.substring(8, 10),
-                  maxLines: 1,
-                  style: tabularFigures.copyWith(
-                    fontSize: 12,
-                    fontWeight: selected ? FontWeight.w700 : FontWeight.w500,
-                    color: selected ? PlannerColors.blue : PlannerColors.text,
+                const SizedBox(height: 1),
+                if (isToday)
+                  Container(
+                    width: 24,
+                    height: 24,
+                    alignment: Alignment.center,
+                    decoration: const BoxDecoration(
+                      color: PlannerColors.blue,
+                      shape: BoxShape.circle,
+                    ),
+                    child: Text(
+                      day.date.substring(8, 10),
+                      maxLines: 1,
+                      style: tabularFigures.copyWith(
+                        fontSize: 11.5,
+                        height: 1.2,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white,
+                      ),
+                    ),
+                  )
+                else
+                  SizedBox(
+                    height: 24,
+                    child: Center(
+                      child: Text(
+                        day.date.substring(8, 10),
+                        maxLines: 1,
+                        style: tabularFigures.copyWith(
+                          fontSize: 12.5,
+                          height: 1.3,
+                          fontWeight: selected
+                              ? FontWeight.w600
+                              : FontWeight.w500,
+                          color: selected
+                              ? PlannerColors.blue
+                              : PlannerColors.text,
+                        ),
+                      ),
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -1078,8 +1154,8 @@ class _WeekDayDetail extends StatelessWidget {
                     children: [
                       ExcludeSemantics(
                         child: SizedBox(
-                          width: 15,
-                          height: 9,
+                          width: 10,
+                          height: 10,
                           child: CustomPaint(painter: _KindSwatchPainter(kind)),
                         ),
                       ),
@@ -1191,8 +1267,8 @@ class _WeekItemRow extends StatelessWidget {
                           children: [
                             ExcludeSemantics(
                               child: SizedBox(
-                                width: 15,
-                                height: 9,
+                                width: 10,
+                                height: 10,
                                 child: CustomPaint(
                                   painter: _KindSwatchPainter(
                                     effort.kind,
@@ -1237,21 +1313,24 @@ class _KindSwatchPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
+    final fill = _kindColor(kind);
+    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(2));
     if (kind == null) {
-      canvas.drawRect(rect, Paint()..color = color.withValues(alpha: .14));
-      canvas.drawRect(
-        rect.deflate(.5),
+      canvas.drawRRect(rrect, Paint()..color = _planFill());
+      canvas.drawRRect(
+        rrect,
         Paint()
-          ..color = color.withValues(alpha: .45)
-          ..style = PaintingStyle.stroke,
+          ..color = _planStroke()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1,
       );
       return;
     }
-    canvas.drawRect(rect, Paint()..color = color);
+    canvas.drawRRect(rrect, Paint()..color = fill);
     if (kind != CalendarEffortKind.scheduled) {
       canvas.save();
-      canvas.clipRect(rect);
-      _drawKindPattern(canvas, rect, color, kind!);
+      canvas.clipRRect(rrect);
+      _drawKindPattern(canvas, rect, fill, kind!);
       canvas.restore();
     }
   }
@@ -1266,13 +1345,14 @@ void _drawEffortSegment(
   Rect rect,
   Color color,
   CalendarEffortKind kind, {
-  double textureAlpha = .7,
+  double textureAlpha = .42,
 }) {
   if (rect.isEmpty) return;
-  canvas.drawRect(rect, Paint()..color = color);
+  final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(2));
+  canvas.drawRRect(rrect, Paint()..color = color);
   if (kind != CalendarEffortKind.scheduled) {
     canvas.save();
-    canvas.clipRect(rect);
+    canvas.clipRRect(rrect);
     _drawKindPattern(canvas, rect, color, kind, alpha: textureAlpha);
     canvas.restore();
   }
@@ -1287,7 +1367,7 @@ void _drawKindPattern(
   Rect rect,
   Color color,
   CalendarEffortKind kind, {
-  double alpha = .7,
+  double alpha = .42,
 }) {
   final paint = Paint()
     ..color = Colors.white.withValues(alpha: alpha)
@@ -1322,7 +1402,7 @@ void _paintLeftLabel(
   final painter = TextPainter(
     text: TextSpan(
       text: text,
-      style: const TextStyle(fontSize: 9, color: PlannerColors.muted),
+      style: tabularFigures.copyWith(fontSize: 11, color: PlannerColors.subtle),
     ),
     textDirection: TextDirection.ltr,
     maxLines: 1,

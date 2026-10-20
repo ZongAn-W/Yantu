@@ -58,7 +58,32 @@ app.post("/api/ai/plan-drafts", async (request, reply) => {
   catch (error) { return reply.code(502).send({ error: errorMessage(error) }); }
 });
 app.get("/api/ai/plan-drafts/:id", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const params = request.params as { id: string }; const result = await query<{ id: string; output_payload: unknown }>("select id,output_payload from ai_jobs where id=$1 and user_id=$2 and kind='plan_draft'", [params.id, user.id]); if (!result.rows[0]) return reply.code(404).send({ error: "找不到草案" }); return { id: result.rows[0].id, draft: result.rows[0].output_payload }; });
-app.post("/api/ai/plan-drafts/:id/confirm", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const params = request.params as { id: string }; const found = await query<{ output_payload: unknown; status: string }>("select output_payload,status from ai_jobs where id=$1 and user_id=$2 and kind='plan_draft'", [params.id, user.id]); if (!found.rows[0]) return reply.code(404).send({ error: "找不到草案" }); if (found.rows[0].status === "confirmed") return reply.code(409).send({ error: "这个草案已经确认过了" }); const submitted = bodyObject(request.body) as { draft?: unknown }; const parsed = PlanDraftSchema.safeParse(submitted.draft ?? found.rows[0].output_payload); if (!parsed.success) return reply.code(400).send({ error: "草案格式不正确" }); try { const result = await confirmDraft(user.id, parsed.data); await query("update ai_jobs set status='confirmed',updated_at=now() where id=$1 and user_id=$2", [params.id, user.id]); return { ...result, confirmed: true }; } catch (error) { return reply.code(400).send({ error: errorMessage(error) }); } });
+app.post("/api/ai/plan-drafts/:id/confirm", async (request, reply) => {
+  const user = await requireUser(request, reply); if (!user) return;
+  const params = request.params as { id: string };
+  const submitted = bodyObject(request.body) as { draft?: unknown };
+  try {
+    const result = await transaction(async client => {
+      const found = await client.query<{ output_payload: unknown; status: string }>(
+        "select output_payload,status from ai_jobs where id=$1 and user_id=$2 and kind='plan_draft' for update",
+        [params.id, user.id],
+      );
+      const row = found.rows[0];
+      if (!row) throw Object.assign(new Error("找不到草案"), { statusCode: 404 });
+      if (row.status === "confirmed") throw Object.assign(new Error("这个草案已经确认过了"), { statusCode: 409 });
+      const parsed = PlanDraftSchema.safeParse(submitted.draft ?? row.output_payload);
+      if (!parsed.success) throw parsed.error;
+      const confirmed = await confirmDraft(user.id, parsed.data, { client });
+      await client.query("update ai_jobs set status='confirmed',updated_at=now() where id=$1 and user_id=$2", [params.id, user.id]);
+      return confirmed;
+    });
+    return { ...result, confirmed: true };
+  } catch (error) {
+    if (error instanceof z.ZodError) return reply.code(400).send({ error: "草案格式不正确" });
+    const statusCode = (error as { statusCode?: number }).statusCode;
+    return reply.code(statusCode === 404 || statusCode === 409 ? statusCode : 400).send({ error: errorMessage(error) });
+  }
+});
 
 // ---- AI 一键调整后续计划（PLAN_ADJUST_AI_DESIGN §2）----
 type AdjustmentJobPayload = { base_revision?: number; document?: unknown; preview?: PlanAdjustmentPreview; ai?: unknown };
@@ -153,7 +178,8 @@ app.post("/api/ai/plan-adjustments/:id/confirm", adjustmentRateLimit, async (req
         [user.id, JSON.stringify({ summary: payload.preview!.assessment, previous_revision: payload.base_revision,
           previous_document: state.data, preview: adjustmentPreview(row.id, payload) })]);
       await client.query("update ai_jobs set status='confirmed',updated_at=now() where id=$1 and user_id=$2", [row.id, user.id]);
-      return next;
+      const latest = await client.query<{ revision: string }>("select revision from planner_sync_state where user_id=$1", [user.id]);
+      return Number(latest.rows[0]?.revision ?? next);
     });
     return { confirmed: true, revision };
   } catch (error) {
@@ -221,7 +247,7 @@ app.post("/api/items", async (request, reply) => {
       const inserted = await client.query<ItemRow>("insert into items(user_id,title,description,completion_criteria,estimated_minutes,earliest_date,deadline,priority,confirmed) values($1,$2,$3,$4,$5,$6,$7,$8,false) returning id,title,description,completion_criteria,estimated_minutes,earliest_date::text,deadline::text,priority,status",
         [user.id, parsed.data.title, parsed.data.description, parsed.data.completion_criteria, parsed.data.estimated_minutes, parsed.data.earliest_date ?? null, parsed.data.deadline, parsed.data.priority]);
       for (const tagId of tagIds) await client.query("insert into task_tags(user_id,task_id,tag_id) values($1,$2,$3)", [user.id, inserted.rows[0].id, tagId]);
-      return inserted.rows[0];
+      return { ...inserted.rows[0], tag_ids: tagIds };
     });
     return reply.code(201).send({ item: itemToJson(result) });
   } catch (error) {
@@ -235,31 +261,38 @@ app.patch("/api/items/:id", async (request, reply) => {
   const parsed = z.object({ tag_ids: z.array(z.string().uuid()).max(100).optional(), title: z.string().min(1).max(200).optional(), description: z.string().max(4000).optional(), completion_criteria: z.string().max(1000).optional(), priority: z.number().int().min(1).max(3).optional() }).safeParse(bodyObject(request.body));
   if (!parsed.success) return reply.code(400).send({ error: "事项格式不正确" });
   const params = request.params as { id: string };
-  const result = await transaction(async client => {
-    if (parsed.data.tag_ids !== undefined) {
-      const tagIds = [...new Set(parsed.data.tag_ids)];
-      if (tagIds.length) {
-        const owned = await client.query("select id from tags where user_id=$1 and id=any($2::uuid[])", [user.id, tagIds]);
-        if (owned.rowCount !== tagIds.length) throw Object.assign(new Error("标签不存在或不属于当前账号"), { statusCode: 404 });
+  try {
+    const result = await transaction(async client => {
+      if (parsed.data.tag_ids !== undefined) {
+        const tagIds = [...new Set(parsed.data.tag_ids)];
+        if (tagIds.length) {
+          const owned = await client.query("select id from tags where user_id=$1 and id=any($2::uuid[])", [user.id, tagIds]);
+          if (owned.rowCount !== tagIds.length) throw Object.assign(new Error("标签不存在或不属于当前账号"), { statusCode: 404 });
+        }
+        const task = await client.query("select 1 from items where id=$1 and user_id=$2 and confirmed=false", [params.id, user.id]);
+        if (!task.rowCount) return null;
+        await client.query("delete from task_tags where user_id=$1 and task_id=$2", [user.id, params.id]);
+        for (const tagId of tagIds) await client.query("insert into task_tags(user_id,task_id,tag_id) values($1,$2,$3)", [user.id, params.id, tagId]);
       }
-      const task = await client.query("select 1 from items where id=$1 and user_id=$2 and confirmed=false", [params.id, user.id]);
-      if (!task.rowCount) return null;
-      await client.query("delete from task_tags where user_id=$1 and task_id=$2", [user.id, params.id]);
-      for (const tagId of tagIds) await client.query("insert into task_tags(user_id,task_id,tag_id) values($1,$2,$3)", [user.id, params.id, tagId]);
-    }
-    const updated = await client.query<ItemRow>("update items set title=coalesce($1,title),description=coalesce($2,description),completion_criteria=coalesce($3,completion_criteria),priority=coalesce($4,priority),updated_at=now() where id=$5 and user_id=$6 and confirmed=false returning id,title,description,completion_criteria,estimated_minutes,earliest_date::text,deadline::text,priority,status",
-      [parsed.data.title, parsed.data.description, parsed.data.completion_criteria, parsed.data.priority, params.id, user.id]);
-    return updated.rows[0] ?? null;
-  });
-  if (!result) return reply.code(409).send({ error: "已确认事项不能直接修改，请先生成新的事项草案并确认" });
-  return { item: itemToJson(result) };
+      const updated = await client.query<ItemRow>("update items set title=coalesce($1,title),description=coalesce($2,description),completion_criteria=coalesce($3,completion_criteria),priority=coalesce($4,priority),updated_at=now() where id=$5 and user_id=$6 and confirmed=false returning id,title,description,completion_criteria,estimated_minutes,earliest_date::text,deadline::text,priority,status",
+        [parsed.data.title, parsed.data.description, parsed.data.completion_criteria, parsed.data.priority, params.id, user.id]);
+      if (!updated.rows[0]) return null;
+      const tags = await client.query<{ tag_id: string }>("select tag_id from task_tags where user_id=$1 and task_id=$2 order by tag_id", [user.id, params.id]);
+      return { ...updated.rows[0], tag_ids: tags.rows.map(row => row.tag_id) };
+    });
+    if (!result) return reply.code(409).send({ error: "已确认事项不能直接修改，请先生成新的事项草案并确认" });
+    return { item: itemToJson(result) };
+  } catch (error) {
+    if ((error as { statusCode?: number }).statusCode === 404) return reply.code(404).send({ error: errorMessage(error) });
+    throw error;
+  }
 });
 app.delete("/api/items/:id", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const params = request.params as { id: string }; const result = await query("delete from items where id=$1 and user_id=$2", [params.id, user.id]); return result.rowCount ? { deleted: true } : reply.code(404).send({ error: "找不到事项" }); });
 
 app.get("/api/plans", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const q = request.query as { from?: string; to?: string }; const from = q.from ?? dateToday(); const profile = await getProfile(user.id); const to = q.to ?? profile?.plan_end_date ?? profile?.target_date ?? dateAdd(from, 27); return { plans: await listDailyPlans(user.id, from, to) }; });
 app.post("/api/plans/generate", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; try { return await generatePlan(user.id, (bodyObject(request.body) as { from?: string }).from ?? dateToday()); } catch (error) { return reply.code(400).send({ error: errorMessage(error) }); } });
 app.post("/api/daily-reviews/:date/settle", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const parsed = SettleSchema.safeParse(bodyObject(request.body)); if (!parsed.success) return reply.code(400).send({ error: "每日反馈格式不正确" }); const params = request.params as { date: string }; try { return await settleDay(user.id, params.date, parsed.data.entries, parsed.data.feedback); } catch (error) { return reply.code(400).send({ error: errorMessage(error) }); } });
-app.post("/api/study-logs", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const parsed = z.object({ item_id: z.string().uuid(), date: z.string(), minutes: z.number().int().min(0).max(1440), feedback: z.string().max(2000).default("") }).safeParse(bodyObject(request.body)); if (!parsed.success) return reply.code(400).send({ error: "学习记录格式不正确" }); const result = await query("with removed as (delete from study_logs where user_id=$1 and item_id=$2 and date=$3 returning id) insert into study_logs(user_id,item_id,date,minutes,feedback) values($1,$2,$3,$4,$5) returning id,date,minutes", [user.id, parsed.data.item_id, parsed.data.date, parsed.data.minutes, parsed.data.feedback]); return reply.code(201).send({ log: result.rows[0] }); });
+app.post("/api/study-logs", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const parsed = z.object({ item_id: z.string().uuid(), date: z.string(), minutes: z.number().int().min(0).max(1440), feedback: z.string().max(2000).default("") }).safeParse(bodyObject(request.body)); if (!parsed.success) return reply.code(400).send({ error: "学习记录格式不正确" }); const result = await query("with removed as (delete from study_logs where user_id=$1 and item_id=$2 and date=$3 returning id) insert into study_logs(user_id,item_id,date,minutes,feedback) select $1,i.id,$3,$4,$5 from items i where i.id=$2 and i.user_id=$1 returning id,date,minutes", [user.id, parsed.data.item_id, parsed.data.date, parsed.data.minutes, parsed.data.feedback]); return result.rows[0] ? reply.code(201).send({ log: result.rows[0] }) : reply.code(404).send({ error: "找不到事项" }); });
 app.patch("/api/study-logs/:id", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const parsed = z.object({ minutes: z.number().int().min(0).max(1440).optional(), feedback: z.string().max(2000).optional() }).safeParse(bodyObject(request.body)); if (!parsed.success) return reply.code(400).send({ error: "学习记录格式不正确" }); const params = request.params as { id: string }; const result = await query("update study_logs set minutes=coalesce($1,minutes),feedback=coalesce($2,feedback) where id=$3 and user_id=$4 returning id,date,minutes,feedback", [parsed.data.minutes, parsed.data.feedback, params.id, user.id]); return result.rows[0] ? { log: result.rows[0] } : reply.code(404).send({ error: "找不到学习记录" }); });
 app.get("/api/progress", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const totals = await query("select coalesce(sum(minutes),0)::int as actual_minutes, count(distinct date)::int as study_days from study_logs where user_id=$1", [user.id]); const remaining = await query("select coalesce(sum(greatest(estimated_minutes - coalesce((select sum(minutes) from study_logs l where l.item_id=i.id and l.user_id=i.user_id),0),0)),0)::int as remaining_minutes from items i where user_id=$1 and confirmed=true", [user.id]); return { ...totals.rows[0], ...remaining.rows[0] }; });
 app.get("/api/replan-runs", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const result = await query("select id,date::text,explanation,undone_at,created_at from replan_runs where user_id=$1 order by created_at desc limit 50", [user.id]); return { runs: result.rows }; });

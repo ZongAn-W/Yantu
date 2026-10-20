@@ -83,22 +83,28 @@ class _CapacityOverridesDialogState
   }
 
   Profile _nextProfile(Profile current) {
-    final weekly = {for (var day = 0; day < 7; day++) '$day': current.weekMinutes['$day'] ?? 0};
+    final weekly = {
+      for (var day = 0; day < 7; day++)
+        '$day': current.weekMinutes['$day'] ?? 0,
+    };
     var dailyLimit = current.dailyLimitMinutes;
     if (_basis == CapacityBasis.net) {
       final peak = weekly.values.fold<int>(0, (a, b) => a > b ? a : b);
       var distributedPeak = 0;
       if (_adoptedBaseline != null) {
-        final distributed = capacity.distributeWeeklyTotal(
-          _adoptedBaseline!,
-          {for (var day = 0; day < 7; day++) day: weekly['$day'] ?? 0},
-        );
+        final distributed = capacity.distributeWeeklyTotal(_adoptedBaseline!, {
+          for (var day = 0; day < 7; day++) day: weekly['$day'] ?? 0,
+        });
         for (final value in distributed.values) {
           if (value > distributedPeak) distributedPeak = value;
         }
       }
-      dailyLimit = [current.dailyLimitMinutes, peak, distributedPeak, 30]
-          .reduce((a, b) => a > b ? a : b);
+      dailyLimit = [
+        current.dailyLimitMinutes,
+        peak,
+        distributedPeak,
+        30,
+      ].reduce((a, b) => a > b ? a : b);
     }
     return current.copyWith(
       capacityBasis: _basis,
@@ -131,7 +137,8 @@ class _CapacityOverridesDialogState
     }
     for (final entry in _weeks.entries) {
       if (entry.value.totalMinutes != null &&
-          (entry.value.totalMinutes! < 0 || entry.value.totalMinutes! > 10080)) {
+          (entry.value.totalMinutes! < 0 ||
+              entry.value.totalMinutes! > 10080)) {
         errors.add('特定周（${entry.key}）的总量需要在 0 至 10080 分钟之间');
       }
       for (final day in (entry.value.days ?? const {}).entries) {
@@ -156,9 +163,8 @@ class _CapacityOverridesDialogState
       mondays.add(capacity.capacityWeekMonday(date));
     }
     for (final monday in mondays.toList()..sort()) {
-      for (final conflict in capacity
-          .resolveWeekCapacity(profile, monday)
-          .conflicts) {
+      for (final conflict
+          in capacity.resolveWeekCapacity(profile, monday).conflicts) {
         result.add(
           conflict.code == capacity.CapacityConflictCode.weekTotalExceeded
               ? '包含 $monday 的一周：日期/逐日覆盖合计 '
@@ -184,9 +190,7 @@ class _CapacityOverridesDialogState
     final nextProfile = _nextProfile(data.profile);
     final conflicts = _conflicts(nextProfile);
     if (conflicts.isNotEmpty && !_acceptedConflicts) {
-      setState(
-        () => _saveError = '容量设置存在冲突，请先调整或勾选“接受该容量设置冲突”。',
-      );
+      setState(() => _saveError = '容量设置存在冲突，请先调整或勾选“接受该容量设置冲突”。');
       return;
     }
     setState(() {
@@ -200,13 +204,12 @@ class _CapacityOverridesDialogState
       await ref
           .read(plannerSessionProvider)
           .edit(
-            (current) => current.copyWith(profile: _nextProfile(current.profile)),
+            (current) =>
+                current.copyWith(profile: _nextProfile(current.profile)),
           );
       if (navigator.mounted) navigator.pop(true);
       messenger.showSnackBar(
-        const SnackBar(
-          content: Text('容量已保存；请到调整页使用一键调整后续计划重排未来安排。'),
-        ),
+        const SnackBar(content: Text('容量已保存；请到调整页使用一键调整后续计划重排未来安排。')),
       );
     } catch (error) {
       if (mounted) setState(() => _busy = false);
@@ -221,27 +224,41 @@ class _CapacityOverridesDialogState
     final nextProfile = _nextProfile(data.profile);
     final conflicts = _conflicts(nextProfile);
     final errors = _validationErrors;
+    final width = _dialogWidth(context, 640);
     return AlertDialog(
-      title: const Text('容量假设与例外'),
-      content: SizedBox(
-        width: 640,
-        child: SingleChildScrollView(
-          child: _buildEditor(context, data, nextProfile, conflicts, errors),
+      contentPadding: EdgeInsets.zero,
+      titlePadding: EdgeInsets.zero,
+      actionsPadding: EdgeInsets.zero,
+      insetPadding: const EdgeInsets.all(PlannerSpace.xl),
+      content: _DialogFrame(
+        width: width,
+        title: '容量假设与例外',
+        subtitle: '保存只写入容量设置；需要重排未来安排时，到调整页使用一键调整。',
+        body: _buildEditor(context, data, nextProfile, conflicts, errors),
+        actions: Row(
+          mainAxisAlignment: MainAxisAlignment.end,
+          children: [
+            TextButton(
+              onPressed: _busy ? null : () => Navigator.pop(context, false),
+              child: const Text('取消'),
+            ),
+            const SizedBox(width: PlannerSpace.sm),
+            FilledButton.icon(
+              key: const ValueKey('capacity-save'),
+              onPressed: _busy || errors.isNotEmpty ? null : _save,
+              icon: const Icon(Icons.save_outlined, size: 17),
+              label: const Text('保存容量'),
+            ),
+          ],
         ),
       ),
-      actions: [
-        TextButton(
-          onPressed: _busy ? null : () => Navigator.pop(context, false),
-          child: const Text('取消'),
-        ),
-        FilledButton.icon(
-          key: const ValueKey('capacity-save'),
-          onPressed: _busy || errors.isNotEmpty ? null : _save,
-          icon: const Icon(Icons.save_outlined),
-          label: const Text('保存容量'),
-        ),
-      ],
     );
+  }
+
+  /// 对话框宽度：桌面固定，窄屏时给两侧留 32 的呼吸空间。
+  static double _dialogWidth(BuildContext context, double preferred) {
+    final available = MediaQuery.sizeOf(context).width - 64;
+    return available < preferred ? available : preferred;
   }
 
   Widget _buildEditor(
@@ -255,41 +272,33 @@ class _CapacityOverridesDialogState
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text('容量口径', style: Theme.of(context).textTheme.titleSmall),
-        SegmentedButton<CapacityBasis>(
-          segments: const [
-            ButtonSegment(
-              value: CapacityBasis.net,
-              label: Text('净学习时间（推荐）'),
-            ),
-            ButtonSegment(
-              value: CapacityBasis.grossBuffer,
-              label: Text('旧版总预算'),
-            ),
+        const _SectionLabel('容量口径'),
+        const SizedBox(height: PlannerSpace.sm),
+        PlannerSegmented<CapacityBasis>(
+          value: _basis,
+          items: const [
+            (CapacityBasis.net, '净学习时间（推荐）'),
+            (CapacityBasis.grossBuffer, '旧版总预算'),
           ],
-          selected: {_basis},
-          onSelectionChanged: (values) =>
-              setState(() => _basis = values.single),
+          onChanged: (value) => setState(() => _basis = value),
         ),
         const Padding(
-          padding: EdgeInsets.only(top: 4),
+          padding: EdgeInsets.only(top: PlannerSpace.sm),
           child: Text(
             '净口径：你填写的就是真正用于学习的净时间，程序不再机械扣除机动。'
             '旧版总预算：每日安排前先扣除机动时间。切换口径会改变容量；'
             '保存后如需重排未来安排，请到调整页使用一键调整后续计划。',
-            style: TextStyle(color: PlannerColors.muted, fontSize: 12),
+            style: _dialogBodyStyle,
           ),
         ),
-        const Divider(height: 24),
-        Text('默认周容量', style: Theme.of(context).textTheme.titleSmall),
-        Row(
-          children: [
-            Checkbox(
-              value: _useRange,
-              onChanged: (value) => setState(() => _useRange = value ?? false),
-            ),
-            const Expanded(child: Text('使用“大致周容量范围”+ 保守基线')),
-          ],
+        const Divider(height: PlannerSpace.xl),
+        const _SectionLabel('默认周容量'),
+        CheckboxListTile(
+          contentPadding: EdgeInsets.zero,
+          controlAffinity: ListTileControlAffinity.leading,
+          value: _useRange,
+          onChanged: (value) => setState(() => _useRange = value ?? false),
+          title: const Text('使用“大致周容量范围”+ 保守基线'),
         ),
         if (_useRange) ...[
           Row(
@@ -331,9 +340,7 @@ class _CapacityOverridesDialogState
               controlAffinity: ListTileControlAffinity.leading,
               onChanged: (value) =>
                   setState(() => _baselineConfirmed = value ?? false),
-              title: Text(
-                '采用保守基线 ${duration(_adoptedBaseline!)} 作为初始排程依据',
-              ),
+              title: Text('采用保守基线 ${duration(_adoptedBaseline!)} 作为初始排程依据'),
               subtitle: const Text(
                 '取范围下限，较高容量情景只用于说明可达范围；'
                 '程序按模板比例生成的每日建议不代表逐日确认。',
@@ -342,62 +349,45 @@ class _CapacityOverridesDialogState
         ] else
           Text(
             '未设置周基线：按现有每周模板 ${_templateSummary(data.profile)} 逐日计算。',
+            style: _dialogBodyStyle,
           ),
         if (info.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 6),
-            child: Text(
-              info,
-              style: const TextStyle(color: PlannerColors.muted, fontSize: 12),
-            ),
+            child: Text(info, style: _dialogHelperStyle),
           ),
-        const Divider(height: 24),
+        const Divider(height: PlannerSpace.xl),
         Row(
           children: [
-            Expanded(
-              child: Text(
-                '特定周覆盖（键为周一日期）',
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-            ),
+            const Expanded(child: _SectionLabel('特定周覆盖（键为周一日期）')),
             TextButton.icon(
               onPressed: _busy ? null : _addWeek,
-              icon: const Icon(Icons.add),
+              icon: const Icon(Icons.add, size: 16),
               label: const Text('添加特定周'),
             ),
           ],
         ),
         if (_weeks.isEmpty)
-          const Text(
-            '暂无特定周覆盖：所有周使用默认周容量。',
-            style: TextStyle(color: PlannerColors.muted, fontSize: 12),
-          ),
-        for (final entry in (_weeks.entries.toList()
-          ..sort((a, b) => a.key.compareTo(b.key))))
+          const Text('暂无特定周覆盖：所有周使用默认周容量。', style: _dialogHelperStyle),
+        for (final entry
+            in (_weeks.entries.toList()
+              ..sort((a, b) => a.key.compareTo(b.key))))
           _weekRow(entry.key, entry.value),
-        const Divider(height: 24),
+        const Divider(height: PlannerSpace.xl),
         Row(
           children: [
-            Expanded(
-              child: Text(
-                '特定日期覆盖（0 = 休息；删除 = 恢复上层规则）',
-                style: Theme.of(context).textTheme.titleSmall,
-              ),
-            ),
+            const Expanded(child: _SectionLabel('特定日期覆盖（0 = 休息；删除 = 恢复上层规则）')),
             TextButton.icon(
               onPressed: _busy ? null : _addDate,
-              icon: const Icon(Icons.add),
+              icon: const Icon(Icons.add, size: 16),
               label: const Text('添加日期'),
             ),
           ],
         ),
-        if (_dates.isEmpty)
-          const Text(
-            '暂无特定日期覆盖。',
-            style: TextStyle(color: PlannerColors.muted, fontSize: 12),
-          ),
-        for (final entry in (_dates.entries.toList()
-          ..sort((a, b) => a.key.compareTo(b.key))))
+        if (_dates.isEmpty) const Text('暂无特定日期覆盖。', style: _dialogHelperStyle),
+        for (final entry
+            in (_dates.entries.toList()
+              ..sort((a, b) => a.key.compareTo(b.key))))
           ListTile(
             dense: true,
             contentPadding: EdgeInsets.zero,
@@ -444,7 +434,7 @@ class _CapacityOverridesDialogState
             padding: const EdgeInsets.only(top: 4),
             child: Text(
               error,
-              style: const TextStyle(color: PlannerColors.orange, fontSize: 12),
+              style: _dialogHelperStyle.copyWith(color: PlannerColors.orange),
             ),
           ),
         if (_saveError != null) ...[
@@ -491,7 +481,9 @@ class _CapacityOverridesDialogState
           ),
           IconButton(
             tooltip: '删除覆盖（恢复默认周容量）',
-            onPressed: _busy ? null : () => setState(() => _weeks.remove(monday)),
+            onPressed: _busy
+                ? null
+                : () => setState(() => _weeks.remove(monday)),
             icon: const Icon(Icons.delete_outline),
           ),
         ],
@@ -510,7 +502,10 @@ class _CapacityOverridesDialogState
       '0': '周日',
     };
     return names.entries
-        .map((entry) => '${entry.value} ${duration(profile.weekMinutes[entry.key] ?? 0)}')
+        .map(
+          (entry) =>
+              '${entry.value} ${duration(profile.weekMinutes[entry.key] ?? 0)}',
+        )
         .join('，');
   }
 
@@ -524,9 +519,7 @@ class _CapacityOverridesDialogState
   Future<void> _editWeek(String mondayKey) async {
     var date = mondayKey;
     final initialTotal = _weeks[mondayKey]?.totalMinutes;
-    final days = Map<String, int>.from(
-      _weeks[mondayKey]?.days ?? const {},
-    );
+    final days = Map<String, int>.from(_weeks[mondayKey]?.days ?? const {});
     final totalController = TextEditingController(
       text: initialTotal?.toString() ?? '',
     );
@@ -540,120 +533,124 @@ class _CapacityOverridesDialogState
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setInner) => AlertDialog(
-          title: const Text('特定周容量'),
-          content: SizedBox(
-            width: 520,
-            child: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  const Text('周键使用周一日期（上海时区），周一到周日为一周。'),
-                  const SizedBox(height: 8),
-                  DateField(
-                    label: '该周周一',
-                    value: date,
-                    onChanged: (value) => setInner(() => date = value),
+          contentPadding: EdgeInsets.zero,
+          titlePadding: EdgeInsets.zero,
+          actionsPadding: EdgeInsets.zero,
+          insetPadding: const EdgeInsets.all(PlannerSpace.xl),
+          content: _DialogFrame(
+            width: _dialogWidth(context, 520),
+            title: '特定周容量',
+            subtitle: '周键使用周一日期（上海时区），周一到周日为一周。',
+            body: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                DateField(
+                  label: '该周周一',
+                  value: date,
+                  onChanged: (value) => setInner(() => date = value),
+                ),
+                const SizedBox(height: 8),
+                TextField(
+                  key: const ValueKey('capacity-week-total'),
+                  controller: totalController,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(
+                    labelText: '整周总量（可只填它，留空表示不设总量）',
+                    suffixText: '分钟',
                   ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    key: const ValueKey('capacity-week-total'),
-                    controller: totalController,
-                    keyboardType: TextInputType.number,
-                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    decoration: const InputDecoration(
-                      labelText: '整周总量（可只填它，留空表示不设总量）',
-                      suffixText: '分钟',
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Text(
-                    '也可以逐日给出明确值（留空表示该天跟随模板）；'
-                    '同时设置周总量时，会先扣除逐日明确值再按模板比例分配剩余。',
-                    style: const TextStyle(
-                      color: PlannerColors.muted,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  Wrap(
-                    spacing: 8,
-                    runSpacing: 8,
-                    children: [
-                      for (final entry in {
-                        '1': '周一',
-                        '2': '周二',
-                        '3': '周三',
-                        '4': '周四',
-                        '5': '周五',
-                        '6': '周六',
-                        '0': '周日',
-                      }.entries)
-                        SizedBox(
-                          width: 150,
-                          child: TextField(
-                            key: ValueKey('capacity-week-day-${entry.key}'),
-                            controller: controllers[entry.key],
-                            keyboardType: TextInputType.number,
-                            inputFormatters: [
-                              FilteringTextInputFormatter.digitsOnly,
-                            ],
-                            decoration: InputDecoration(
-                              labelText: entry.value,
-                              suffixText: '分钟',
-                            ),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  '也可以逐日给出明确值（留空表示该天跟随模板）；'
+                  '同时设置周总量时，会先扣除逐日明确值再按模板比例分配剩余。',
+                  style: _dialogHelperStyle,
+                ),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final entry in {
+                      '1': '周一',
+                      '2': '周二',
+                      '3': '周三',
+                      '4': '周四',
+                      '5': '周五',
+                      '6': '周六',
+                      '0': '周日',
+                    }.entries)
+                      SizedBox(
+                        width: 150,
+                        child: TextField(
+                          key: ValueKey('capacity-week-day-${entry.key}'),
+                          controller: controllers[entry.key],
+                          keyboardType: TextInputType.number,
+                          inputFormatters: [
+                            FilteringTextInputFormatter.digitsOnly,
+                          ],
+                          decoration: InputDecoration(
+                            labelText: entry.value,
+                            suffixText: '分钟',
                           ),
                         ),
-                    ],
-                  ),
-                ],
-              ),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+            actions: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('取消'),
+                ),
+                const SizedBox(width: PlannerSpace.sm),
+                FilledButton(
+                  key: const ValueKey('capacity-week-save'),
+                  onPressed: () {
+                    final parsed = DateTime.tryParse('${date}T00:00:00Z');
+                    if (parsed == null || parsed.weekday != DateTime.monday) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('请把周键设置为周一日期')),
+                      );
+                      return;
+                    }
+                    final explicitDays = <String, int>{};
+                    for (final entry in controllers.entries) {
+                      final text = entry.value.text.trim();
+                      if (text.isEmpty) continue;
+                      final value = int.tryParse(text);
+                      if (value == null || value < 0 || value > 1440) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('${entry.key} 的容量需要是 0 至 1440'),
+                          ),
+                        );
+                        return;
+                      }
+                      explicitDays[entry.key] = value;
+                    }
+                    final totalText = totalController.text.trim();
+                    final totalValue = totalText.isEmpty
+                        ? null
+                        : int.tryParse(totalText);
+                    if (totalValue != null &&
+                        (totalValue < 0 || totalValue > 10080)) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('周总量需要是 0 至 10080 分钟')),
+                      );
+                      return;
+                    }
+                    Navigator.pop(context, true);
+                  },
+                  child: const Text('保存该周'),
+                ),
+              ],
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              key: const ValueKey('capacity-week-save'),
-              onPressed: () {
-                final parsed = DateTime.tryParse('${date}T00:00:00Z');
-                if (parsed == null || parsed.weekday != DateTime.monday) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('请把周键设置为周一日期')),
-                  );
-                  return;
-                }
-                final explicitDays = <String, int>{};
-                for (final entry in controllers.entries) {
-                  final text = entry.value.text.trim();
-                  if (text.isEmpty) continue;
-                  final value = int.tryParse(text);
-                  if (value == null || value < 0 || value > 1440) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text('${entry.key} 的容量需要是 0 至 1440')),
-                    );
-                    return;
-                  }
-                  explicitDays[entry.key] = value;
-                }
-                final totalText = totalController.text.trim();
-                final totalValue = totalText.isEmpty
-                    ? null
-                    : int.tryParse(totalText);
-                if (totalValue != null &&
-                    (totalValue < 0 || totalValue > 10080)) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('周总量需要是 0 至 10080 分钟')),
-                  );
-                  return;
-                }
-                Navigator.pop(context, true);
-              },
-              child: const Text('保存该周'),
-            ),
-          ],
         ),
       ),
     );
@@ -690,10 +687,15 @@ class _CapacityOverridesDialogState
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setInner) => AlertDialog(
-          title: const Text('特定日期容量'),
-          content: SizedBox(
-            width: 420,
-            child: Column(
+          contentPadding: EdgeInsets.zero,
+          titlePadding: EdgeInsets.zero,
+          actionsPadding: EdgeInsets.zero,
+          insetPadding: const EdgeInsets.all(PlannerSpace.xl),
+          content: _DialogFrame(
+            width: _dialogWidth(context, 420),
+            title: '特定日期容量',
+            subtitle: '当天净容量（分钟）；0 表示当天休息。',
+            body: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -712,33 +714,37 @@ class _CapacityOverridesDialogState
                     suffixText: '分钟（0 表示休息）',
                   ),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: PlannerSpace.md),
                 const Text(
                   '清空或删除该日期覆盖会恢复上层规则（本周/默认），不等于设为 0。',
-                  style: TextStyle(color: PlannerColors.muted, fontSize: 12),
+                  style: _dialogHelperStyle,
+                ),
+              ],
+            ),
+            actions: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('取消'),
+                ),
+                const SizedBox(width: PlannerSpace.sm),
+                FilledButton(
+                  onPressed: () {
+                    final value = int.tryParse(minutes.text.trim());
+                    if (value == null || value < 0 || value > 1440) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('容量需要是 0 至 1440 分钟')),
+                      );
+                      return;
+                    }
+                    Navigator.pop(context, true);
+                  },
+                  child: const Text('保存'),
                 ),
               ],
             ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final value = int.tryParse(minutes.text.trim());
-                if (value == null || value < 0 || value > 1440) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('容量需要是 0 至 1440 分钟')),
-                  );
-                  return;
-                }
-                Navigator.pop(context, true);
-              },
-              child: const Text('保存'),
-            ),
-          ],
         ),
       ),
     );
@@ -754,10 +760,15 @@ class _CapacityOverridesDialogState
       context: context,
       builder: (context) => StatefulBuilder(
         builder: (context, setInner) => AlertDialog(
-          title: const Text('编辑日期容量'),
-          content: SizedBox(
-            width: 420,
-            child: Column(
+          contentPadding: EdgeInsets.zero,
+          titlePadding: EdgeInsets.zero,
+          actionsPadding: EdgeInsets.zero,
+          insetPadding: const EdgeInsets.all(PlannerSpace.xl),
+          content: _DialogFrame(
+            width: _dialogWidth(context, 420),
+            title: '编辑日期容量',
+            subtitle: '当天净容量（分钟）；0 表示当天休息。',
+            body: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -766,7 +777,7 @@ class _CapacityOverridesDialogState
                   value: date,
                   onChanged: (value) => setInner(() => date = value),
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: PlannerSpace.md),
                 TextField(
                   controller: minutes,
                   keyboardType: TextInputType.number,
@@ -778,26 +789,30 @@ class _CapacityOverridesDialogState
                 ),
               ],
             ),
+            actions: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: const Text('取消'),
+                ),
+                const SizedBox(width: PlannerSpace.sm),
+                FilledButton(
+                  onPressed: () {
+                    final value = int.tryParse(minutes.text.trim());
+                    if (value == null || value < 0 || value > 1440) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(content: Text('容量需要是 0 至 1440 分钟')),
+                      );
+                      return;
+                    }
+                    Navigator.pop(context, true);
+                  },
+                  child: const Text('保存'),
+                ),
+              ],
+            ),
           ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('取消'),
-            ),
-            FilledButton(
-              onPressed: () {
-                final value = int.tryParse(minutes.text.trim());
-                if (value == null || value < 0 || value > 1440) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(content: Text('容量需要是 0 至 1440 分钟')),
-                  );
-                  return;
-                }
-                Navigator.pop(context, true);
-              },
-              child: const Text('保存'),
-            ),
-          ],
         ),
       ),
     );
@@ -807,5 +822,110 @@ class _CapacityOverridesDialogState
       if (date != existing) _dates.remove(existing);
       _dates[date] = value;
     });
+  }
+}
+
+/// 对话框正文：13 / 1.6。
+const _dialogBodyStyle = TextStyle(
+  fontSize: 13,
+  height: 1.6,
+  color: PlannerColors.muted,
+);
+
+/// 对话框辅助说明 / 元信息：12.5 / 1.5。
+const _dialogHelperStyle = TextStyle(
+  fontSize: 12.5,
+  height: 1.5,
+  color: PlannerColors.muted,
+);
+
+/// 对话框小节标题：13.5 w600。
+class _SectionLabel extends StatelessWidget {
+  const _SectionLabel(this.label);
+
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Text(
+    label,
+    style: const TextStyle(
+      fontSize: 13.5,
+      height: 1.5,
+      fontWeight: FontWeight.w600,
+      color: PlannerColors.text,
+    ),
+  );
+}
+
+/// 统一对话框外壳：20–24 内边距、表头 / 表尾发丝分隔线、按钮右对齐、内容独立滚动。
+class _DialogFrame extends StatelessWidget {
+  const _DialogFrame({
+    required this.width,
+    required this.title,
+    required this.body,
+    required this.actions,
+    this.subtitle,
+  });
+
+  final double width;
+  final String title;
+  final String? subtitle;
+  final Widget body;
+  final Widget actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final hairline = plannerHairline(context);
+    return SizedBox(
+      width: width,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              PlannerSpace.xl,
+              20,
+              PlannerSpace.xl,
+              14,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: text.titleLarge),
+                if (subtitle != null) ...[
+                  const SizedBox(height: 3),
+                  Text(subtitle!, style: _dialogHelperStyle),
+                ],
+              ],
+            ),
+          ),
+          Container(height: hairline, color: PlannerColors.border),
+          Flexible(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(
+                PlannerSpace.xl,
+                18,
+                PlannerSpace.xl,
+                18,
+              ),
+              child: body,
+            ),
+          ),
+          Container(height: hairline, color: PlannerColors.border),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(
+              PlannerSpace.xl,
+              14,
+              PlannerSpace.xl,
+              16,
+            ),
+            child: actions,
+          ),
+        ],
+      ),
+    );
   }
 }

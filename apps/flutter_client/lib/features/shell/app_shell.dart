@@ -94,9 +94,28 @@ class AppShell extends StatelessWidget {
     }
     return Scaffold(
       appBar: AppBar(
-        title: Text(
-          shellDestinations[index].label,
-          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 22,
+              height: 22,
+              decoration: BoxDecoration(
+                color: PlannerColors.blue,
+                borderRadius: BorderRadius.circular(6),
+              ),
+              child: const Icon(
+                Icons.auto_stories_outlined,
+                color: Colors.white,
+                size: 13,
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              shellDestinations[index].label,
+              style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+            ),
+          ],
         ),
         actions: const [_SyncAction(), SizedBox(width: 6)],
         bottom: const PreferredSize(
@@ -489,8 +508,12 @@ class _SidebarTileState extends State<_SidebarTile> {
                       style: TextStyle(
                         fontSize: 13,
                         height: 1.3,
-                        fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                        color: selected ? PlannerColors.blue : PlannerColors.text,
+                        fontWeight: selected
+                            ? FontWeight.w600
+                            : FontWeight.w400,
+                        color: selected
+                            ? PlannerColors.blue
+                            : PlannerColors.text,
                       ),
                     ),
                   ),

@@ -101,6 +101,18 @@ void main() {
     expect(PlannerData.fromJson(exported), expanded);
   });
 
+  test('duplicate tag definitions are canonicalized when legacy and new fields coexist', () {
+    final source = readPlannerFixture();
+    final tags = List<dynamic>.from(source['subjects'] as List)
+      ..add({'id': 'duplicate-tag', 'user_id': 'demo', 'name': '高数'});
+    source['tags'] = tags;
+    source.remove('subjects');
+    (source['tasks'] as List).single['tag_ids'] = ['duplicate-tag'];
+    final parsed = PlannerData.fromJson(source);
+    expect(parsed.tags, hasLength(1));
+    expect(parsed.tasks.single.tagIds, [parsed.tags.single.id]);
+  });
+
   test(
     'legacy orphan or invalid subject references normalize to untagged tasks',
     () {

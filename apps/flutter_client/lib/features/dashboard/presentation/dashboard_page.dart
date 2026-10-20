@@ -107,9 +107,8 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                         actual: breakdown.actual,
                         needsCompletion: needsCompletion,
                         onComplete: snapshot.editable
-                            ? () => ContinueCycleDialog.showCompleteCycle(
-                                context,
-                              )
+                            ? () =>
+                                  ContinueCycleDialog.showCompleteCycle(context)
                             : null,
                       ),
                       const SizedBox(height: PlannerSpace.xl),
@@ -124,7 +123,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                           action: FilledButton.icon(
                             key: const Key('dashboard-ai-planning'),
                             onPressed: () => context.go('/interview'),
-                            icon: const Icon(Icons.auto_awesome_outlined, size: 17),
+                            icon: const Icon(
+                              Icons.auto_awesome_outlined,
+                              size: 17,
+                            ),
                             label: const Text('AI 长期规划'),
                           ),
                         ),
@@ -246,7 +248,7 @@ class _TodayHeader extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(
-              '今天',
+              '今日学习',
               style: text.labelMedium?.copyWith(
                 color: PlannerColors.subtle,
                 letterSpacing: 0.6,
@@ -691,11 +693,7 @@ List<Widget> _taskTag(PlannerData data, Task task) {
   return [
     for (final id in task.tagIds)
       if (tagsById[id] case final tag?)
-        PlannerTag(
-          label: tag.name,
-          color: _tagColor(tag.color),
-          dense: true,
-        ),
+        PlannerTag(label: tag.name, color: _tagColor(tag.color), dense: true),
   ];
 }
 

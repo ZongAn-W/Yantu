@@ -111,9 +111,9 @@ class _TaskDirectoryState extends ConsumerState<TaskDirectory> {
             children: [
               Text(
                 '标签',
-                style: Theme.of(context).textTheme.labelMedium?.copyWith(
-                  color: PlannerColors.subtle,
-                ),
+                style: Theme.of(
+                  context,
+                ).textTheme.labelMedium?.copyWith(color: PlannerColors.subtle),
               ),
               for (final tag in widget.data.tags)
                 PlannerTag(

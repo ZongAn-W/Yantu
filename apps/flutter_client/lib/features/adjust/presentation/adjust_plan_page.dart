@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../core/theme.dart';
 import '../../../core/widgets.dart';
+import '../../../core/sync/sync_state.dart';
 import '../../../shared/models/planner_models.dart';
 import '../../dashboard/presentation/today_scroll.dart';
 import '../../planner/application/planner_session.dart';
@@ -23,12 +24,36 @@ import 'plan_adjust_dialog.dart';
 /// 先在预览对话框展示目标所需时长、周期 / 强度 / 工作量变化与日程影响，
 /// 用户确认后才由服务端原子写入并推进 revision。历史、已完成、固定和有实际
 /// 用时的记录由服务端保护，事项与真实截止日期不会被删除或改写。
+///
+/// 视觉：Mist Ink / 雾蓝墨水。左栏（约 2/3）放人物画像与近期学习时间，
+/// 右栏（380）放学习进度与唯一主操作「一键调整」；< 1100 宽改为单栏。
 class AdjustPlanPage extends ConsumerStatefulWidget {
   const AdjustPlanPage({super.key});
 
   @override
   ConsumerState<AdjustPlanPage> createState() => _AdjustPlanPageState();
 }
+
+/// 页面正文级说明：13 / 1.6，不再用 11–12px 密集小字。
+const _bodyStyle = TextStyle(
+  fontSize: 13,
+  height: 1.6,
+  color: PlannerColors.muted,
+);
+
+/// 辅助说明 / 元信息：12.5 / 1.5。
+const _metaStyle = TextStyle(
+  fontSize: 12.5,
+  height: 1.5,
+  color: PlannerColors.muted,
+);
+
+/// 表单字段标签：12.5 muted，和值形成弱对比。
+const _labelStyle = TextStyle(
+  fontSize: 12.5,
+  height: 1.4,
+  color: PlannerColors.muted,
+);
 
 class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
   bool _applying = false;
@@ -72,6 +97,19 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
         showPlannerMessage(
           context,
           '调整已提交，正在同步新计划：${_errorMessage(error)}',
+          tone: PlannerNoticeTone.warning,
+        );
+        return;
+      }
+      final afterSync = ref.read(plannerDataProvider);
+      if (afterSync.pending ||
+          afterSync.status == SyncStatus.error ||
+          afterSync.status == SyncStatus.offline ||
+          afterSync.status == SyncStatus.conflict) {
+        if (!mounted) return;
+        showPlannerMessage(
+          context,
+          '调整已提交，但本机尚未完成同步：${afterSync.message}',
           tone: PlannerNoticeTone.warning,
         );
         return;
@@ -127,50 +165,64 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
         return PlannerPage(
           title: '调整学习计划',
           subtitle: '画像、进度、时间有变化后，让 AI 审查并调整后续安排。',
-          children: [
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final profile = _profilePanel(context, data.profile, today);
-                final progress = _progressPanel(context, data, metrics);
-                final time = _capacityPanel(data, today);
-                final apply = _applyPanel(snapshot, data, metrics, today);
-                if (constraints.maxWidth < 1000) {
-                  return Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      profile,
-                      const SizedBox(height: 16),
-                      progress,
-                      const SizedBox(height: 16),
-                      time,
-                      const SizedBox(height: 16),
-                      apply,
-                    ],
-                  );
-                }
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [profile, const SizedBox(height: 16), time],
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [progress, const SizedBox(height: 16), apply],
-                      ),
-                    ),
-                  ],
-                );
-              },
-            ),
-          ],
+          children: [_content(context, snapshot, data, metrics, today)],
         );
       },
+    );
+  }
+
+  /// 主体：桌面为左栏（约 2/3）+ 右栏（380）两栏；< 1100 逻辑像素改为单栏。
+  Widget _content(
+    BuildContext context,
+    PlannerSnapshot snapshot,
+    PlannerData data,
+    ProgressMetrics metrics,
+    String today,
+  ) {
+    final profile = _profilePanel(context, data.profile, today);
+    final progress = _progressPanel(context, data, metrics);
+    final time = _capacityPanel(data, today);
+    final apply = _applyPanel(snapshot, data, metrics, today);
+    if (MediaQuery.sizeOf(context).width < 1100) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          profile,
+          const SizedBox(height: PlannerSpace.xl),
+          progress,
+          const SizedBox(height: PlannerSpace.xl),
+          time,
+          const SizedBox(height: PlannerSpace.xl),
+          apply,
+        ],
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              profile,
+              const SizedBox(height: PlannerSpace.lg),
+              time,
+            ],
+          ),
+        ),
+        const SizedBox(width: PlannerSpace.xl),
+        SizedBox(
+          width: 380,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              progress,
+              const SizedBox(height: PlannerSpace.lg),
+              apply,
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -194,35 +246,35 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
       profile.targetProgram,
     ].where((value) => value.isNotEmpty).join(' · ');
     final assumption = capacity.capacityAssumptionLabel(profile);
+    final goalTypeLabel = goalTypeLabels[profile.goalType];
     return PlannerPanel(
       key: const Key('adjust-profile'),
       title: '人物画像',
-      trailing: const Text(
-        '来自目标访谈与设置，可继续补充',
-        style: TextStyle(color: PlannerColors.muted, fontSize: 12),
-      ),
+      subtitle: '来自目标访谈与设置，可继续补充',
+      padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Wrap(
-            spacing: 12,
-            runSpacing: 4,
+            spacing: PlannerSpace.sm,
+            runSpacing: 6,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               Text(
                 goalHeadline(profile),
-                style: text.titleSmall?.copyWith(fontWeight: FontWeight.w600),
+                style: text.titleSmall?.copyWith(fontSize: 14.5, height: 1.45),
               ),
+              if (goalTypeLabel != null)
+                PlannerTag(label: goalTypeLabel, color: PlannerColors.blue),
               Text(
                 goalStatusLine(profile, today),
-                style: const TextStyle(
-                  color: PlannerColors.muted,
-                  fontSize: 12,
+                style: _metaStyle.copyWith(
+                  fontFeatures: const [FontFeature.tabularFigures()],
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: PlannerSpace.lg),
           _ProfileField(label: '目标', value: goal),
           _ProfileField(label: '目标日期', value: targetLabel),
           _ProfileField(label: '院校专业', value: school.isEmpty ? '未填写' : school),
@@ -236,21 +288,23 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
           ),
           if (assumption.isNotEmpty)
             _ProfileField(label: '可用时间口径', value: assumption),
-          const SizedBox(height: 4),
+          const SizedBox(height: PlannerSpace.sm),
+          const _PanelDivider(),
+          const SizedBox(height: PlannerSpace.md),
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: PlannerSpace.sm,
+            runSpacing: PlannerSpace.sm,
             children: [
               OutlinedButton.icon(
                 key: const Key('adjust-interview'),
                 onPressed: () => context.go('/interview'),
-                icon: const Icon(Icons.forum_outlined, size: 18),
+                icon: const Icon(Icons.forum_outlined, size: 16),
                 label: const Text('继续访谈完善画像'),
               ),
               OutlinedButton.icon(
                 key: const Key('adjust-settings'),
                 onPressed: () => context.go('/settings'),
-                icon: const Icon(Icons.settings_outlined, size: 18),
+                icon: const Icon(Icons.settings_outlined, size: 16),
                 label: const Text('修改目标与规划'),
               ),
             ],
@@ -291,66 +345,77 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
     return PlannerPanel(
       key: const Key('adjust-progress'),
       title: '学习进度',
-      trailing: const Text(
-        '最多展示 6 个未归档事项',
-        style: TextStyle(color: PlannerColors.muted, fontSize: 12),
-      ),
+      subtitle: '最多展示 6 个未归档事项',
+      padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          PlannerStat(
-            label: '累计实际学习',
-            value: duration(metrics.totalActual),
-            valueKey: const Key('adjust-total-actual'),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: MetricTile(
+                  label: '累计实际学习',
+                  value: duration(metrics.totalActual),
+                  valueKey: const Key('adjust-total-actual'),
+                ),
+              ),
+              const SizedBox(width: PlannerSpace.lg),
+              Expanded(
+                child: MetricTile(
+                  label: '剩余工作量',
+                  value: duration(metrics.remainingMinutes),
+                ),
+              ),
+            ],
           ),
-          PlannerStat(
-            label: '剩余工作量',
-            value: duration(metrics.remainingMinutes),
-          ),
+          const SizedBox(height: PlannerSpace.md),
           PlannerStat(label: '进度状态', value: status, tone: tone),
-          const SizedBox(height: 8),
-          if (shown.isEmpty)
+          const SizedBox(height: PlannerSpace.md),
+          const _PanelDivider(),
+          if (shown.isEmpty) ...[
             const PlannerEmpty(
               message: '还没有学习事项。',
               hint: '先完成学习目标访谈，再在今日页「全部事项」中创建事项。',
               icon: Icons.list_alt_outlined,
-            )
-          else ...[
-            for (final task in shown)
+            ),
+          ] else ...[
+            for (var index = 0; index < shown.length; index++) ...[
+              if (index > 0) const _PanelDivider(),
               _TaskProgressRow(
-                task: task,
+                task: shown[index],
                 tagNames: [
-                  for (final id in task.tagIds)
+                  for (final id in shown[index].tagIds)
                     if (tagNames[id] case final name?) name,
                 ],
               ),
-            if (tasks.length > shown.length)
+            ],
+            if (tasks.length > shown.length) ...[
+              const SizedBox(height: PlannerSpace.sm),
               Text(
                 '另有 ${tasks.length - shown.length} 个事项未展示，可在今日页「全部事项」中查看。',
-                style: const TextStyle(
-                  color: PlannerColors.muted,
-                  fontSize: 12,
-                ),
+                style: _metaStyle,
               ),
+            ],
           ],
-          const SizedBox(height: 12),
+          const SizedBox(height: PlannerSpace.sm),
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: PlannerSpace.xs,
+            runSpacing: PlannerSpace.xs,
             children: [
-              OutlinedButton.icon(
+              TextButton.icon(
                 key: const Key('adjust-progress-view'),
                 onPressed: () => context.go('/calendar'),
-                icon: const Icon(Icons.bar_chart_outlined, size: 18),
+                icon: const Icon(Icons.bar_chart_outlined, size: 16),
                 label: const Text('查看完整进度'),
               ),
-              OutlinedButton.icon(
+              TextButton.icon(
                 key: const Key('adjust-tasks-manage'),
                 onPressed: () {
                   TodayItemsScrollRequest.request();
                   context.go('/');
                 },
-                icon: const Icon(Icons.list_alt_outlined, size: 18),
+                icon: const Icon(Icons.list_alt_outlined, size: 16),
                 label: const Text('查看全部事项'),
               ),
             ],
@@ -387,21 +452,21 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
     return PlannerPanel(
       key: const Key('adjust-capacity'),
       title: '近期学习时间',
-      trailing: const Text(
-        '今天起 7 天 · 可用净分钟与已排分钟',
-        style: TextStyle(color: PlannerColors.muted, fontSize: 12),
-      ),
+      subtitle: '今天起 7 天 · 可用净分钟与已排分钟',
+      padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           for (final date in days)
-            _DayCapacityRow(
+            _DayCapacityStat(
               key: Key('adjust-capacity-day-$date'),
               date: date,
               available: capacity.resolveDayCapacity(profile, date).minutes,
               scheduled: scheduledByDate[date] ?? 0,
             ),
-          const SizedBox(height: 8),
+          const SizedBox(height: PlannerSpace.md),
+          const _PanelDivider(),
+          const SizedBox(height: PlannerSpace.sm),
           PlannerStat(
             label: '最近 7 天实际用时',
             value: duration(recentActual),
@@ -409,22 +474,16 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
           ),
           if (assumption.isNotEmpty)
             Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: Text(
-                '容量口径：$assumption',
-                style: const TextStyle(
-                  color: PlannerColors.muted,
-                  fontSize: 12,
-                ),
-              ),
+              padding: const EdgeInsets.only(top: PlannerSpace.xs),
+              child: Text('容量口径：$assumption', style: _metaStyle),
             ),
-          const SizedBox(height: 12),
+          const SizedBox(height: PlannerSpace.md),
           Align(
             alignment: Alignment.centerLeft,
             child: OutlinedButton.icon(
               key: const Key('adjust-capacity-edit'),
               onPressed: _editCapacity,
-              icon: const Icon(Icons.tune_outlined, size: 18),
+              icon: const Icon(Icons.tune_outlined, size: 16),
               label: const Text('调整可用时间'),
             ),
           ),
@@ -456,46 +515,53 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
     final enabled = snapshot.editable && !ended && !_applying;
     return PlannerPanel(
       title: '一键调整',
-      trailing: Text(
-        ended ? '本期规划周期已结束' : 'AI 审查目标所需时长与当前计划是否匹配',
-        style: const TextStyle(color: PlannerColors.muted, fontSize: 12),
-      ),
+      subtitle: ended ? '本期规划周期已结束' : 'AI 审查目标所需时长与当前计划是否匹配',
+      padding: const EdgeInsets.all(18),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Text(
             '本次规划周期：$start 至 $end',
             key: const Key('adjust-cycle-range'),
-            style: tabularFigures.copyWith(fontWeight: FontWeight.w600),
+            style: tabularFigures.copyWith(
+              fontSize: 13,
+              height: 1.5,
+              fontWeight: FontWeight.w600,
+            ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: PlannerSpace.md),
           PlannerStat(label: '剩余天数', value: ended ? '已结束' : '$remainingDays 天'),
           PlannerStat(label: '待安排事项', value: '${pendingTasks.length} 个'),
           PlannerStat(
             label: '剩余工作量',
             value: duration(metrics.remainingMinutes),
           ),
-          const SizedBox(height: 8),
           if (ended) ...[
+            const SizedBox(height: PlannerSpace.md),
             const PlannerNotice(
               '本期规划周期已结束，请先在今日页继续安排下一周期。',
               tone: PlannerNoticeTone.warning,
             ),
-            const SizedBox(height: 8),
           ],
+          const SizedBox(height: PlannerSpace.md),
+          const _PanelDivider(),
+          const SizedBox(height: PlannerSpace.md),
           const Text(
             'AI 会审查目标所需时长与当前计划是否匹配，必要时调整周期、强度和工作量，'
             '可能需要 1–2 分钟。历史日期、已完成安排和有实际用时的记录'
             '保持不变；事项范围与真实截止日期不会被改写。',
-            style: TextStyle(color: PlannerColors.muted, fontSize: 12),
+            style: _bodyStyle,
           ),
-          const SizedBox(height: 12),
+          const SizedBox(height: PlannerSpace.lg),
           SizedBox(
-            height: 48,
+            height: 44,
             child: FilledButton.icon(
               key: const Key('adjust-apply'),
               onPressed: enabled ? _applyAdjustment : null,
-              icon: Icon(_applying ? Icons.hourglass_top : Icons.auto_fix_high),
+              icon: Icon(
+                _applying ? Icons.hourglass_top : Icons.auto_fix_high,
+                size: 18,
+              ),
               label: Text(_applying ? 'AI 正在调整…' : '一键调整后续计划'),
             ),
           ),
@@ -503,6 +569,18 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
       ),
     );
   }
+}
+
+/// 面板内部的发丝分隔线：比默认 Divider 更薄，避免密集列表出现重线条。
+class _PanelDivider extends StatelessWidget {
+  const _PanelDivider();
+
+  @override
+  Widget build(BuildContext context) => Divider(
+    height: 1,
+    thickness: plannerHairline(context),
+    color: PlannerColors.border,
+  );
 }
 
 /// 画像中的一段文字信息：标签在上、值在下，长文本自然换行，窄屏不横向溢出。
@@ -514,21 +592,43 @@ class _ProfileField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.only(bottom: 8),
+    padding: const EdgeInsets.only(bottom: 10),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          label,
-          style: const TextStyle(color: PlannerColors.muted, fontSize: 12),
-        ),
-        const SizedBox(height: 2),
+        Text(label, style: _labelStyle),
+        const SizedBox(height: 3),
         Text(
           value,
-          style: const TextStyle(fontWeight: FontWeight.w500, height: 1.35),
+          style: const TextStyle(
+            fontSize: 13.5,
+            height: 1.55,
+            fontWeight: FontWeight.w500,
+          ),
         ),
       ],
     ),
+  );
+}
+
+/// 某一天：可用净分钟与已经排入的分钟；已排超过可用时用橙色提示。
+class _DayCapacityStat extends StatelessWidget {
+  const _DayCapacityStat({
+    required this.date,
+    required this.available,
+    required this.scheduled,
+    super.key,
+  });
+
+  final String date;
+  final int available;
+  final int scheduled;
+
+  @override
+  Widget build(BuildContext context) => PlannerStat(
+    label: '${monthDayLabel(date)} ${weekdayLabel(date)}',
+    value: '可排 ${duration(available)} · 已排 ${duration(scheduled)}',
+    tone: scheduled > available ? PlannerColors.orange : null,
   );
 }
 
@@ -554,109 +654,52 @@ class _TaskProgressRow extends StatelessWidget {
     final deadline = task.deadline.isEmpty
         ? '$dateLabel 未设置'
         : '$dateLabel ${task.deadline}';
+    final meta = [
+      if (tagNames.isNotEmpty) tagNames.join('、'),
+      statusLabels[task.status] ?? '进行中',
+    ].join(' · ');
     return Padding(
-      padding: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(vertical: 10),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Wrap(
             alignment: WrapAlignment.spaceBetween,
             crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 8,
+            spacing: PlannerSpace.sm,
             runSpacing: 2,
             children: [
               Text(
                 task.title,
                 key: Key('adjust-task-title-${task.id}'),
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              Text(
-                [
-                  if (tagNames.isNotEmpty) tagNames.join('、'),
-                  statusLabels[task.status] ?? '进行中',
-                ].join(' · '),
                 style: const TextStyle(
-                  color: PlannerColors.muted,
-                  fontSize: 12,
+                  fontSize: 13.5,
+                  height: 1.45,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
+              Text(meta, style: _metaStyle),
             ],
           ),
-          const SizedBox(height: 4),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(3),
-            child: LinearProgressIndicator(
-              value: ratio,
-              minHeight: 6,
-              backgroundColor: PlannerColors.border,
-              valueColor: const AlwaysStoppedAnimation<Color>(
-                PlannerColors.blue,
-              ),
-              semanticsLabel: '${task.title}完成度',
-              semanticsValue: '$percent%',
-            ),
+          const SizedBox(height: 6),
+          TimeProgressTrack(
+            planned: estimated,
+            actual: completed,
+            color: PlannerColors.blue,
+            semanticsLabel: '${task.title}完成度',
           ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 5),
           Wrap(
-            spacing: 12,
+            spacing: PlannerSpace.md,
             runSpacing: 2,
             children: [
               Text(
                 '完成 ${duration(completed)} / 预算 ${duration(estimated)} · '
                 '$percent%',
-                style: tabularFigures.copyWith(fontSize: 12),
+                style: tabularFigures.copyWith(fontSize: 12.5),
               ),
-              Text(
-                deadline,
-                style: const TextStyle(
-                  color: PlannerColors.muted,
-                  fontSize: 12,
-                ),
-              ),
+              Text(deadline, style: _metaStyle),
             ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-/// 某一天：可用净分钟与已经排入的分钟；已排超过可用时用橙色提示。
-class _DayCapacityRow extends StatelessWidget {
-  const _DayCapacityRow({
-    required this.date,
-    required this.available,
-    required this.scheduled,
-    super.key,
-  });
-
-  final String date;
-  final int available;
-  final int scheduled;
-
-  @override
-  Widget build(BuildContext context) {
-    final over = scheduled > available;
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 3),
-      child: Row(
-        children: [
-          SizedBox(
-            width: 108,
-            child: Text(
-              '${monthDayLabel(date)} ${weekdayLabel(date)}',
-              style: tabularFigures.copyWith(fontSize: 12),
-            ),
-          ),
-          Expanded(
-            child: Text(
-              '可排 ${duration(available)} · 已排 ${duration(scheduled)}',
-              textAlign: TextAlign.right,
-              style: tabularFigures.copyWith(
-                fontSize: 12,
-                color: over ? PlannerColors.orange : PlannerColors.muted,
-              ),
-            ),
           ),
         ],
       ),

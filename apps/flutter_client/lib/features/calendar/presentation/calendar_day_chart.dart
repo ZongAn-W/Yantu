@@ -47,24 +47,24 @@ class _CalendarDayChartState extends State<CalendarDayChart> {
     return PlannerPanel(
       key: const ValueKey('calendar-day-chart'),
       title: widget.showTitle ? widget.view.label : null,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (!widget.showTitle) CalendarDayTotals(day: day),
           if (day.items.isEmpty)
             const Padding(
-              padding: EdgeInsets.symmetric(vertical: 56),
+              padding: EdgeInsets.symmetric(vertical: 44),
               child: Text(
                 '当天没有学习计划或学习记录',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: PlannerColors.muted),
+                style: TextStyle(fontSize: 13, color: PlannerColors.muted),
               ),
             )
           else ...[
             if (!widget.showTitle) const SizedBox(height: 14),
             _EncodingKey(day: day),
-            const SizedBox(height: 12),
+            const SizedBox(height: 14),
             switch (widget.view) {
               CalendarView.growth => _GrowthChart(
                 day: day,
@@ -94,27 +94,41 @@ class CalendarDayTotals extends StatelessWidget {
   final int? capacityMinutes;
 
   @override
-  Widget build(BuildContext context) => Wrap(
-    spacing: 20,
-    runSpacing: 4,
-    children: [
-      Text(
-        '计划 ${duration(day.plannedMinutes)}',
-        key: const ValueKey('calendar-planned-total'),
-        style: tabularFigures.copyWith(color: PlannerColors.muted),
-      ),
-      Text(
-        '实学 ${duration(day.actualMinutes)}',
-        key: const ValueKey('calendar-actual-total'),
-        style: tabularFigures.copyWith(fontWeight: FontWeight.w600),
-      ),
-      if (capacityMinutes != null)
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 2),
+    child: Wrap(
+      spacing: 22,
+      runSpacing: 6,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
         Text(
-          '容量 ${duration(capacityMinutes!)}',
-          key: const ValueKey('calendar-capacity-total'),
-          style: tabularFigures.copyWith(color: PlannerColors.muted),
+          '计划 ${duration(day.plannedMinutes)}',
+          key: const ValueKey('calendar-planned-total'),
+          style: tabularFigures.copyWith(
+            fontSize: 12.5,
+            color: PlannerColors.muted,
+          ),
         ),
-    ],
+        Text(
+          '实学 ${duration(day.actualMinutes)}',
+          key: const ValueKey('calendar-actual-total'),
+          style: tabularFigures.copyWith(
+            fontSize: 13,
+            fontWeight: FontWeight.w600,
+            color: PlannerColors.text,
+          ),
+        ),
+        if (capacityMinutes != null)
+          Text(
+            '容量 ${duration(capacityMinutes!)}',
+            key: const ValueKey('calendar-capacity-total'),
+            style: tabularFigures.copyWith(
+              fontSize: 12.5,
+              color: PlannerColors.subtle,
+            ),
+          ),
+      ],
+    ),
   );
 }
 
@@ -132,6 +146,7 @@ class _EncodingKey extends StatelessWidget {
     return Wrap(
       spacing: 14,
       runSpacing: 7,
+      crossAxisAlignment: WrapCrossAlignment.center,
       children: [
         const _EncodingSwatch(label: '计划参照'),
         for (final kind in CalendarEffortKind.values)
@@ -142,6 +157,7 @@ class _EncodingKey extends StatelessWidget {
   }
 }
 
+/// Small dot plus 11.5 px label: colour stays an accent, never a full bar.
 class _EncodingSwatch extends StatelessWidget {
   const _EncodingSwatch({required this.label, this.kind});
 
@@ -153,16 +169,26 @@ class _EncodingSwatch extends StatelessWidget {
     mainAxisSize: MainAxisSize.min,
     children: [
       ExcludeSemantics(
-        child: SizedBox(
-          width: 18,
-          height: 12,
-          child: CustomPaint(painter: _SwatchPainter(kind)),
+        child: Container(
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: kind == null ? PlannerColors.blueSoft : _kindColor(kind!),
+            border: kind == null
+                ? Border.all(color: PlannerColors.blue.withValues(alpha: .55))
+                : null,
+          ),
         ),
       ),
       const SizedBox(width: 5),
       Text(
         label,
-        style: const TextStyle(fontSize: 11, color: PlannerColors.muted),
+        style: const TextStyle(
+          fontSize: 11.5,
+          height: 1.35,
+          color: PlannerColors.muted,
+        ),
       ),
     ],
   );
@@ -201,7 +227,10 @@ class _ChartItemLabelState extends State<_ChartItemLabel> {
   Widget build(BuildContext context) {
     final item = widget.item;
     final compact = widget.compact;
-    final color = _itemColor(item);
+    final accent = widget.foreground ?? _itemAccent(item);
+    final background =
+        widget.background ??
+        Color.alphaBlend(accent.withValues(alpha: .07), PlannerColors.surface);
     void inspect() {
       widget.onSelect();
       WidgetsBinding.instance.addPostFrameCallback(
@@ -211,42 +240,48 @@ class _ChartItemLabelState extends State<_ChartItemLabel> {
 
     final child = DecoratedBox(
       decoration: BoxDecoration(
-        color: widget.background,
-        borderRadius: BorderRadius.circular(compact ? 3 : 5),
+        color: background,
+        borderRadius: BorderRadius.circular(compact ? 3 : 4),
+        border: Border.all(color: accent.withValues(alpha: .24)),
       ),
-      child: Padding(
-        padding: EdgeInsets.symmetric(
-          horizontal: compact ? 2 : 5,
-          vertical: compact ? 1 : 3,
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding: EdgeInsets.only(top: compact ? 4 : 5, right: 4),
-              child: DecoratedBox(
-                key: ValueKey('calendar-chart-color-${item.id}'),
-                decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-                child: const SizedBox.square(dimension: 6),
-              ),
-            ),
-            Flexible(
-              child: Text(
-                _chartTitle(item.title),
-                key: ValueKey('calendar-chart-label-text-${item.id}'),
-                maxLines: widget.maxLines,
-                overflow: TextOverflow.ellipsis,
-                softWrap: true,
-                style: TextStyle(
-                  color: widget.foreground ?? color,
-                  fontSize: compact ? 11 : 12,
-                  fontWeight: FontWeight.w600,
-                  height: 1.15,
+      child: ClipRect(
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: compact ? 3 : 5,
+            vertical: compact ? 1 : 3,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: EdgeInsets.only(top: compact ? 4 : 5, right: 4),
+                child: DecoratedBox(
+                  key: ValueKey('calendar-chart-color-${item.id}'),
+                  decoration: BoxDecoration(
+                    color: accent,
+                    shape: BoxShape.circle,
+                  ),
+                  child: const SizedBox.square(dimension: 6),
                 ),
               ),
-            ),
-          ],
+              Flexible(
+                child: Text(
+                  _chartTitle(item.title),
+                  key: ValueKey('calendar-chart-label-text-${item.id}'),
+                  maxLines: widget.maxLines,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: true,
+                  style: TextStyle(
+                    color: accent,
+                    fontSize: compact ? 11 : 12,
+                    fontWeight: FontWeight.w600,
+                    height: 1.15,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -291,24 +326,31 @@ String _itemDescription(CalendarDayItem item) =>
     '${item.title}${item.tagNames.isEmpty ? '' : '，标签 ${item.tagNames.join('、')}'}，计划 ${duration(item.plannedMinutes)}，实学 ${duration(item.actualMinutes)}。'
     '${item.efforts.isEmpty ? '尚无学习记录' : item.efforts.map((effort) => '${effort.kind.label} ${duration(effort.minutes)}').join('，')}';
 
-Color _itemColor(CalendarDayItem item) {
-  // Keep color tied to the task identity, never to a tag: one task may have
-  // several tags, but it appears exactly once in this chart.
-  final seed = item.id;
-  var hash = 0;
-  for (final code in seed.codeUnits) {
-    hash = (hash * 31 + code) & 0x7fffffff;
+/// Semantic accent of one owner: planned work is ink-blue, study recorded
+/// without a plan is amber, and an owner with neither falls back to the muted
+/// line colour. Item identity no longer creates a rainbow palette.
+Color _itemAccent(CalendarDayItem item) {
+  if (item.plannedMinutes > 0 || item.scheduledMinutes > 0) {
+    return PlannerColors.blue;
   }
-  const palette = [
-    Color(0xff537c87),
-    Color(0xff7d629f),
-    Color(0xffa06145),
-    Color(0xff537e52),
-    Color(0xff985c78),
-    Color(0xff66739b),
-  ];
-  return palette[hash % palette.length];
+  if (item.actualMinutes > 0) return PlannerColors.orange;
+  return PlannerColors.subtle;
 }
+
+/// Colour of one recorded-effort kind. The hatch pattern still separates
+/// "已有事项加学" from "当天未排程的事项"; colour alone never carries meaning.
+Color _kindColor(CalendarEffortKind kind) => switch (kind) {
+  CalendarEffortKind.scheduled => PlannerColors.blue,
+  CalendarEffortKind.extra => PlannerColors.orange,
+  CalendarEffortKind.unscheduled => PlannerColors.orange,
+  CalendarEffortKind.legacyUnknown => PlannerColors.subtle,
+};
+
+/// Fill under a planned reference block.
+Color _planFill() => PlannerColors.blueSoft;
+
+/// Hairline-accent of an effort segment.
+Color _effortColor(CalendarEffortKind kind) => _kindColor(kind);
 
 String _chartTitle(String title) {
   return title.replaceAll(RegExp(r'\s+'), ' ').trim();
@@ -325,37 +367,46 @@ class _GrowthChart extends StatelessWidget {
   final String? selectedId;
   final ValueChanged<CalendarDayItem> onSelect;
 
+  static const double _rowHeight = 40;
+  static const double _labelWidth = 112;
+
   @override
   Widget build(BuildContext context) => Column(
     children: [
       Padding(
-        padding: const EdgeInsets.only(left: 112),
+        padding: const EdgeInsets.only(left: _labelWidth, bottom: 2),
         child: _MinuteAxis(scale: day.scaleMinutes),
       ),
       for (var index = 0; index < day.items.length; index++)
-        Row(
-          children: [
-            SizedBox(
-              width: 112,
-              child: _ChartItemLabel(
-                item: day.items[index],
-                compact: true,
-                onSelect: () => onSelect(day.items[index]),
-              ),
-            ),
-            Expanded(
-              child: _InteractiveGraphic(
-                height: 44,
-                hit: (_, _) => day.items[index],
-                onSelect: onSelect,
-                painter: _GrowthPainter(
-                  item: day.items[index],
-                  scale: day.scaleMinutes,
-                  selected: selectedId == day.items[index].id,
+        SizedBox(
+          height: _rowHeight,
+          child: Row(
+            children: [
+              SizedBox(
+                width: _labelWidth,
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: _ChartItemLabel(
+                    item: day.items[index],
+                    compact: true,
+                    onSelect: () => onSelect(day.items[index]),
+                  ),
                 ),
               ),
-            ),
-          ],
+              Expanded(
+                child: _InteractiveGraphic(
+                  height: _rowHeight,
+                  hit: (_, _) => day.items[index],
+                  onSelect: onSelect,
+                  painter: _GrowthPainter(
+                    item: day.items[index],
+                    scale: day.scaleMinutes,
+                    selected: selectedId == day.items[index].id,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
     ],
   );
@@ -373,27 +424,28 @@ class _GrowthPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    for (final fraction in const [0.0, .25, .5, .75, 1.0]) {
-      canvas.drawLine(
-        Offset(size.width * fraction, 0),
-        Offset(size.width * fraction, size.height),
-        Paint()..color = PlannerColors.border.withValues(alpha: .45),
-      );
-    }
-    final color = _itemColor(item);
+    final hairline = 1.0;
+    // One hairline baseline only: vertical gridlines would compete with the
+    // tracks and are intentionally gone.
+    canvas.drawLine(
+      Offset(0, size.height - hairline),
+      Offset(size.width, size.height - hairline),
+      Paint()..color = PlannerColors.border.withValues(alpha: .7),
+    );
     if (item.plannedMinutes > 0) {
       final rect = Rect.fromLTWH(
         0,
-        9,
+        7,
         size.width * item.plannedMinutes / scale,
         26,
       );
-      canvas.drawRect(rect, Paint()..color = color.withValues(alpha: .13));
-      canvas.drawRect(
+      _fillRRect(canvas, rect, _planFill(), radius: 4);
+      _strokeRRect(
+        canvas,
         rect,
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..color = color.withValues(alpha: .42),
+        PlannerColors.blue.withValues(alpha: .45),
+        radius: 4,
+        width: hairline,
       );
     }
     var left = 0.0;
@@ -401,19 +453,23 @@ class _GrowthPainter extends CustomPainter {
       final width = size.width * effort.minutes / scale;
       _drawEffort(
         canvas,
-        Rect.fromLTWH(left, 14, width, 16),
-        color,
+        Rect.fromLTWH(left, 13, width, 14),
+        _effortColor(effort.kind),
         effort.kind,
+        radius: 3,
       );
       left += width;
     }
     if (selected) {
-      canvas.drawRect(
-        Rect.fromLTWH(0, 5, size.width, 34),
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(0, 2, size.width, size.height - 2),
+          const Radius.circular(5),
+        ),
         Paint()
           ..style = PaintingStyle.stroke
-          ..color = color
-          ..strokeWidth = 1.5,
+          ..color = PlannerColors.blue
+          ..strokeWidth = 2,
       );
     }
   }
@@ -619,7 +675,11 @@ List<_RiverLabelSpec> _riverLabelSpecs(
     if (segmentWidth > 0) {
       final segmentCenter = segmentLeft + segmentWidth / 2;
       final callout = segmentWidth < minInsideWidth;
-      final labelWidth = callout ? calloutWidth : math.max(24.0, segmentWidth);
+      // Inside labels keep a 2 px gutter from the neighbouring block so two
+      // adjacent owners can never read as one run of text.
+      final labelWidth = callout
+          ? calloutWidth
+          : math.max(24.0, segmentWidth - 2);
       final left = callout
           ? (segmentCenter - labelWidth / 2).clamp(0.0, width - labelWidth)
           : segmentLeft;
@@ -642,12 +702,8 @@ List<_RiverLabelSpec> _riverLabelSpecs(
               layout.topBand + (lane == _RiverLabelLane.planned ? 46 : 164),
           lane: lane,
           callout: callout,
-          foreground: callout
-              ? _itemColor(item)
-              : (lane == _RiverLabelLane.planned
-                    ? _itemColor(item)
-                    : Colors.white),
-          background: callout ? _itemColor(item).withValues(alpha: .10) : null,
+          foreground: _itemAccent(item),
+          background: null,
         ),
       );
     }
@@ -691,7 +747,7 @@ class _RiverLabelLeaderPainter extends CustomPainter {
         ..lineTo(segmentAnchor.dx, segmentAnchor.dy);
       canvas.drawPath(
         path,
-        paint..color = _itemColor(spec.item).withValues(alpha: .5),
+        paint..color = _itemAccent(spec.item).withValues(alpha: .45),
       );
     }
   }
@@ -712,13 +768,16 @@ class _RiverPainter extends CustomPainter {
     const top = 46.0;
     const bottom = 164.0;
     const height = 28.0;
-    for (final fraction in const [0.0, .25, .5, .75, 1.0]) {
-      canvas.drawLine(
-        Offset(size.width * fraction, top - 8),
-        Offset(size.width * fraction, bottom + height + 8),
-        Paint()..color = PlannerColors.border.withValues(alpha: .45),
-      );
-    }
+    const radius = 5.0;
+    // Two hairline section rules only: vertical gridlines are gone so the
+    // banks read as ink on paper, not as a screenshot of a spreadsheet.
+    final rule = Paint()..color = PlannerColors.border.withValues(alpha: .8);
+    canvas.drawLine(const Offset(0, top), Offset(size.width, top), rule);
+    canvas.drawLine(
+      Offset(0, bottom + height),
+      Offset(size.width, bottom + height),
+      rule,
+    );
     var plannedLeft = 0.0;
     var actualLeft = 0.0;
     // Identical item order on both banks makes the original-study ribbons
@@ -726,7 +785,6 @@ class _RiverPainter extends CustomPainter {
     for (final item in day.items) {
       final original =
           math.min(item.scheduledMinutes, item.plannedMinutes) * unit;
-      final color = _itemColor(item);
       if (original > 0) {
         final path = Path()
           ..moveTo(plannedLeft, top + height)
@@ -744,7 +802,9 @@ class _RiverPainter extends CustomPainter {
         canvas.drawPath(
           path,
           Paint()
-            ..color = color.withValues(alpha: selectedId == item.id ? .3 : .14),
+            ..color = PlannerColors.blue.withValues(
+              alpha: selectedId == item.id ? .16 : .07,
+            ),
         );
       }
       plannedLeft += item.plannedMinutes * unit;
@@ -752,19 +812,19 @@ class _RiverPainter extends CustomPainter {
     }
     plannedLeft = 0;
     actualLeft = 0;
-    for (var index = 0; index < day.items.length; index++) {
-      final item = day.items[index];
-      final color = _itemColor(item);
+    for (final item in day.items) {
       final plannedWidth = item.plannedMinutes * unit;
       if (plannedWidth > 0) {
         final rect = Rect.fromLTWH(plannedLeft, top, plannedWidth, height);
-        canvas.drawRect(rect, Paint()..color = color.withValues(alpha: .16));
-        canvas.drawRect(
+        _fillRRect(canvas, rect, _planFill(), radius: radius);
+        _strokeRRect(
+          canvas,
           rect,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..color = color.withValues(alpha: .45)
-            ..strokeWidth = selectedId == item.id ? 2 : 1,
+          PlannerColors.blue.withValues(
+            alpha: selectedId == item.id ? .9 : .35,
+          ),
+          radius: radius,
+          width: selectedId == item.id ? 2 : 1,
         );
       }
       var effortLeft = actualLeft;
@@ -773,23 +833,35 @@ class _RiverPainter extends CustomPainter {
         _drawEffort(
           canvas,
           Rect.fromLTWH(effortLeft, bottom, width, height),
-          color,
+          _effortColor(effort.kind),
           effort.kind,
+          radius: radius,
         );
         effortLeft += width;
       }
+      // A hairline gap keeps neighbouring owners readable even when they share
+      // the same semantic colour.
+      if (item.actualMinutes > 0 && actualLeft > 0) {
+        canvas.drawLine(
+          Offset(actualLeft, bottom + 1),
+          Offset(actualLeft, bottom + height - 1),
+          Paint()
+            ..color = Colors.white.withValues(alpha: .8)
+            ..strokeWidth = 1,
+        );
+      }
       if (selectedId == item.id && item.actualMinutes > 0) {
-        canvas.drawRect(
+        _strokeRRect(
+          canvas,
           Rect.fromLTWH(
             actualLeft,
             bottom - 3,
             item.actualMinutes * unit,
             height + 6,
           ),
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..color = color
-            ..strokeWidth = 1.5,
+          PlannerColors.blue,
+          radius: radius + 2,
+          width: 2,
         );
       }
       plannedLeft += plannedWidth;
@@ -798,16 +870,18 @@ class _RiverPainter extends CustomPainter {
     _paintText(
       canvas,
       '计划',
-      const Offset(0, 24),
+      const Offset(0, 25),
       maxWidth: size.width,
-      fontSize: 12,
+      fontSize: 11,
+      color: PlannerColors.subtle,
     );
     _paintText(
       canvas,
       '实学',
-      const Offset(0, 142),
+      const Offset(0, 143),
       maxWidth: size.width,
-      fontSize: 12,
+      fontSize: 11,
+      color: PlannerColors.subtle,
     );
     if (day.plannedMinutes == 0) {
       _paintText(
@@ -815,6 +889,7 @@ class _RiverPainter extends CustomPainter {
         '无当日计划',
         const Offset(0, top + 6),
         maxWidth: size.width,
+        color: PlannerColors.subtle,
       );
     }
     if (day.actualMinutes == 0) {
@@ -823,6 +898,7 @@ class _RiverPainter extends CustomPainter {
         '尚无学习记录',
         const Offset(0, bottom + 6),
         maxWidth: size.width,
+        color: PlannerColors.subtle,
       );
     }
   }
@@ -911,7 +987,7 @@ class _MinuteAxis extends StatelessWidget {
   @override
   Widget build(BuildContext context) => ExcludeSemantics(
     child: SizedBox(
-      height: 27,
+      height: 22,
       width: double.infinity,
       child: CustomPaint(painter: _MinuteAxisPainter(scale)),
     ),
@@ -924,7 +1000,14 @@ class _MinuteAxisPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    for (final fraction in const [0.0, .25, .5, .75, 1.0]) {
+    // Narrow plots keep only the readable extremes; five labels collide below
+    // ~420 px, which is exactly the 320–390 px mobile range.
+    final fractions = size.width < 220
+        ? const [0.0, 1.0]
+        : size.width < 420
+        ? const [0.0, .5, 1.0]
+        : const [0.0, .25, .5, .75, 1.0];
+    for (final fraction in fractions) {
       final value = (scale * fraction)
           .toStringAsFixed(2)
           .replaceFirst(RegExp(r'\.?0+$'), '');
@@ -932,7 +1015,10 @@ class _MinuteAxisPainter extends CustomPainter {
       final label = TextPainter(
         text: TextSpan(
           text: text,
-          style: const TextStyle(fontSize: 11, color: PlannerColors.muted),
+          style: tabularFigures.copyWith(
+            fontSize: 11,
+            color: PlannerColors.subtle,
+          ),
         ),
         textDirection: TextDirection.ltr,
       )..layout(maxWidth: 70);
@@ -943,7 +1029,7 @@ class _MinuteAxisPainter extends CustomPainter {
             0.0,
             math.max(0, size.width - label.width),
           ),
-          6,
+          5,
         ),
       );
     }
@@ -954,43 +1040,43 @@ class _MinuteAxisPainter extends CustomPainter {
       scale != oldDelegate.scale;
 }
 
-class _SwatchPainter extends CustomPainter {
-  const _SwatchPainter(this.kind);
-  final CalendarEffortKind? kind;
-  final Color color = PlannerColors.blue;
+void _fillRRect(Canvas canvas, Rect rect, Color color, {double radius = 4}) {
+  if (rect.isEmpty) return;
+  canvas.drawRRect(
+    RRect.fromRectAndRadius(rect, Radius.circular(radius)),
+    Paint()..color = color,
+  );
+}
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    final rect = Offset.zero & size;
-    if (kind == null) {
-      canvas.drawRect(rect, Paint()..color = color.withValues(alpha: .13));
-      canvas.drawRect(
-        rect.deflate(.5),
-        Paint()
-          ..color = color.withValues(alpha: .5)
-          ..style = PaintingStyle.stroke,
-      );
-    } else {
-      _drawEffort(canvas, rect, color, kind!);
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _SwatchPainter oldDelegate) =>
-      kind != oldDelegate.kind || color != oldDelegate.color;
+void _strokeRRect(
+  Canvas canvas,
+  Rect rect,
+  Color color, {
+  double radius = 4,
+  double width = 1,
+}) {
+  if (rect.isEmpty) return;
+  canvas.drawRRect(
+    RRect.fromRectAndRadius(rect, Radius.circular(radius)),
+    Paint()
+      ..style = PaintingStyle.stroke
+      ..color = color
+      ..strokeWidth = width,
+  );
 }
 
 void _drawEffort(
   Canvas canvas,
   Rect rect,
   Color color,
-  CalendarEffortKind kind,
-) {
+  CalendarEffortKind kind, {
+  double radius = 4,
+}) {
   if (rect.isEmpty) return;
-  canvas.drawRect(rect, Paint()..color = color);
+  _fillRRect(canvas, rect, color, radius: radius);
   if (kind != CalendarEffortKind.scheduled) {
     canvas.save();
-    canvas.clipRect(rect);
+    canvas.clipRRect(RRect.fromRectAndRadius(rect, Radius.circular(radius)));
     _drawPattern(canvas, rect, color, kind);
     canvas.restore();
   }
@@ -1003,8 +1089,8 @@ void _drawPattern(
   CalendarEffortKind kind,
 ) {
   final paint = Paint()
-    ..color = Colors.white.withValues(alpha: .7)
-    ..strokeWidth = 1.3;
+    ..color = Colors.white.withValues(alpha: .68)
+    ..strokeWidth = 1.15;
   final reverse = kind == CalendarEffortKind.unscheduled;
   if (kind == CalendarEffortKind.legacyUnknown) {
     for (var y = rect.top + 2; y < rect.bottom; y += 5) {

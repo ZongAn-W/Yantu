@@ -133,7 +133,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
         })
       ).json().data;
       expect(native.tasks[0].title).toBe(data.tasks[0].title);
-      expect(native.subjects[0].id).toMatch(/^[a-f0-9-]{36}$/);
+      expect(native.tags[0].id).toMatch(/^[a-f0-9-]{36}$/);
       expect(native.logs[0].minutes).toBe(35);
       expect(pulled.data.fixed_events).toEqual(data.fixed_events);
       expect(pulled.data.replan_runs).toEqual(data.replan_runs);
@@ -661,11 +661,11 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
     it("removes vanished projection rows and keeps the remaining history", async () => {
       const user = await account(),
         data = await fixture(user.id);
-      const extraSubject = { ...data.subjects[0], id: randomUUID(), name: "第二门课" };
+      const extraTag = { ...data.tags[0], id: randomUUID(), name: "第二个标签" };
       const extraTask = {
         ...data.tasks[0],
         id: randomUUID(),
-        subject_id: extraSubject.id,
+        tag_ids: [extraTag.id],
         title: "第二个事项",
       };
       const extraBlock = { ...data.blocks[0], id: randomUUID(), task_id: extraTask.id, date: "2026-12-01" };
@@ -676,7 +676,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
         task_id: extraTask.id,
         date: "2026-12-01",
       };
-      data.subjects = [...data.subjects, extraSubject];
+      data.tags = [...data.tags, extraTag];
       data.tasks = [...data.tasks, extraTask];
       data.blocks = [...data.blocks, extraBlock];
       data.logs = [...data.logs, extraLog];
@@ -690,7 +690,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       const first = await put(data, null, 0);
       expect(first.statusCode, first.body).toBe(200);
       const reduced = structuredClone(first.json().data);
-      reduced.subjects = reduced.subjects.filter((row: any) => row.id !== extraSubject.id);
+      reduced.tags = reduced.tags.filter((row: any) => row.id !== extraTag.id);
       reduced.tasks = reduced.tasks.filter((row: any) => row.id !== extraTask.id);
       reduced.blocks = reduced.blocks.filter((row: any) => row.id !== extraBlock.id);
       reduced.logs = reduced.logs.filter((row: any) => row.id !== extraLog.id);
@@ -703,14 +703,14 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
         blocks: number;
         logs: number;
       }>(
-        `select (select count(*)::int from courses where user_id=$1) as subjects,
+        `select (select count(*)::int from tags where user_id=$1) as tags,
                 (select count(*)::int from items where user_id=$1) as tasks,
                 (select count(*)::int from daily_plan_items where user_id=$1) as blocks,
                 (select count(*)::int from study_logs where user_id=$1) as logs`,
         [user.id],
       );
       expect(counts.rows[0]).toEqual({
-        subjects: data.subjects.length - 1,
+        tags: data.tags.length - 1,
         tasks: data.tasks.length - 1,
         blocks: data.blocks.length - 1,
         logs: data.logs.length - 1,
