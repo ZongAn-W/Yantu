@@ -10,10 +10,8 @@ import '../features/dashboard/presentation/dashboard_page.dart';
 import '../features/onboarding/presentation/onboarding_page.dart';
 import '../features/planner/application/onboarding_controller.dart';
 import '../core/errors/app_failure.dart';
-import '../features/progress/presentation/progress_page.dart';
 import '../features/settings/presentation/settings_page.dart';
 import '../features/shell/app_shell.dart';
-import '../features/tasks/presentation/tasks_page.dart';
 
 /// Route paths shared with the Web client; they keep the same semantics in Flutter.
 abstract final class AppRoutes {
@@ -104,15 +102,13 @@ class _PlannerRouter {
       ),
       GoRoute(
         path: AppRoutes.tasks,
-        builder: (context, _) =>
-            const AppShell(selectedPath: AppRoutes.tasks, child: TasksPage()),
+        // 事项页已合并进「今日」页的下半部分；保留旧链接可用。
+        redirect: (context, state) => AppRoutes.today,
       ),
       GoRoute(
         path: AppRoutes.progress,
-        builder: (context, _) => const AppShell(
-          selectedPath: AppRoutes.progress,
-          child: ProgressPage(),
-        ),
+        // 进度页已并入「日历」栏目；保留旧链接可用。
+        redirect: (context, state) => AppRoutes.calendar,
       ),
       GoRoute(
         path: AppRoutes.adjust,

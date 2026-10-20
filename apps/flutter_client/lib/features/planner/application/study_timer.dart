@@ -312,6 +312,17 @@ class StudyTimer extends ChangeNotifier {
       var next = saved == null
           ? const _TimerState()
           : _TimerState.fromJson(saved);
+      // 临时学习已下线：先丢弃计时器本地状态里的临时学习会话，避免暂停/
+      // 检查点时再生成已失效的 ad-hoc 日志。
+      final purgedState = _withoutAdHocTimerData(next);
+      if (!identical(purgedState, next)) {
+        next = purgedState;
+        try {
+          await store.save(storageKey, next.toJson());
+        } catch (_) {
+          // 清理失败不阻塞进入工作台；后续保存会写入清理后的状态。
+        }
+      }
       var anchor = _monotonicNow();
       final active = next.active;
       if (active != null) {
@@ -339,6 +350,32 @@ class StudyTimer extends ChangeNotifier {
     }
     _updateTicker();
     _notify();
+  }
+
+  /// 丢弃本地计时状态中属于临时学习的活动计时、会话、时段与撤销标记。
+  _TimerState _withoutAdHocTimerData(_TimerState state) {
+    final active = state.active;
+    final hasAdHoc =
+        active?.adHocId != null ||
+        state.buckets.any((bucket) => bucket.adHocId != null) ||
+        state.sessions.any((session) => session.adHocId != null) ||
+        state.discards.any((discard) => discard.adHocId != null);
+    if (!hasAdHoc) return state;
+    return state.copyWith(
+      active: active?.adHocId == null ? active : null,
+      buckets: [
+        for (final bucket in state.buckets)
+          if (bucket.adHocId == null) bucket,
+      ],
+      sessions: [
+        for (final session in state.sessions)
+          if (session.adHocId == null) session,
+      ],
+      discards: [
+        for (final discard in state.discards)
+          if (discard.adHocId == null) discard,
+      ],
+    );
   }
 
   /// Starts the timer for an existing task.

@@ -77,20 +77,6 @@ create table if not exists items (
   updated_at timestamptz not null default now()
 );
 
--- 临时学习实体：名称即可开始计时，不伪造预算/截止日期，也不进入正式排程队列。
-create table if not exists ad_hoc_learnings (
-  id uuid primary key default gen_random_uuid(),
-  user_id uuid not null references users(id) on delete cascade,
-  title text not null check (title <> ''),
-  -- 可选分类/课程归属；课程删除后保留实体本身，只清除失效引用。
-  subject_id uuid references courses(id) on delete set null,
-  archived boolean not null default false,
-  -- 转为正式事项或关联已有事项后归档并记录目标事项；历史日志仍保留原引用。
-  converted_task_id uuid references items(id) on delete set null,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
 create table if not exists plan_versions (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references users(id) on delete cascade,
@@ -118,25 +104,21 @@ create table if not exists daily_plan_items (
 create table if not exists study_logs (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references users(id) on delete cascade,
-  -- 临时学习没有正式事项：item_id 可空，ad_hoc_id 指向临时学习实体。
-  item_id uuid references items(id) on delete cascade,
-  -- restrict：删除临时学习实体不能无声带走真实学习分钟；归档用 archived=true。
-  ad_hoc_id uuid references ad_hoc_learnings(id) on delete restrict,
+  -- 每条学习记录都归属一个正式事项；临时学习已在二期删除，不再允许空归属。
+  item_id uuid not null references items(id) on delete cascade,
   daily_plan_item_id uuid references daily_plan_items(id) on delete set null,
   date date not null,
   minutes integer not null check (minutes >= 0),
   -- 计时发生时的执行关系，与记录方式 source 正交；旧数据保留 legacy_unknown。
   relation text not null default 'legacy_unknown'
-    constraint study_logs_relation_check check (relation in ('scheduled','extra','ad_hoc','legacy_unknown')),
+    constraint study_logs_relation_check check (relation in ('scheduled','extra','legacy_unknown')),
   -- 同一次开始到暂停（含跨零点拆分）的稳定会话标识。
   session_id text,
   -- 原定学习开始时可计入该事项当日达成的额度（分钟）。
   quota_minutes integer
     constraint study_logs_quota_minutes_check check (quota_minutes is null or quota_minutes >= 0),
   feedback text not null default '',
-  created_at timestamptz not null default now(),
-  -- 每条记录必须能归属到正式事项或临时学习之一；转为正式事项后仍保留 ad_hoc_id。
-  constraint study_logs_owner_check check (num_nonnulls(item_id, ad_hoc_id) >= 1)
+  created_at timestamptz not null default now()
 );
 
 create table if not exists daily_reviews (
@@ -175,10 +157,6 @@ create table if not exists ai_jobs (
 
 create index if not exists daily_plan_user_date on daily_plan_items(user_id, date);
 create index if not exists logs_user_date on study_logs(user_id, date);
--- 旧库的 study_logs 可能还没有 ad_hoc_id 列（迁移会补），因此该部分索引只在
--- 迁移 202610200001 中创建，避免建库脚本在“迁移前”的数据库上失败。
-create index if not exists ad_hoc_learnings_user
-  on ad_hoc_learnings(user_id, archived, created_at);
 create index if not exists items_user_deadline on items(user_id, deadline);
 create index if not exists daily_plan_activity_instance
   on daily_plan_items(user_id, item_id, activity_instance_id)

@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets.dart';
 import '../../../shared/models/planner_models.dart';
+import '../../dashboard/presentation/today_scroll.dart';
 import '../../planner/application/planner_session.dart';
 import '../../planner/domain/capacity.dart' as capacity;
 import '../../planner/domain/planner_format.dart';
@@ -313,7 +314,7 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
           if (shown.isEmpty)
             const PlannerEmpty(
               message: '还没有学习事项。',
-              hint: '先完成学习目标访谈，再在事项管理中创建事项。',
+              hint: '先完成学习目标访谈，再在今日页「全部事项」中创建事项。',
               icon: Icons.list_alt_outlined,
             )
           else ...[
@@ -324,7 +325,7 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
               ),
             if (tasks.length > shown.length)
               Text(
-                '另有 ${tasks.length - shown.length} 个事项未展示，可在事项管理中查看。',
+                '另有 ${tasks.length - shown.length} 个事项未展示，可在今日页「全部事项」中查看。',
                 style: const TextStyle(
                   color: PlannerColors.muted,
                   fontSize: 12,
@@ -338,15 +339,18 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
             children: [
               OutlinedButton.icon(
                 key: const Key('adjust-progress-view'),
-                onPressed: () => context.go('/progress'),
+                onPressed: () => context.go('/calendar'),
                 icon: const Icon(Icons.bar_chart_outlined, size: 18),
                 label: const Text('查看完整进度'),
               ),
               OutlinedButton.icon(
                 key: const Key('adjust-tasks-manage'),
-                onPressed: () => context.go('/tasks'),
+                onPressed: () {
+                  TodayItemsScrollRequest.request();
+                  context.go('/');
+                },
                 icon: const Icon(Icons.list_alt_outlined, size: 18),
-                label: const Text('管理事项'),
+                label: const Text('查看全部事项'),
               ),
             ],
           ),

@@ -226,7 +226,7 @@ describe("buildAdjustmentContext", () => {
     expect(context.recent_execution.days).toHaveLength(7);
     expect(context.recent_execution.days.at(-1)).toEqual({
       date: "2026-10-18", planned_minutes: 60, actual_minutes: 0,
-      scheduled_minutes: 0, extra_minutes: 0, ad_hoc_minutes: 0,
+      scheduled_minutes: 0, extra_minutes: 0,
     });
     expect(context.recent_execution.days[5]).toMatchObject({
       date: "2026-10-17", planned_minutes: 120, actual_minutes: 90, scheduled_minutes: 90,

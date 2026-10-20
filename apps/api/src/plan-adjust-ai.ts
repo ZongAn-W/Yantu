@@ -110,25 +110,23 @@ function recentExecution(document: PlannerDocument, today: string) {
   const plannedByDate = new Map<string, number>();
   for (const block of document.blocks)
     plannedByDate.set(block.date, (plannedByDate.get(block.date) ?? 0) + block.duration_minutes);
-  type DayActual = { actual: number; scheduled: number; extra: number; ad_hoc: number };
+  type DayActual = { actual: number; scheduled: number; extra: number };
   const actualByDate = new Map<string, DayActual>();
   for (const log of document.logs) {
-    const day = actualByDate.get(log.date) ?? { actual: 0, scheduled: 0, extra: 0, ad_hoc: 0 };
+    const day = actualByDate.get(log.date) ?? { actual: 0, scheduled: 0, extra: 0 };
     day.actual += log.minutes;
     if (log.relation === "scheduled") day.scheduled += log.minutes;
     else if (log.relation === "extra") day.extra += log.minutes;
-    else if (log.relation === "ad_hoc") day.ad_hoc += log.minutes;
     actualByDate.set(log.date, day);
   }
   const day = (value: string) => {
-    const actual = actualByDate.get(value) ?? { actual: 0, scheduled: 0, extra: 0, ad_hoc: 0 };
+    const actual = actualByDate.get(value) ?? { actual: 0, scheduled: 0, extra: 0 };
     return {
       date: value,
       planned_minutes: plannedByDate.get(value) ?? 0,
       actual_minutes: actual.actual,
       scheduled_minutes: actual.scheduled,
       extra_minutes: actual.extra,
-      ad_hoc_minutes: actual.ad_hoc,
     };
   };
   const dates = (days: number) =>
@@ -137,7 +135,7 @@ function recentExecution(document: PlannerDocument, today: string) {
   const last14 = dates(14);
   const plannedIn = (window: string[]) => window.reduce((sum, value) => sum + (plannedByDate.get(value) ?? 0), 0);
   const actualIn = (window: string[]) => window.reduce((sum, value) => sum + (actualByDate.get(value)?.actual ?? 0), 0);
-  // 按课程统计近 14 天：计划来自 blocks，实际来自 logs；没有事项归属的临时学习单独按日展示。
+  // 按课程统计近 14 天：计划来自 blocks，实际来自 logs；所有日志都归属正式事项。
   const taskById = new Map(document.tasks.map((task) => [task.id, task]));
   const subjectActual = new Map<string, number>();
   const subjectPlanned = new Map<string, number>();

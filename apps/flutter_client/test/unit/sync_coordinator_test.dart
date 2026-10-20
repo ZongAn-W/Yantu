@@ -639,39 +639,12 @@ void main() {
       final coordinator = create();
       addTearDown(coordinator.dispose);
       await coordinator.initialize();
-      final owner = coordinator.data!.profile.userId;
       await coordinator.edit(
         (data) => data.copyWith(
           profile: data.profile.copyWith(
             capacityBasis: CapacityBasis.net,
             dateCapacityOverrides: {'2026-10-22': 0},
           ),
-          adHocLearnings: [
-            AdHocLearning(
-              id: 'adhoc-photo',
-              userId: owner,
-              title: '摄影构图',
-              createdAt: '2026-10-18T01:00:00.000Z',
-              updatedAt: '2026-10-18T01:00:00.000Z',
-            ),
-          ],
-          logs: [
-            ...data.logs,
-            TimeLog(
-              id: 'log-adhoc',
-              userId: owner,
-              taskId: null,
-              blockId: null,
-              date: '2026-10-17',
-              minutes: 20,
-              startedAt: '2026-10-18T01:00:00.000Z',
-              endedAt: '2026-10-18T01:00:00.000Z',
-              source: LogSource.timer,
-              relation: TimeLogRelation.adHoc,
-              sessionId: 'session-x',
-              adHocId: 'adhoc-photo',
-            ),
-          ],
         ),
       );
       // 旧客户端/旧服务端只写入了旧字段：它修改了无关设置并推进 revision。
@@ -684,109 +657,23 @@ void main() {
       expect(coordinator.status, SyncStatus.connected);
       expect(coordinator.conflicts, isEmpty);
       expect(coordinator.pending, isFalse);
-      expect(coordinator.data!.adHocLearnings.single.id, 'adhoc-photo');
+      expect(coordinator.data!.adHocLearnings, isEmpty);
       expect(coordinator.data!.profile.dateCapacityOverrides, {
         '2026-10-22': 0,
       });
-      expect(
-        coordinator.data!.logs.any((log) => log.id == 'log-adhoc'),
-        isTrue,
-      );
-      expect(remote.data!.adHocLearnings.single.id, 'adhoc-photo');
+      expect(remote.data!.adHocLearnings, isEmpty);
       expect(remote.data!.profile.dateCapacityOverrides, {'2026-10-22': 0});
       expect(remote.data!.profile.capacityBasis, CapacityBasis.net);
       expect(remote.data!.profile.targetSchool, '云端旧格式修改');
-      final uploaded = remote.data!.logs.firstWhere(
-        (log) => log.id == 'log-adhoc',
-      );
-      expect(uploaded.taskId, isNull);
-      expect(uploaded.adHocId, 'adhoc-photo');
-      expect(uploaded.sessionId, 'session-x');
-      expect(uploaded.relation, TimeLogRelation.adHoc);
     },
   );
 
   test(
-    'a 426 writer upgrade keeps local data pending and stops overwrite retries',
+    'explicit conflict resolution keeps new fields',
     () async {
       final coordinator = create();
       addTearDown(coordinator.dispose);
       await coordinator.initialize();
-      final owner = coordinator.data!.profile.userId;
-      // 本机有待上传的临时学习记录与正在使用的容量覆盖（模拟计时器已 flush 的
-      // ad-hoc 记录仍在 coordinator 的 pending 文档里）。
-      await coordinator.edit(
-        (data) => data.copyWith(
-          profile: data.profile.copyWith(targetSchool: '本机修改'),
-          adHocLearnings: [
-            AdHocLearning(
-              id: 'adhoc-photo',
-              userId: owner,
-              title: '摄影构图',
-              createdAt: '2026-10-18T01:00:00.000Z',
-              updatedAt: '2026-10-18T01:00:00.000Z',
-            ),
-          ],
-          logs: [
-            ...data.logs,
-            TimeLog(
-              id: 'log-adhoc',
-              userId: owner,
-              taskId: null,
-              blockId: null,
-              date: '2026-10-17',
-              minutes: 20,
-              startedAt: '2026-10-18T01:00:00.000Z',
-              endedAt: '2026-10-18T01:00:00.000Z',
-              source: LogSource.timer,
-              relation: TimeLogRelation.adHoc,
-              sessionId: 'session-x',
-              adHocId: 'adhoc-photo',
-            ),
-          ],
-        ),
-      );
-      remote.pushFailures.add(
-        const ValidationFailure(
-          '当前计划包含临时学习/加学计时记录，请升级客户端后再同步',
-          statusCode: 426,
-        ),
-      );
-      final pushesBefore = remote.pushes;
-      await coordinator.sync();
-      expect(coordinator.status, SyncStatus.error);
-      expect(coordinator.upgradeRequired, isTrue);
-      expect(coordinator.message, contains('升级'));
-      // pending 与计时记录都保留：升级后可以继续同步同一份数据。
-      expect(coordinator.pending, isTrue);
-      expect(coordinator.blocked, isFalse);
-      expect(coordinator.conflicts, isEmpty);
-      expect(coordinator.data!.profile.targetSchool, '本机修改');
-      expect(coordinator.data!.adHocLearnings.single.id, 'adhoc-photo');
-      expect(
-        coordinator.data!.logs
-            .firstWhere((log) => log.id == 'log-adhoc')
-            .sessionId,
-        'session-x',
-      );
-      expect(remote.pushes - pushesBefore, 1);
-      // 同一份旧结构不会自动重试覆盖云端；用户升级后重新启动即可继续。
-      await coordinator.sync();
-      expect(remote.pushes - pushesBefore, 1);
-      expect(
-        coordinator.data!.logs.any((log) => log.id == 'log-adhoc'),
-        isTrue,
-      );
-    },
-  );
-
-  test(
-    'explicit conflict resolution keeps new fields and pending ad-hoc records',
-    () async {
-      final coordinator = create();
-      addTearDown(coordinator.dispose);
-      await coordinator.initialize();
-      final owner = coordinator.data!.profile.userId;
       await coordinator.edit(
         (data) => data.copyWith(
           profile: data.profile.copyWith(
@@ -794,32 +681,6 @@ void main() {
             capacityBasis: CapacityBasis.net,
             dateCapacityOverrides: {'2026-10-22': 0},
           ),
-          adHocLearnings: [
-            AdHocLearning(
-              id: 'adhoc-photo',
-              userId: owner,
-              title: '摄影构图',
-              createdAt: '2026-10-18T01:00:00.000Z',
-              updatedAt: '2026-10-18T01:00:00.000Z',
-            ),
-          ],
-          logs: [
-            ...data.logs,
-            TimeLog(
-              id: 'log-adhoc',
-              userId: owner,
-              taskId: null,
-              blockId: null,
-              date: '2026-10-17',
-              minutes: 20,
-              startedAt: '2026-10-18T01:00:00.000Z',
-              endedAt: '2026-10-18T01:00:00.000Z',
-              source: LogSource.timer,
-              relation: TimeLogRelation.adHoc,
-              sessionId: 'session-x',
-              adHocId: 'adhoc-photo',
-            ),
-          ],
         ),
       );
       // 云端同时修改同一字段：产生冲突，随后选择“采用云端”。
@@ -836,19 +697,13 @@ void main() {
       expect(coordinator.conflicts, isEmpty);
       expect(coordinator.pending, isFalse);
       expect(coordinator.data!.profile.targetSchool, '云端目标');
-      // 与本机新字段无关的云端变化不得丢掉临时学习和容量覆盖。
-      expect(coordinator.data!.adHocLearnings.single.id, 'adhoc-photo');
+      // 与本机新字段无关的云端变化不得丢掉容量覆盖。
+      expect(coordinator.data!.adHocLearnings, isEmpty);
       expect(coordinator.data!.profile.capacityBasis, CapacityBasis.net);
       expect(coordinator.data!.profile.dateCapacityOverrides, {
         '2026-10-22': 0,
       });
-      final adhoc = coordinator.data!.logs.firstWhere(
-        (log) => log.id == 'log-adhoc',
-      );
-      expect(adhoc.taskId, isNull);
-      expect(adhoc.adHocId, 'adhoc-photo');
-      expect(adhoc.sessionId, 'session-x');
-      expect(remote.data!.adHocLearnings.single.id, 'adhoc-photo');
+      expect(remote.data!.adHocLearnings, isEmpty);
       expect(remote.data!.profile.dateCapacityOverrides, {'2026-10-22': 0});
     },
   );

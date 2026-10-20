@@ -36,7 +36,7 @@ export async function deleteAccount(owner: string, password: string): Promise<vo
         // Sync obtains a user lock before this state lock too. The user lock
         // blocks new FK writes/refresh rotations until this transaction commits.
         await client.query("select user_id from planner_sync_state where user_id=$1 for update", [owner]);
-        // ad_hoc_id uses RESTRICT: clear learning facts before their owners.
+        // 学习事实先于事项/账号删除，保持删除顺序确定；其余子表都由外键级联清理。
         await client.query("delete from study_logs where user_id=$1", [owner]);
         await client.query("delete from registration_codes where lower(email)=lower($1)", [user.email]);
         await client.query("delete from users where id=$1", [owner]);

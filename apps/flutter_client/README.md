@@ -2,7 +2,7 @@
 
 这是“不白学 · 学习执行台”唯一维护的客户端，使用 Node/Fastify API，覆盖 Web、Windows、Android 和 iOS。学习目标可以是考试备考、课程学习、技能提升、自主学习或自定义目标。
 
-**状态**：登录、学习目标访谈、课程与事项确认、日期与容量确认、AI 草案、今日、事项、日历、进度、设置与数据管理全部可用。React/Tauri 源码和配置已移除，详情见根目录 [清理记录](../../REACT_REMOVAL.md)。
+**状态**：登录、学习目标访谈、课程与事项确认、日期与容量确认、AI 草案、今日（含事项目录）、日历（日/周/月 + 概览条）、调整、设置与数据管理全部可用。React/Tauri 源码和配置已移除，详情见根目录 [清理记录](../../REACT_REMOVAL.md)。
 
 ## 1. 环境与版本
 
@@ -387,19 +387,18 @@ await coordinator.recordDayMinutes(taskId, '2026-10-17', 90);
 ```text
 lib/features/
   shell/app_shell.dart                 侧栏（≥900px）/ 底部导航、同步条、账号对话框
-  dashboard/presentation/              今日：计划/已学/剩余、完成环、逐事项行
-  tasks/presentation/                  事项：课程目录、搜索/课程筛选、新建课程、增删改
-  calendar/presentation/               只读日历：周负载色带、选中日安排与已完成事项
-  progress/presentation/               进度：课程进度、周对比、热力图、燃尽
+  dashboard/presentation/              今日：计划/已学/剩余、完成环、逐事项行、全部事项目录
+  tasks/presentation/                  事项目录（合并进今日页下半部分）
+  calendar/presentation/              日历（只读）：日/周/月计划与实学、月历容量与状态、顶部概览条
   onboarding/presentation/             学习目标访谈 + 课程/事项确认 + 日期与容量确认
   adjust/presentation/                 调整：画像/进度/近期时间 + AI 一键调整预览与确认
   settings/presentation/               设置：学习目标与规划、每日可用时间与排程边界、优先级、数据、同步；容量/周期只保存设置，重排到调整页
-  planner/domain/                      格式化、每日统计、事项编辑、进度指标、最小计划
+  planner/domain/                      格式化、每日统计、事项编辑、进度指标、容量、最小计划
   planner/application/                 会话命令面、快照、学习目标设置控制器、续排
   planner/presentation/                共用对话框、续排对话框与页面状态外壳
 ```
 
-路由沿用 `/`、`/calendar`、`/tasks`、`/progress`、`/settings`，新增 `/onboarding`；认证与备考资料守卫在 `app/router/app_router.dart`。
+路由沿用 `/calendar`、`/adjust`、`/settings` 与 `/`；`/progress` 重定向到 `/calendar`（进度已并入日历栏目），`/tasks` 重定向到 `/`（事项已并入今日），`/onboarding` 保留；认证与备考资料守卫在 `app/router/app_router.dart`。
 
 有意的行为差异：本机不自动导入 Web 的整套预设课程与事项，新账号的课程/事项由学习目标访谈生成；本机初始化不预置固定事件，也不写入任何考试、院校或专业信息。
 

@@ -140,7 +140,7 @@ void main() {
         isNotEmpty,
       );
       expect(container.read(onboardingStatusProvider).isLoading, isTrue);
-      expect(find.byKey(const Key('dashboard-quick-start')), findsOneWidget);
+      expect(find.byKey(const Key('dashboard-ai-planning')), findsOneWidget);
       expect(find.text('正在读取学习目标…'), findsNothing);
       final router = container.read(appRouterProvider);
       router.go('/login');
@@ -165,16 +165,10 @@ void main() {
       );
       expect(container.read(onboardingStatusProvider).valueOrNull, isNull);
       expect(find.text('还没有长期计划，也没关系'), findsOneWidget);
-      expect(find.byKey(const Key('dashboard-quick-start')), findsOneWidget);
       expect(find.byKey(const Key('dashboard-ai-planning')), findsOneWidget);
-      expect(find.text('开始计时'), findsOneWidget);
       expect(find.text('AI 长期规划'), findsOneWidget);
-      await tester.tap(find.byKey(const Key('dashboard-quick-start')));
-      await tester.pumpAndSettle();
-      expect(find.text('今天想学什么？'), findsOneWidget);
-      expect(find.byKey(const Key('ad-hoc-title')), findsOneWidget);
-      await tester.tap(find.text('取消'));
-      await tester.pumpAndSettle();
+      // 合并页下半部分始终可以直接新建课程、添加事项。
+      expect(find.text('全部事项'), findsOneWidget);
       final beforePlanning = container.read(plannerSyncProvider).data;
       await tester.tap(find.byKey(const Key('dashboard-ai-planning')));
       await tester.pumpAndSettle();
@@ -262,7 +256,9 @@ void main() {
       expect(router.routeInformationProvider.value.uri.path, '/');
       router.go('/tasks');
       await tester.pumpAndSettle();
-      expect(find.text('事项管理'), findsOneWidget);
+      // 旧事项页已合并进今日页：/tasks 重定向到「今日」，事项目录在页面下方。
+      expect(router.routeInformationProvider.value.uri.path, '/');
+      expect(find.text('全部事项'), findsOneWidget);
       expect(container.read(plannerSyncProvider).data, plan);
       offline = false;
       final refresh = container
@@ -270,7 +266,7 @@ void main() {
           .refresh();
       await tester.pumpAndSettle();
       await refresh;
-      expect(router.routeInformationProvider.value.uri.path, '/tasks');
+      expect(router.routeInformationProvider.value.uri.path, '/');
     },
   );
 
@@ -331,7 +327,7 @@ void main() {
       // A profile lookup failure no longer traps the account on a loading page:
       // the workbench bootstraps an editable plan and offers the quick actions.
       expect(container.read(onboardingStatusProvider).hasError, isTrue);
-      expect(find.byKey(const Key('dashboard-quick-start')), findsOneWidget);
+      expect(find.byKey(const Key('dashboard-ai-planning')), findsOneWidget);
       expect(find.text('重试读取学习目标'), findsNothing);
       // Optional planning stays reachable through the workbench.
       await tester.tap(find.byKey(const Key('dashboard-ai-planning')));
@@ -386,7 +382,7 @@ void main() {
 
       // A finished profile also goes straight to the workbench.
       expect(router.routeInformationProvider.value.uri.path, '/');
-      expect(find.text('开始计时'), findsOneWidget);
+      expect(find.text('今日学习'), findsOneWidget);
 
       await client.clearSession();
       await tester.pumpAndSettle();
@@ -426,22 +422,32 @@ void main() {
     await tester.pumpAndSettle();
 
     final router = container.read(appRouterProvider);
-    // Narrow layout: every workbench destination remains available.
+    // Narrow layout: every workbench destination remains available. 事项 and
+    // 进度 have been merged into 今日 and 日历, so the bottom bar has four entries.
     expect(find.widgetWithText(NavigationDestination, '访谈'), findsNothing);
-    await tester.tap(find.widgetWithText(NavigationDestination, '事项'));
-    await tester.pumpAndSettle();
-    expect(router.routeInformationProvider.value.uri.path, '/tasks');
-    expect(find.text('事项管理'), findsOneWidget);
+    expect(find.widgetWithText(NavigationDestination, '事项'), findsNothing);
+    expect(find.widgetWithText(NavigationDestination, '进度'), findsNothing);
+    expect(find.byType(NavigationDestination), findsNWidgets(4));
+    expect(find.text('今日学习'), findsOneWidget);
+    expect(find.text('全部事项'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(NavigationDestination, '日历'));
     await tester.pumpAndSettle();
     expect(router.routeInformationProvider.value.uri.path, '/calendar');
-    expect(find.byKey(const ValueKey('calendar-week-river')), findsOneWidget);
+    expect(find.byKey(const ValueKey('calendar-day-chart')), findsNWidgets(2));
+    expect(find.byKey(const ValueKey('calendar-overview')), findsOneWidget);
 
-    await tester.tap(find.widgetWithText(NavigationDestination, '进度'));
+    // The former progress page still redirects into the calendar, but its
+    // goal-level overview panels were removed; only the compact status strip
+    // remains above the selected scope.
+    router.go('/progress');
     await tester.pumpAndSettle();
-    expect(router.routeInformationProvider.value.uri.path, '/progress');
-    expect(find.text('学习进度'), findsOneWidget);
+    expect(router.routeInformationProvider.value.uri.path, '/calendar');
+    expect(
+      find.byKey(const ValueKey('calendar-learning-overview')),
+      findsNothing,
+    );
+    expect(find.byKey(const ValueKey('calendar-overview')), findsOneWidget);
 
     await tester.tap(find.widgetWithText(NavigationDestination, '调整'));
     await tester.pumpAndSettle();
@@ -463,7 +469,7 @@ void main() {
     expect(find.text('重新访谈'), findsOneWidget);
     expect(
       tester.widget<NavigationBar>(find.byType(NavigationBar)).selectedIndex,
-      4,
+      2,
     );
     expect(
       find.descendant(of: find.byType(AppBar), matching: find.text('调整')),

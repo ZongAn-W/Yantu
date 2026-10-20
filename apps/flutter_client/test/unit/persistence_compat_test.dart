@@ -152,9 +152,26 @@ void main() {
     });
 
     test('a valid document with all new fields passes validation', () {
-      final data = richData();
+      // 临时学习已下线：历史记录在解析/导入时被清理，清理后的文档必须通过校验。
+      final data = purgeAdHocData(richData());
       validatePlanner(data);
       expect(parsePlannerJson(data.toJsonString()), data);
+    });
+
+    test('legacy ad-hoc records are deleted or converted on parse', () {
+      final data = richData();
+      final parsed = parsePlannerJson(data.toJsonString());
+      // 纯临时学习（无正式事项）记录被删除；已转正式事项的记录保留用时并
+      // 改写为加学关系；临时学习实体全部清空。
+      expect(parsed.adHocLearnings, isEmpty);
+      expect(parsed.logs.map((log) => log.id), isNot(contains('log-adhoc')));
+      final converted = parsed.logs.singleWhere(
+        (log) => log.id == 'log-converted',
+      );
+      expect(converted.relation, TimeLogRelation.extra);
+      expect(converted.adHocId, isNull);
+      expect(converted.taskId, data.tasks.single.id);
+      expect(parsed.logs.every((log) => log.adHocId == null), isTrue);
     });
 
     test('logs must belong to exactly one owner and keep relations consistent', () {
@@ -359,7 +376,8 @@ void main() {
       );
       final storage = SembastStorageRepository(database: database);
       addTearDown(database.close);
-      final data = richData();
+      // 临时学习已下线：清理后的文档才是合法的当前文档形态。
+      final data = purgeAdHocData(richData());
       final metadata = StorageMetadata(revision: 7, pending: true, base: data);
       await storage.save('account', data, metadata);
       final loaded = await SembastStorageRepository(database: database).load(
@@ -372,16 +390,9 @@ void main() {
       // 服务端写入体必须原样包含新字段（没有 passthrough 丢失）。
       final wire = plannerDocumentForSync(data, null);
       expect(wire, data.toJson());
-      expect(wire['ad_hoc_learnings'], hasLength(2));
+      expect(wire['ad_hoc_learnings'], isEmpty);
       final wireLogs = (wire['logs'] as List).cast<Map>();
-      expect(
-        wireLogs.firstWhere((log) => log['id'] == 'log-adhoc')['task_id'],
-        isNull,
-      );
-      expect(
-        wireLogs.firstWhere((log) => log['id'] == 'log-adhoc')['ad_hoc_id'],
-        'adhoc-photo',
-      );
+      expect(wireLogs.any((log) => log['id'] == 'log-adhoc'), isFalse);
       expect(
         wireLogs.firstWhere((log) => log['id'] == 'log-extra')['session_id'],
         'session-1',
@@ -390,10 +401,12 @@ void main() {
         wireLogs.firstWhere((log) => log['id'] == 'log-extra')['relation'],
         'extra',
       );
-      expect(
-        wireLogs.firstWhere((log) => log['id'] == 'log-converted')['quota_minutes'],
-        0,
+      final convertedWire = wireLogs.firstWhere(
+        (log) => log['id'] == 'log-converted',
       );
+      expect(convertedWire['relation'], 'extra');
+      expect(convertedWire['ad_hoc_id'], isNull);
+      expect(convertedWire['quota_minutes'], 0);
       final wireProfile = wire['profile'] as Map;
       expect(wireProfile['capacity_basis'], 'net');
       expect(wireProfile['weekly_baseline_minutes'], 360);

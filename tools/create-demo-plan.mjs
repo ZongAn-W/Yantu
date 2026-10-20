@@ -124,7 +124,7 @@ function addLog(task, date, minute, minutes, relation, blockId = null, quota = 0
   logs.push({
     id: randomUUID(), user_id: userId, task_id: task.id, block_id: blockId, date, minutes,
     started_at: stamp(date, minute), ended_at: stamp(date, minute + minutes),
-    source: 'timer', relation, session_id: randomUUID(), ad_hoc_id: null, quota_minutes: quota,
+    source: 'timer', relation, session_id: randomUUID(), quota_minutes: quota,
   });
   task.completed_minutes += minutes;
 }
@@ -188,7 +188,7 @@ const plan = {
     foundation: '虚构演示：已学习各课程基础概念，通过专题练习查漏补缺；工作日以短时学习为主，周六可安排较长练习。',
   },
   subjects: subjects.map(({ key, ...subject }) => subject),
-  tasks, blocks, logs, fixed_events: [], replan_runs: [], ad_hoc_learnings: [], phases,
+  tasks, blocks, logs, fixed_events: [], replan_runs: [], phases,
   planning: {
     version: 1, prompt_version: 'fictional-demo-v1', rules_version: 'fictional-demo-v1',
     mode: 'full', detail_days: 28, rolling: false, detailed_until: cycleEnd,

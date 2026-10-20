@@ -169,21 +169,20 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       expect((await db.query<{ weekly_minutes: any }>("select weekly_minutes from profiles where user_id=$1", [user.id])).rows[0].weekly_minutes).toEqual(week);
     });
 
-    it("does not treat an empty optional list materialized by the client model as a base change", async () => {
+    it("does not treat an empty optional list materialized by a client model as a base change", async () => {
       const user = await account(), data = await fixture(user.id);
-      // 服务端生成的文档在列表为空时省略 ad_hoc_learnings 键（见 snapshot）。
-      // 客户端模型的 `@Default([]) List<AdHocLearning>` 会在把该文档持久化为
-      // metadata.base 并回传时补出 `ad_hoc_learnings: []`：同一份内容、两种空值
-      // 写法，不能被判成 base 冲突，否则同步会永久停留在 409。
+      // 服务端生成的文档只在有内容时携带可选集合；旧客户端模型可能把可选列表
+      // 持久化为显式空数组并随 base 回传。同一份内容的两种空值写法不能被判成
+      // base 冲突，否则同步会永久停留在 409。
       const first = await app.inject({
         method: "PUT", url: "/api/planner/sync", headers: user.headers,
         payload: { data, base: null, expectedRevision: 0 },
       });
       expect(first.statusCode, first.body).toBe(200);
       const pulled = (await app.inject({ url: "/api/planner/sync", headers: user.headers })).json();
-      expect(Object.prototype.hasOwnProperty.call(pulled.data, "ad_hoc_learnings")).toBe(false);
-      const clientBase = { ...pulled.data, ad_hoc_learnings: [] };
-      const changed = { ...structuredClone(pulled.data), ad_hoc_learnings: [] };
+      expect(Object.prototype.hasOwnProperty.call(pulled.data, "legacy_optional_list")).toBe(false);
+      const clientBase = { ...pulled.data, legacy_optional_list: [] };
+      const changed = { ...structuredClone(pulled.data), legacy_optional_list: [] };
       changed.profile.goal_text = "更新后的学习目标";
       const next = await app.inject({
         method: "PUT", url: "/api/planner/sync", headers: user.headers,
@@ -191,8 +190,8 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       });
       expect(next.statusCode, next.body).toBe(200);
       expect(next.json().data.profile.goal_text).toBe("更新后的学习目标");
-      // 空数组被忽略不等于忽略真实内容：非空列表仍能触发 base 冲突。
-      const stale = { ...structuredClone(next.json().data), ad_hoc_learnings: [] };
+      // 空数组被忽略不等于忽略真实差异：base 里出现未知的非空内容仍按不一致处理。
+      const stale = { ...structuredClone(next.json().data), legacy_optional_list: [] };
       const now = new Date().toISOString();
       const conflict = await app.inject({
         method: "PUT", url: "/api/planner/sync", headers: user.headers,
@@ -200,7 +199,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
           data: stale,
           base: {
             ...clientBase,
-            ad_hoc_learnings: [{ id: randomUUID(), user_id: user.id, title: "临时学习", created_at: now, updated_at: now }],
+            legacy_optional_list: [{ id: randomUUID(), title: "旧数据", created_at: now, updated_at: now }],
           },
           expectedRevision: next.json().revision,
         },

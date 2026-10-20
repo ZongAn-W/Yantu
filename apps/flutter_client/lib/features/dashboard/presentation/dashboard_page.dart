@@ -7,30 +7,52 @@ import '../../../core/widgets.dart';
 import '../../../shared/models/planner_models.dart';
 import '../../planner/application/planner_session.dart';
 import '../../planner/application/study_timer.dart';
-import '../../planner/domain/capacity.dart' as capacity;
 import '../../planner/domain/plan_cycle.dart';
 import '../../planner/domain/planner_format.dart';
 import '../../planner/domain/study_day.dart' as day_ops;
-import '../../planner/domain/study_day.dart' show DayCapacityBreakdown;
 import '../../planner/presentation/cycle_dialog.dart';
 import '../../planner/presentation/planner_dialogs.dart';
 import '../../planner/presentation/planner_page_state.dart';
 import '../../planner/presentation/planning_details.dart';
 import '../../planner/presentation/planning_feedback_view.dart';
 import '../../planner/presentation/task_study_timer.dart';
-import 'task_time_pie.dart';
+import '../../tasks/presentation/task_directory.dart';
+import 'today_scroll.dart';
 
-/// Web `/` — today's plan, extra/temporary study, recorded time and the plan
-/// cycle entry point for full-period plans.
-class DashboardPage extends ConsumerWidget {
+/// `/` — 今日。
+///
+/// 合并后的单页：上半部分是今天计划内事项的计时区（原今日页），下半部分是
+/// 「全部事项」课程目录（原事项页）。全页只有一个滚动条，内容宽度上限 1200。
+/// 「开始计时」按钮、今日用时饼图、今日净容量和临时学习都已移除；计划外事项
+/// 的加学计时统一从下方事项行的闹钟发起，并展示在今日加学里。
+class DashboardPage extends ConsumerStatefulWidget {
   const DashboardPage({super.key});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<DashboardPage> createState() => _DashboardPageState();
+}
+
+class _DashboardPageState extends ConsumerState<DashboardPage> {
+  final GlobalKey _itemsSectionKey = GlobalKey();
+
+  void _scrollToItemsIfRequested() {
+    if (!TodayItemsScrollRequest.consume()) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final target = _itemsSectionKey.currentContext;
+      if (target == null || !target.mounted) return;
+      Scrollable.ensureVisible(
+        target,
+        alignment: 0,
+        duration: const Duration(milliseconds: 250),
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    _scrollToItemsIfRequested();
     final date = ref.watch(studyTimerProvider.select((_) => shanghaiToday()));
-    final activeAdHocId = ref.watch(
-      studyTimerProvider.select((timer) => timer.activeAdHocId),
-    );
     final activeExtraTaskId = ref.watch(
       studyTimerProvider.select(
         (timer) => timer.activeRelation == TimeLogRelation.extra
@@ -47,31 +69,14 @@ class DashboardPage extends ConsumerWidget {
           data.blocks.where((block) => block.date == date),
           data.tasks,
         );
-        final groupTaskIds = {for (final group in groups) group.first.taskId};
+        // 计划内事项的加学也进入今日加学：从下方闹钟启动的计时必须在上方可见。
         final extraTasks = [
           for (final task in data.tasks)
-            if (!groupTaskIds.contains(task.id) &&
-                (day_ops.extraMinutesForTaskDay(data, task.id, date) > 0 ||
-                    timer.lastSessionFor(task.id, date)?.relation ==
-                        TimeLogRelation.extra ||
-                    activeExtraTaskId == task.id))
+            if (day_ops.extraMinutesForTaskDay(data, task.id, date) > 0 ||
+                timer.lastSessionFor(task.id, date)?.relation ==
+                    TimeLogRelation.extra ||
+                activeExtraTaskId == task.id)
               task,
-        ];
-        final adHocEntries = [
-          for (final entry in day_ops.adHocLearningEntries(
-            data,
-            date: date,
-            includeIds: {
-              ?activeAdHocId,
-              for (final learning in data.adHocLearnings)
-                if (timer.lastSessionForAdHoc(learning.id, date) != null)
-                  learning.id,
-            },
-          ))
-            if (entry.todayMinutes > 0 ||
-                activeAdHocId == entry.learning.id ||
-                timer.lastSessionForAdHoc(entry.learning.id, date) != null)
-              entry,
         ];
         final cycle = planCycleState(data.profile, date);
         final needsCompletion = planPeriodNeedsCompletion(data, today: date);
@@ -80,164 +85,200 @@ class DashboardPage extends ConsumerWidget {
             data.planning == null ||
             data.subjects.isEmpty ||
             data.tasks.isEmpty;
-        return PlannerPage(
-          title: '',
-          subtitle: '',
-          actions: [
-            if (!emptyPlan)
-              AsyncActionButton(
-                label: '开始计时',
-                icon: Icons.play_arrow,
-                enabled: snapshot.editable,
-                onPressed: () => StartStudyDialog.show(context),
+        final compact = MediaQuery.sizeOf(context).width < 900;
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            return SingleChildScrollView(
+              padding: EdgeInsets.fromLTRB(
+                compact ? 16 : 24,
+                compact ? 16 : 20,
+                compact ? 16 : 24,
+                24,
               ),
-          ],
-          children: [
-            if (needsCompletion) ...[
-              Align(
-                alignment: Alignment.centerLeft,
-                child: TextButton.icon(
-                  key: const Key('dashboard-complete-cycle'),
-                  onPressed: snapshot.editable
-                      ? () => ContinueCycleDialog.showCompleteCycle(context)
-                      : null,
-                  icon: const Icon(Icons.event_note_outlined, size: 18),
-                  label: const Text('补全本周期安排'),
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
-            if (emptyPlan) ...[
-              const PlannerEmpty(
-                icon: Icons.timer_outlined,
-                message: '还没有长期计划，也没关系',
-                hint: '你可以先记录今天想做的事，直接开始学习；之后再让 AI 帮你整理成长期路线。',
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  FilledButton.icon(
-                    key: const Key('dashboard-quick-start'),
-                    onPressed: snapshot.editable
-                        ? () => StartStudyDialog.show(context)
-                        : null,
-                    icon: const Icon(Icons.timer_outlined),
-                    label: const Text('开始计时'),
-                  ),
-                  OutlinedButton.icon(
-                    key: const Key('dashboard-ai-planning'),
-                    onPressed: () => context.go('/interview'),
-                    icon: const Icon(Icons.auto_awesome_outlined),
-                    label: const Text('AI 长期规划'),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 12),
-            ],
-            if (!emptyPlan && cycle != PlanCycleState.running) ...[
-              PlannerNotice(
-                cycle == PlanCycleState.ended
-                    ? '本次规划周期已经结束。这不代表长期目标完成或失败，可以继续安排下一周期。'
-                    : '本次规划周期即将结束，可以提前安排下一周期。',
-                tone: PlannerNoticeTone.info,
-              ),
-              const SizedBox(height: 8),
-              Align(
-                alignment: Alignment.centerLeft,
-                child: OutlinedButton.icon(
-                  key: const Key('dashboard-next-cycle'),
-                  onPressed: snapshot.editable
-                      ? () => ContinueCycleDialog.showNextCycle(context)
-                      : null,
-                  icon: const Icon(Icons.event_repeat, size: 18),
-                  label: const Text('继续安排下一周期'),
-                ),
-              ),
-              const SizedBox(height: 12),
-            ],
-            if (restDay) ...[
-              const PlannerNotice(
-                '今天是休息日：可用学习净容量为 0，不生成学习安排。'
-                '如果实际发生了学习仍可以如实计时，记录会显示为“超出原容量”。',
-                tone: PlannerNoticeTone.info,
-              ),
-              const SizedBox(height: 12),
-            ],
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final wide = constraints.maxWidth >= 1000;
-                final main = _TodayStudyPanel(
-                  data: data,
-                  date: date,
-                  breakdown: breakdown,
-                  groups: groups,
-                  extraTasks: extraTasks,
-                  adHocEntries: adHocEntries,
-                  editable: snapshot.editable,
-                  showEmpty: !emptyPlan,
-                );
-                final side = TaskTimePiePanel(data: data, date: date);
-                if (!wide) {
-                  return Column(
+              child: Center(
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 1200),
+                  child: Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [main, const SizedBox(height: 16), side],
-                  );
-                }
-                return Row(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Expanded(flex: 3, child: main),
-                    const SizedBox(width: 16),
-                    Expanded(flex: 2, child: side),
-                  ],
-                );
-              },
-            ),
-          ],
+                    children: [
+                      const _SectionHeader(title: '今日学习'),
+                      const SizedBox(height: 10),
+                      if (needsCompletion) ...[
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            key: const Key('dashboard-complete-cycle'),
+                            onPressed: snapshot.editable
+                                ? () => ContinueCycleDialog.showCompleteCycle(
+                                    context,
+                                  )
+                                : null,
+                            icon: const Icon(
+                              Icons.event_note_outlined,
+                              size: 18,
+                            ),
+                            label: const Text('补全本周期安排'),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      if (emptyPlan) ...[
+                        PlannerEmpty(
+                          key: const Key('dashboard-empty-plan'),
+                          icon: Icons.timer_outlined,
+                          message: '还没有长期计划，也没关系',
+                          hint:
+                              '可以先在下方「全部事项」新建课程、添加事项直接学习；'
+                              '之后也可以让 AI 帮你整理成长期路线。',
+                          action: FilledButton.icon(
+                            key: const Key('dashboard-ai-planning'),
+                            onPressed: () => context.go('/interview'),
+                            icon: const Icon(Icons.auto_awesome_outlined),
+                            label: const Text('AI 长期规划'),
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                      ],
+                      if (!emptyPlan && cycle != PlanCycleState.running) ...[
+                        PlannerNotice(
+                          cycle == PlanCycleState.ended
+                              ? '本次规划周期已经结束。这不代表长期目标完成或失败，可以继续安排下一周期。'
+                              : '本次规划周期即将结束，可以提前安排下一周期。',
+                          tone: PlannerNoticeTone.info,
+                        ),
+                        const SizedBox(height: 8),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: OutlinedButton.icon(
+                            key: const Key('dashboard-next-cycle'),
+                            onPressed: snapshot.editable
+                                ? () =>
+                                      ContinueCycleDialog.showNextCycle(context)
+                                : null,
+                            icon: const Icon(Icons.event_repeat, size: 18),
+                            label: const Text('继续安排下一周期'),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      if (restDay) ...[
+                        const PlannerNotice(
+                          '今天是休息日：没有生成学习安排。'
+                          '仍可在下方「全部事项」中按需加学。',
+                          tone: PlannerNoticeTone.info,
+                        ),
+                        const SizedBox(height: 12),
+                      ],
+                      if (!emptyPlan && groups.isEmpty && extraTasks.isEmpty)
+                        const PlannerEmpty(
+                          icon: Icons.list_alt_outlined,
+                          message: '今天没有安排学习内容',
+                          hint:
+                              '可在下方「全部事项」中选择事项加学，'
+                              '或新建课程与事项。',
+                        ),
+                      if (groups.isNotEmpty)
+                        _PlannedStudyList(
+                          data: data,
+                          date: date,
+                          groups: groups,
+                          editable: snapshot.editable,
+                        ),
+                      if (extraTasks.isNotEmpty) ...[
+                        const Divider(height: 28),
+                        const _ExtraStudyHeader(),
+                        const SizedBox(height: 4),
+                        for (final task in extraTasks)
+                          _ExtraTaskRow(
+                            key: ValueKey('extra-task-${task.id}:$date'),
+                            task: task,
+                            data: data,
+                            date: date,
+                            editable: snapshot.editable,
+                          ),
+                      ],
+                      const SizedBox(height: 28),
+                      KeyedSubtree(
+                        key: _itemsSectionKey,
+                        child: TaskDirectory(
+                          data: data,
+                          editable: snapshot.editable,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
         );
       },
     );
   }
 }
 
-class _TodayStudyPanel extends ConsumerWidget {
-  const _TodayStudyPanel({
+class _SectionHeader extends StatelessWidget {
+  const _SectionHeader({required this.title});
+
+  final String title;
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      header: true,
+      child: Text(
+        title,
+        style: Theme.of(
+          context,
+        ).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+      ),
+    );
+  }
+}
+
+class _ExtraStudyHeader extends StatelessWidget {
+  const _ExtraStudyHeader();
+
+  @override
+  Widget build(BuildContext context) {
+    return Semantics(
+      header: true,
+      child: Row(
+        children: [
+          const Icon(
+            Icons.add_circle_outline,
+            size: 16,
+            color: PlannerColors.orange,
+          ),
+          const SizedBox(width: 6),
+          Text('今日加学', style: Theme.of(context).textTheme.titleSmall),
+        ],
+      ),
+    );
+  }
+}
+
+/// 今天计划内事项，按课程分组展示（计时卡原样保留）。
+class _PlannedStudyList extends StatelessWidget {
+  const _PlannedStudyList({
     required this.data,
     required this.date,
-    required this.breakdown,
     required this.groups,
-    required this.extraTasks,
-    required this.adHocEntries,
     required this.editable,
-    required this.showEmpty,
   });
 
   final PlannerData data;
   final String date;
-  final DayCapacityBreakdown breakdown;
   final List<List<ScheduleBlock>> groups;
-  final List<Task> extraTasks;
-  final List<day_ops.AdHocLearningEntry> adHocEntries;
   final bool editable;
-  final bool showEmpty;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  Widget build(BuildContext context) {
     final taskById = {for (final task in data.tasks) task.id: task};
-    final source = capacity.resolveDayCapacity(data.profile, date);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (showEmpty &&
-            groups.isEmpty &&
-            extraTasks.isEmpty &&
-            adHocEntries.isEmpty)
-          const PlannerEmpty(
-            icon: Icons.list_alt_outlined,
-            message: '今天还没有学习内容：可以按原定安排开始，也可以加学已有事项或临时学习。',
-          ),
         for (final subject in data.subjects)
           if (groups.any(
             (group) => taskById[group.first.taskId]?.subjectId == subject.id,
@@ -262,78 +303,6 @@ class _TodayStudyPanel extends ConsumerWidget {
                   onMove: () => MoveTaskDayDialog.show(context, group),
                 ),
           ],
-        if (extraTasks.isNotEmpty) ...[
-          const Divider(height: 24),
-          Semantics(
-            header: true,
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.add_circle_outline,
-                  size: 16,
-                  color: PlannerColors.orange,
-                ),
-                const SizedBox(width: 6),
-                Text('今日加学', style: Theme.of(context).textTheme.titleSmall),
-              ],
-            ),
-          ),
-          for (final task in extraTasks)
-            _ExtraTaskRow(
-              key: ValueKey('extra-task-${task.id}:$date'),
-              task: task,
-              data: data,
-              date: date,
-              editable: editable,
-            ),
-        ],
-        if (adHocEntries.isNotEmpty) ...[
-          const Divider(height: 24),
-          Semantics(
-            header: true,
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.lightbulb_outline,
-                  size: 16,
-                  color: PlannerColors.orange,
-                ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    '今日临时学习',
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                ),
-                TextButton.icon(
-                  key: const Key('dashboard-new-adhoc'),
-                  onPressed: () => AdHocStudyDialog.show(context),
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text('新增'),
-                ),
-              ],
-            ),
-          ),
-          for (final entry in adHocEntries)
-            _AdHocLearningRow(
-              key: ValueKey('ad-hoc-${entry.learning.id}:$date'),
-              entry: entry,
-              data: data,
-              date: date,
-            ),
-        ],
-        const Divider(height: 24),
-        Text(
-          '今日净容量 ${duration(breakdown.capacity)}'
-          '（${capacity.capacitySourceLabel(source.source)}'
-          '${source.estimated ? ' · 估算' : ''}） · '
-          '实际投入 ${duration(breakdown.actual)} · '
-          '有效预留 ${duration(breakdown.reserved)} · '
-          '新增可安排 ${duration(breakdown.available)}'
-          '${breakdown.over > 0 ? ' · 超出 ${duration(breakdown.over)}' : ''}。',
-          key: const Key('today-capacity-breakdown'),
-          style: const TextStyle(color: PlannerColors.muted, fontSize: 12),
-        ),
       ],
     );
   }
@@ -560,7 +529,8 @@ class _TaskDayRowState extends ConsumerState<_TaskDayRow> {
   }
 }
 
-/// An existing item that received extra study today although it has no block.
+/// An existing item that received extra study today, including items that also
+/// have a scheduled block today (its chip appears on the planned card as well).
 class _ExtraTaskRow extends ConsumerWidget {
   const _ExtraTaskRow({
     required this.task,
@@ -625,95 +595,6 @@ class _ExtraTaskRow extends ConsumerWidget {
                 ? () => ContentFeedbackDialog.show(context, task.id)
                 : null,
           ),
-        ),
-      ),
-    );
-  }
-}
-
-/// One temporary-learning entity with its own timer row on today's page.
-class _AdHocLearningRow extends ConsumerWidget {
-  const _AdHocLearningRow({
-    required this.entry,
-    required this.data,
-    required this.date,
-    super.key,
-  });
-
-  final day_ops.AdHocLearningEntry entry;
-  final PlannerData data;
-  final String date;
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final learning = entry.learning;
-    final subject = learning.subjectId == null
-        ? null
-        : data.subjects
-              .where((item) => item.id == learning.subjectId)
-              .firstOrNull;
-    final color = subjectColor(learning.subjectId ?? 'ad-hoc', subject?.color);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: PlannerColors.surface,
-          border: Border.all(color: PlannerColors.border),
-          borderRadius: BorderRadius.circular(8),
-        ),
-        child: TaskStudyTimer(
-          heading: Wrap(
-            spacing: 8,
-            runSpacing: 4,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text(
-                learning.title,
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              if (subject != null)
-                SubjectChip(name: subject.name, color: color, compact: true),
-              Text(
-                '今日 ${duration(entry.todayMinutes)} · 累计 ${duration(entry.totalMinutes)}',
-                key: Key('ad-hoc-minutes-${learning.id}'),
-                style: const TextStyle(
-                  color: PlannerColors.orange,
-                  fontSize: 12,
-                ),
-              ),
-              if (learning.archived)
-                Text(
-                  learning.convertedTaskId == null ? '已归档' : '已转为正式事项/已关联',
-                  style: const TextStyle(
-                    color: PlannerColors.muted,
-                    fontSize: 12,
-                  ),
-                ),
-            ],
-          ),
-          adHocId: learning.id,
-          date: date,
-          plannedMinutes: 0,
-          color: color,
-          canDiscard: true,
-          canStart: !learning.archived,
-          secondaryAction: learning.archived
-              ? null
-              : PopupMenuButton<String>(
-                  tooltip: '临时学习后续操作',
-                  onSelected: (value) {
-                    if (value == 'convert') {
-                      AdHocConvertDialog.show(context, learning.id);
-                    } else {
-                      TaskPickerDialog.showLinkAdHoc(context, learning.id);
-                    }
-                  },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(value: 'convert', child: Text('转为正式事项')),
-                    PopupMenuItem(value: 'link', child: Text('关联到已有事项')),
-                  ],
-                ),
         ),
       ),
     );

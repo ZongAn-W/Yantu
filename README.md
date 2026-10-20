@@ -121,7 +121,9 @@ Web 产物为 `apps/flutter_client/build/web/`。Windows、Android 构建与签�
 
 学习目标、目标类型、可选目标日期、规划周期、可用时间和场景信息（院校、专业等）统一使用一组字段：`goal_text`、`goal_type`（`exam`/`course`/`skill`/`self_study`/`other`）、`goal_subtype`、`target_date`、`target_date_confirmed`、`plan_start_date`、`plan_end_date`、`weekly_minutes`（默认七天模板）、`current_progress`、`constraints_text`、`target_school`、`target_program`。灵活容量使用 `capacity_basis`（`gross_buffer`/`net`）、`weekly_baseline_minutes`、`weekly_range_min_minutes`、`weekly_range_max_minutes`、`week_capacity_overrides`（键为周一日期）、`date_capacity_overrides`（键为日期，显式 0 表示休息）。数据库 `profiles` 表、访谈会话、API 资料、本机 `PlannerData.profile` 和同步文档共用这组名称，没有第二份需要人工对账的数据源。
 
-学习日志统一包含 `task_id`（临时学习可为空）、`ad_hoc_id`、`relation`、`session_id`、`quota_minutes`、`block_id`、`date`、`minutes`、`source` 与真实起止时间；临时学习实体保存在 `ad_hoc_learnings`（`title`、可选 `subject_id`、`archived`、`converted_task_id`）。旧的 `TimeLog` 缺少新字段时保留为 `legacy_unknown`，只在有可靠日程关联时有限推断为原定学习并标明依据。
+学习日志统一包含 `task_id`、`relation`、`session_id`、`quota_minutes`、`block_id`、`date`、`minutes`、`source` 与真实起止时间；每条日志必须归属一个正式事项。执行关系为 `scheduled`（今日原定学习）、`extra`（已有事项加学），旧数据缺少该字段时保留为 `legacy_unknown`，只在有可靠日程关联时有限推断为原定学习并标明依据。
+
+> **临时学习已在二期从服务端与数据库删除（迁移 `202610230001_remove_ad_hoc_learning.sql`）**：产品层已于 2026-10-20 下线该功能；二期按确认规则直接清理历史数据——纯临时学习计时（`item_id` 为空）删除，已关联正式事项的计时保留真实分钟并改写为 `extra`，`ad_hoc_learnings` 表、`study_logs.ad_hoc_id` 列、相关索引与旧约束全部删除，权威同步文档 blob 一并清理。历史 migration 文件保留原样，只作为历史记录。
 
 空值语义统一：`null`、缺失字段和旧格式空字符串都表示“没有这个日期”，不会用占位日期冒充。资料更新接口区分“不修改这个字段”（`PATCH` 中省略）和“清空这个字段”（显式传 `null`）。
 
@@ -144,18 +146,26 @@ Web 产物为 `apps/flutter_client/build/web/`。Windows、Android 构建与签�
 - `items` 新增 `deadline_kind`（`deadline`/`plan_end`）。
 - 迁移不删除账号、课程、事项、日志、计划版本或固定事件，也不修改已应用的历史迁移。
 
-新增迁移 `apps/api/db/migrations/202610200001_learning_relations_capacity.sql`：
+新增迁移 `apps/api/db/migrations/202610200001_learning_relations_capacity.sql`（一期，临时学习结构已被二期迁移 `202610230001` 删除）：
 
 - `study_logs.item_id` 允许为空，新增执行关系 `relation`（`scheduled`/`extra`/`ad_hoc`/`legacy_unknown`，旧数据默认 `legacy_unknown`）、`session_id`、`ad_hoc_id`、`quota_minutes`，并约束每条记录至少归属正式事项或临时学习之一。
 - 新增 `ad_hoc_learnings` 表（名称即可开始的临时学习实体，可归档、可记录转换后的正式事项引用），带同步 revision 触发器。
 - `profiles` 新增容量投影列：`capacity_basis`、`weekly_baseline_minutes`、`weekly_range_min_minutes`、`weekly_range_max_minutes`、`week_capacity_overrides`、`date_capacity_overrides`。文档 JSON 仍是权威数据，这些列是同步投影；列为空表示旧数据。
 - 迁移只新增，可重复执行，不删除真实学习记录；`ad_hoc_id` 使用 restrict 约束，避免删除实体时静默丢失真实计时。
 
+新增迁移 `apps/api/db/migrations/202610230001_remove_ad_hoc_learning.sql`（二期，彻底删除临时学习）：
+
+- 纯临时学习日志（`item_id` 为空）直接删除；已关联/转为正式事项的临时学习计时保留真实用时，`relation` 改写为 `extra` 并清空 `ad_hoc_id`。
+- `study_logs.item_id` 收窄为必填（先删除无主历史行），`relation` 约束收窄为 `scheduled`/`extra`/`legacy_unknown`（不再允许 `ad_hoc`）。
+- 删除 `study_logs.ad_hoc_id` 列、`logs_user_ad_hoc` 索引、旧归属约束与 `ad_hoc_learnings` 表。执行顺序为先迁/删日志、再删列与表，外键依赖不会阻断迁移。
+- 权威同步文档 blob（`planner_sync_state.document` / `projection`）同步清理：删除 `ad_hoc_learnings` 键与日志的 `ad_hoc_id`，把 `ad_hoc` 关系改为 `extra`，删除没有正式事项归属的日志；内容有变化的账号 `revision` 前进，客户端会重新拉取清理后的文档。
+- 迁移可重复执行（列/表/索引均按存在性判断），不删除真实学习记录，也不修改任何已应用的历史迁移文件。
+
 ## 同步与旧写入方
 
-学习关系、临时学习实体与容量覆盖贯通本机存储、JSON 导入导出、备份恢复、数据库投影和同步文档。同步仍以完整文档 + revision/base 三方合并提交：缺失字段表示旧写入方/旧数据（保留云端权威值），显式 null 或空表示用户主动清空。
+执行关系与容量覆盖贯通本机存储、JSON 导入导出、备份恢复、数据库投影和同步文档。同步仍以完整文档 + revision/base 三方合并提交：缺失字段表示旧写入方/旧数据（保留云端权威值），显式 null 或空表示用户主动清空。服务端已删除临时学习，每条学习日志都必须归属正式事项，`task_id` 为空的日志与 `ad_hoc` 关系不再被接受。
 
-新客户端同步时声明 `writer_learning_version: 1`；旧写入方缺少新字段时不会清除容量覆盖或临时学习记录。只有当云端已存在临时学习计时记录（`task_id` 为空的日志）而写入方没有声明该能力时，返回 426 明确升级提示并回滚事务：升级后可用同一 revision/base 重试，本机计时和临时记录保留，不会因为旧结构覆盖而丢失。
+新客户端同步时声明 `writer_learning_version: 1`，使容量字段缺失被解释为“未设置”；旧写入方缺少该字段时保留云端容量覆盖与执行关系，不会被静默清除。临时学习的 426 升级路径已随功能删除，服务端只在规划策略能力不足时返回 `planning_writer_upgrade_required`。
 
 ## 学习规则与数据
 
@@ -163,15 +173,15 @@ Web 产物为 `apps/flutter_client/build/web/`。Windows、Android 构建与签�
 
 每日最多 8 小时、每课程每天最多 4 小时；旧数据继续保留“先扣机动时间”的口径，新计划按净学习预算计算。旧 fixed_events 字段仅用于历史数据兼容，不参与容量、排程或 AI 上下文。一键调整在 AI 审查后由服务端重排整个剩余周期，先预览后确认；无关安排保持稳定，历史、固定、已完成、有实际记录或日志引用的安排受保护。
 
-学习发生时与计划的关系分为三类，与“计时/手动”记录方式相互独立：**今日原定学习**（按该安排的额度封顶）、**已有事项加学**（今天没有安排也能直接为原事项计时，不自动抵消其他今日安排）、**全新临时学习**（名称即可开始，不伪造预算、截止日期或正式日程，不进入自动排程）。原定 60 分钟实际学到 90 分钟时全部 90 分钟都保留，原定达成最多 60 分钟，多出的 30 分钟单独记为加学；同一事项同一天可以既有原定学习也有加学。临时学习可以之后转为正式事项或关联到已有事项，原日志、会话标识与真实用时保留且不重复累计，历史分类仍可解释。
+学习发生时与计划的关系分为两类，与「计时/手动」记录方式相互独立：**今日原定学习**（在今日学习区计时，按该安排的额度封顶）、**已有事项加学**（从「全部事项」行内闹钟为任意现有事项计时，今天没有安排也能开始，不自动抵消其他今日安排）。原定 60 分钟实际学到 90 分钟时全部 90 分钟都保留，原定达成最多 60 分钟，多出的 30 分钟单独记为加学；同一事项同一天可以既有原定学习也有加学，加学中的事项会显示在「今日加学」。
 
-当天容量只计算一次：实际投入、尚未执行的有效预留、新增可安排量与超出预算量分别表达。例如当天净容量 120 分钟、数学原定 60 分钟其中已学 30 分钟、另有 20 分钟临时学习时：实际投入 50 分钟、数学尚需预留 30 分钟、新增可安排 40 分钟（不是 `120-60-30-20`）。今日原定达成按各原定事项分别封顶，其他事项加学不能抵消未完成的原定事项；内容进度、实际用时和事项完成分别表达。
+当天容量只计算一次：实际投入、尚未执行的有效预留、新增可安排量与超出预算量分别表达。例如当天净容量 120 分钟、数学原定 60 分钟其中已学 30 分钟、另有 20 分钟加学时：实际投入 50 分钟、数学尚需预留 30 分钟、新增可安排 40 分钟（不是 `120-60-30-20`）。今日页本身不再展示这行净容量拆分；容量设置仍在设置/调整页维护。今日原定达成按各原定事项分别封顶，其他事项加学不能抵消未完成的原定事项；内容进度、实际用时和事项完成分别表达。
 
 实际用时由开始、暂停和继续计时累计，不提供手动修改用时或每日完成勾选；暂停后可确认并撤销最近一整段误计时。当天用时达标、事项内容完成和目标达成分别表达；用完时间预算不会自动完成事项，超额实际用时仍保留。规划周期结束不自动判定长期目标完成、失败或逾期。
 
 Flutter Web 在 IndexedDB 保存本机计划；Windows 和移动端使用应用数据目录中的 Sembast 数据库。本机数据按 API 地址和账号隔离，修改先落本机，再通过 revision/base 协议同步到 PostgreSQL；冲突需要显式选择。本机缓存和备份不因停用旧版而删除。
 
-JSON 导出与恢复保留计划、事项说明、实际日志、执行关系、临时学习、固定事件、容量覆盖和重排记录。格式与历史 v1 导出兼容（旧导出缺少的新字段按旧语义读取，用户显式清空的字段不会被旧值填回）；历史浏览器缓存或桌面文件需要显式导入。
+JSON 导出与恢复保留计划、事项说明、实际日志、执行关系、固定事件、容量覆盖和重排记录；历史导出里的临时学习字段只用于历史数据兼容读取，不再进入服务端同步文档（服务端已删除该结构）。格式与历史 v1 导出兼容（旧导出缺少的新字段按旧语义读取，用户显式清空的字段不会被旧值填回）；历史浏览器缓存或桌面文件需要显式导入。
 
 实际用时只由开始、暂停和继续计时累计，并随快照同步提交；调整页“一键调整后续计划”调用服务端 AI 接口生成预览，确认后由服务端校验并原子提交计划版本。详细规则、存储位置和已知限制见 [Flutter 客户端说明](apps/flutter_client/README.md)。
 

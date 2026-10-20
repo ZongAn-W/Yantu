@@ -21,9 +21,9 @@ const clone = <T>(value: T): T => structuredClone(value);
  * 缺失字段、null、空字符串和空数组都表示“没有值”。
  *
  * 客户端与历史文档对这些空值的写法不同：客户端的模型会把空字符串/null
- * 写成显式值，也会为 `@Default([])` 的列表字段（例如 `ad_hoc_learnings`）
- * 写出空数组，而服务端快照在列表为空时直接省略该键。比较时统一忽略，
- * 避免每次同步都因为“同一份内容的两种空值写法”误报 base 变化而永久 409。
+ * 写成显式值，也会把列表字段写成空数组，而服务端快照在列表为空时可能省略
+ * 该键。比较时统一忽略，避免每次同步都因为“同一份内容的两种空值写法”误报
+ * base 变化而永久 409。
  */
 const emptyValue = (value: unknown) =>
   value === null ||
@@ -84,44 +84,18 @@ export const LEARNING_PROFILE_KEYS = [
   "date_capacity_overrides",
 ] as const;
 
-/** 每条学习日志上与执行关系/会话/临时学习相关的字段。 */
+/** 每条学习日志上与执行关系/会话相关的字段。 */
 export const LEARNING_LOG_KEYS = [
   "relation",
   "session_id",
-  "ad_hoc_id",
   "quota_minutes",
 ] as const;
-
-/**
- * 写入方是否具备新能力（能往返 relation/临时学习/容量覆盖）。
- *
- * 新客户端总会发送 `ad_hoc_learnings` 键（即使为空数组）与 `capacity_basis`；
- * 显式的 `writer_learning_version` 优先，键存在检测作为兼容兜底。
- */
-export function representsLearningCapabilities(document: PlannerDocument): boolean {
-  if (hasKey(document, "ad_hoc_learnings")) return true;
-  if (LEARNING_PROFILE_KEYS.some((key) => hasKey(document.profile, key))) return true;
-  return document.logs.some(
-    (log) =>
-      hasKey(log, "relation") ||
-      log.session_id !== undefined ||
-      log.ad_hoc_id !== undefined ||
-      log.quota_minutes !== undefined,
-  );
-}
-
-/** 旧写入方无法表达、若放行会在投影删除时丢失真实学习事实的记录。 */
-export function hasUnrepresentableLearningRecords(
-  document: PlannerDocument | null,
-): boolean {
-  return Boolean(document?.logs.some((log) => log.task_id === null));
-}
 
 /**
  * 缺失字段保留云端新数据（旧写入方/旧文档兼容），显式数组或显式值才是权威。
  *
  * 与 `preservePlanningMetadata` 同一原则：旧写入方不理解新字段时，字段缺失
- * 不能解释为“清空”，否则会无声删除临时学习、执行关系或容量覆盖。
+ * 不能解释为“清空”，否则会无声删除执行关系或容量覆盖。
  * 只有显式声明具备新能力的写入方（`writer_learning_version: 1`）才把容量字段
  * 缺失解释为“未设置/清空” —— 因为它的模型会把 null 省略出 JSON。
  */
@@ -132,9 +106,6 @@ export function preserveLearningData(
 ): PlannerDocument {
   if (!current) return data;
   const result = clone(data);
-  // 临时学习实体集合：键整体缺失时保留云端集合；显式数组（含 []）才代表写入方意图。
-  if (!hasKey(data, "ad_hoc_learnings") && current.ad_hoc_learnings !== undefined)
-    result.ad_hoc_learnings = clone(current.ad_hoc_learnings);
   // Profile 容量字段：旧写入方缺失保留已有值；显式 null/空对象会由投影写入清空。
   if (options.preserveCapacity !== false) {
     const targetProfile = result.profile as Record<string, unknown>;
@@ -153,14 +124,6 @@ export function preserveLearningData(
     for (const key of LEARNING_LOG_KEYS)
       if (!hasKey(target, key) && hasKey(source, key) && source[key] !== undefined)
         target[key] = clone(source[key]);
-  }
-  // 保留下来的临时学习实体若引用的课程/事项已被本写入方删除，只清除失效引用，
-  // 不伪造新的归属（关系表外键也会做同样处理）。
-  const subjectIds = new Set(result.subjects.map((row) => row.id));
-  const taskIds = new Set(result.tasks.map((row) => row.id));
-  for (const adHoc of result.ad_hoc_learnings ?? []) {
-    if (adHoc.subject_id && !subjectIds.has(adHoc.subject_id)) adHoc.subject_id = null;
-    if (adHoc.converted_task_id && !taskIds.has(adHoc.converted_task_id)) adHoc.converted_task_id = null;
   }
   return result;
 }
@@ -221,8 +184,7 @@ function mappedNative(
     new Map(rows.map((row) => [dbId(owner, table, row.id), row.id]));
   const subjects = ids("courses", document.subjects),
     tasks = ids("items", document.tasks),
-    logs = ids("study_logs", document.logs),
-    adHoc = ids("ad_hoc_learnings", document.ad_hoc_learnings ?? []);
+    logs = ids("study_logs", document.logs);
   const blocks = new Map<string, string>();
   for (const block of document.blocks) {
     const key = `${block.task_id}:${block.date}`;
@@ -250,20 +212,6 @@ function mappedNative(
       ...(row.planning ? { planning: { ...row.planning,
         ...(row.planning.dependencies ? { dependencies: row.planning.dependencies.map(dependency => ({ ...dependency, task_id: tasks.get(dependency.task_id) ?? dependency.task_id })) } : {}) } } : {}),
     })),
-    ...(native.ad_hoc_learnings !== undefined || document.ad_hoc_learnings !== undefined
-      ? {
-          ad_hoc_learnings: (native.ad_hoc_learnings ?? []).map((row) => ({
-            ...row,
-            id: adHoc.get(row.id) ?? row.id,
-            subject_id: row.subject_id
-              ? (subjects.get(row.subject_id) ?? row.subject_id)
-              : null,
-            converted_task_id: row.converted_task_id
-              ? (tasks.get(row.converted_task_id) ?? row.converted_task_id)
-              : null,
-          })),
-        }
-      : {}),
     blocks: native.blocks.map((row) => ({
       ...row,
       id: nativeBlocks.get(row.id)!,
@@ -272,12 +220,9 @@ function mappedNative(
     logs: native.logs.map((row) => ({
       ...row,
       id: logs.get(row.id) ?? row.id,
-      task_id: row.task_id === null ? null : tasks.get(row.task_id) ?? row.task_id,
+      task_id: tasks.get(row.task_id) ?? row.task_id,
       block_id: row.block_id
         ? (nativeBlocks.get(row.block_id) ?? row.block_id)
-        : null,
-      ad_hoc_id: row.ad_hoc_id
-        ? (adHoc.get(row.ad_hoc_id) ?? row.ad_hoc_id)
         : null,
     })),
   };
@@ -339,36 +284,17 @@ function rebase(
   // Native corrections delete/replace the day's rows. Patch surviving IDs so a
   // lossy block_id projection cannot detach unchanged logs from their split slots.
   result.logs = applyRemoteRows(base.logs, result.logs, remote.logs) as PlannerDocument["logs"];
-  // 临时学习实体同样是关系投影的权威子集：关系表删除/修改优先，本机未同步的新行保留。
-  const baseAdHoc = base.ad_hoc_learnings ?? [],
-    remoteAdHoc = remote.ad_hoc_learnings ?? [],
-    localAdHoc = result.ad_hoc_learnings ?? [];
-  if (baseAdHoc.length || remoteAdHoc.length || localAdHoc.length)
-    result.ad_hoc_learnings = applyRemoteRows(
-      baseAdHoc,
-      localAdHoc,
-      remoteAdHoc,
-    ) as PlannerDocument["ad_hoc_learnings"];
   const tasks = new Set(result.tasks.map((row) => row.id));
-  const adHoc = new Set((result.ad_hoc_learnings ?? []).map((row) => row.id));
   result.blocks = result.blocks.filter((row) => tasks.has(row.task_id));
   const blocks = new Set(result.blocks.map((row) => row.id));
   result.logs = result.logs
-    .filter((row) =>
-      row.task_id === null
-        ? Boolean(row.ad_hoc_id && adHoc.has(row.ad_hoc_id))
-        : tasks.has(row.task_id),
-    )
+    .filter((row) => tasks.has(row.task_id))
     .map((row) => ({
       ...row,
-      // 临时学习日志没有日程归属；失效的 block 引用不能把旧额度继续算到新日期。
-      block_id: row.task_id === null
-        ? null
-        : row.block_id && blocks.has(row.block_id)
-          ? row.block_id
-          : null,
+      // 失效的 block 引用不能把旧额度继续算到新日期。
+      block_id: row.block_id && blocks.has(row.block_id) ? row.block_id : null,
     }));
-  // 关系投影是权威来源：文档里缺失的执行关系/临时学习引用补回（remote 已映射回客户端 id 空间）。
+  // 关系投影是权威来源：文档里缺失的执行关系/会话/额度补回（remote 已映射回客户端 id 空间）。
   // 否则新客户端读不到计时归属，旧写入方回写时又会把“缺失”当默认值。
   const projectedLogs = new Map(remote.logs.map((log) => [log.id, log]));
   for (const log of result.logs) {
@@ -590,7 +516,7 @@ function projectedOptional(
 /**
  * relation 描述已经发生的计时事实：
  * - 旧写入方缺失该字段 → 保留数据库已有关系；
- * - legacy_unknown 只是旧数据兜底，不能覆盖数据库里已知的 scheduled/extra/ad_hoc；
+ * - legacy_unknown 只是旧数据兜底，不能覆盖数据库里已知的 scheduled/extra；
  * - 显式给出的新关系（用户修正归属）为准。
  */
 function projectedRelation(row: Record<string, unknown>, existing: Row | undefined): string {
@@ -634,15 +560,8 @@ async function writeProjection(
   ).rows;
   const existingLogs = (
     await client.query<Row>(
-      `select id,item_id,ad_hoc_id,daily_plan_item_id,date::text,minutes,relation,
+      `select id,item_id,daily_plan_item_id,date::text,minutes,relation,
         session_id,quota_minutes from study_logs where user_id=$1`,
-      [owner],
-    )
-  ).rows;
-  const existingAdHoc = (
-    await client.query<Row>(
-      `select id,title,subject_id,archived,converted_task_id,created_at,updated_at
-       from ad_hoc_learnings where user_id=$1`,
       [owner],
     )
   ).rows;
@@ -651,7 +570,6 @@ async function writeProjection(
   const itemsById = byId(existingItems);
   const daysById = byId(existingDays);
   const logsById = byId(existingLogs);
-  const adHocById = byId(existingAdHoc);
   const daysByKey = new Map(
     existingDays.map((row) => [`${row.item_id}:${row.date}`, row.id]),
   );
@@ -740,29 +658,14 @@ async function writeProjection(
         : null,
     };
   });
-  const adHocPresent = hasKey(data, "ad_hoc_learnings");
-  const adHocTargets = (data.ad_hoc_learnings ?? []).map((row) => ({
-    id: id("ad_hoc_learnings", row.id),
-    title: row.title,
-    subject_id: row.subject_id ? id("courses", row.subject_id) : null,
-    archived: row.archived ?? false,
-    converted_task_id: row.converted_task_id ? id("items", row.converted_task_id) : null,
-    created_at: row.created_at,
-    updated_at: row.updated_at,
-  }));
-  // 每条日志都可归属正式事项或临时学习；缺失新字段时保留数据库已有值（显式 null 才清空）。
+  // 每条日志必须归属正式事项；缺失新字段时保留数据库已有值（显式 null 才清空）。
   const logTargets = data.logs.map((log) => {
     const logId = id("study_logs", log.id);
     const previous = logsById.get(logId);
     const row = log as Record<string, unknown>;
-    const adHocValue = projectedOptional(row, previous, "ad_hoc_id");
     return {
       id: logId,
-      item_id: log.task_id === null ? null : id("items", log.task_id),
-      ad_hoc_id:
-        typeof adHocValue === "string"
-          ? id("ad_hoc_learnings", adHocValue)
-          : null,
+      item_id: id("items", log.task_id),
       daily_plan_item_id: log.block_id
         ? (blockToDay.get(log.block_id) ?? null)
         : null,
@@ -779,7 +682,6 @@ async function writeProjection(
     { table: "items", ids: itemTargets.map((row) => row.id) },
     { table: "study_logs", ids: logTargets.map((row) => row.id) },
     { table: "daily_plan_items", ids: days.map((row) => row.id) },
-    { table: "ad_hoc_learnings", ids: adHocTargets.map((row) => row.id) },
   ]);
   const profile = data.profile;
   // 一周配置：文档里的可靠配置 > 数据库里已有的可靠配置 > 旧数据每日上限。
@@ -947,39 +849,6 @@ async function writeProjection(
       row.planning ? JSON.stringify(row.planning) : null,
     ]),
   );
-  // 临时学习实体：只有文档显式携带集合时才增删改，缺失时保留关系表已有行。
-  const changedAdHoc = adHocTargets.filter((target) => {
-    const previous = adHocById.get(target.id);
-    if (!previous) return true;
-    return (
-      previous.title !== target.title ||
-      (previous.subject_id ?? null) !== target.subject_id ||
-      previous.archived !== target.archived ||
-      (previous.converted_task_id ?? null) !== target.converted_task_id
-    );
-  });
-  await insertBatch(
-    client,
-    "ad_hoc_learnings",
-    [
-      "id", "user_id", "title", "subject_id", "archived", "converted_task_id",
-      "created_at", "updated_at",
-    ],
-    ["uuid", "uuid", "text", "uuid", "boolean", "uuid", "timestamptz", "timestamptz"],
-    `on conflict(id) do update set title=excluded.title,subject_id=excluded.subject_id,
-      archived=excluded.archived,converted_task_id=excluded.converted_task_id,
-      updated_at=excluded.updated_at where ad_hoc_learnings.user_id=excluded.user_id`,
-    changedAdHoc.map((row) => [
-      row.id,
-      owner,
-      row.title,
-      row.subject_id,
-      row.archived,
-      row.converted_task_id,
-      row.created_at,
-      row.updated_at,
-    ]),
-  );
   // Remove vanished children before parents. Foreign keys continue protecting old API rows.
   const logTargetIds = new Set(logTargets.map((row) => row.id));
   await deleteBatch(
@@ -990,18 +859,6 @@ async function writeProjection(
       .map((row) => String(row.id))
       .filter((rowId) => !logTargetIds.has(rowId)),
   );
-  // 旧写入方缺失集合键时绝不删除临时学习实体；显式集合为准。
-  if (adHocPresent) {
-    const adHocTargetIds = new Set(adHocTargets.map((row) => row.id));
-    await deleteBatch(
-      client,
-      "ad_hoc_learnings",
-      owner,
-      existingAdHoc
-        .map((row) => String(row.id))
-        .filter((rowId) => !adHocTargetIds.has(rowId)),
-    );
-  }
   const dayTargetIds = new Set(days.map((row) => row.id));
   await deleteBatch(
     client,
@@ -1059,7 +916,6 @@ async function writeProjection(
     return (
       !previous ||
       (previous.item_id ?? null) !== target.item_id ||
-      (previous.ad_hoc_id ?? null) !== target.ad_hoc_id ||
       (previous.daily_plan_item_id ?? null) !== target.daily_plan_item_id ||
       previous.date !== target.date ||
       previous.minutes !== target.minutes ||
@@ -1073,14 +929,14 @@ async function writeProjection(
     client,
     "study_logs",
     [
-      "id", "user_id", "item_id", "ad_hoc_id", "daily_plan_item_id", "date",
+      "id", "user_id", "item_id", "daily_plan_item_id", "date",
       "minutes", "relation", "session_id", "quota_minutes", "created_at",
     ],
     [
-      "uuid", "uuid", "uuid", "uuid", "uuid", "date", "int", "text", "text",
+      "uuid", "uuid", "uuid", "uuid", "date", "int", "text", "text",
       "int", "timestamptz",
     ],
-    `on conflict(id) do update set item_id=excluded.item_id,ad_hoc_id=excluded.ad_hoc_id,
+    `on conflict(id) do update set item_id=excluded.item_id,
       daily_plan_item_id=excluded.daily_plan_item_id,date=excluded.date,minutes=excluded.minutes,
       relation=excluded.relation,session_id=excluded.session_id,quota_minutes=excluded.quota_minutes
       where study_logs.user_id=excluded.user_id`,
@@ -1088,7 +944,6 @@ async function writeProjection(
       row.id,
       owner,
       row.item_id,
-      row.ad_hoc_id,
       row.daily_plan_item_id,
       row.date,
       row.minutes,
@@ -1125,8 +980,8 @@ const PutSchema = z.object({
   expectedRevision: revision,
   writer_planning_version: z.literal(1).optional(),
   /**
-   * 新数据能力声明：能往返临时学习/执行关系/容量覆盖的写入方固定发送 1。
-   * 缺失时按文档内容检测兜底；旧写入方不发送该字段。
+   * 新数据能力声明：能往返执行关系/会话/额度/容量覆盖的写入方固定发送 1。
+   * 缺失时按“缺失=保留云端值”的旧写入方语义处理；旧写入方不发送该字段。
    */
   writer_learning_version: z.literal(1).optional(),
 });
@@ -1205,15 +1060,10 @@ export async function syncRoutes(app: FastifyInstance) {
         const current = await currentState(client, user.id, state, { persist: false });
         if (writer_planning_version !== 1 && [data, base, current.data].some(hasPlanningMetadata))
           return { upgradeRequired: true as const, error: "当前计划包含新版学习策略，请升级客户端后再同步", code: "planning_writer_upgrade_required" };
-        // 旧写入方无法表达临时学习日志（task_id 为 null）：放行会在投影里无声删除真实计时记录，
-        // 因此先给出明确升级提示；不写任何数据、revision 不变，升级后可用同一 revision/base 重试。
-        const capable = writer_learning_version === 1 || representsLearningCapabilities(data);
-        if (!capable && hasUnrepresentableLearningRecords(current.data))
-          return { upgradeRequired: true as const, error: "当前计划包含临时学习或加学计时记录，请升级客户端后再同步", code: "learning_writer_upgrade_required" };
         const comparableBase = base ? normalizeProfilePlaceholders(base) : null;
         if (current.revision !== expectedRevision || !same(comparableBase, current.data))
           return { conflict: true as const, ...current };
-        // 缺失 ≠ 清空：旧写入方/旧文档缺少新字段时保留云端临时学习、执行关系与容量覆盖。
+        // 缺失 ≠ 清空：旧写入方/旧文档缺少新字段时保留云端执行关系与容量覆盖。
         // 显式声明新能力的写入方（writer_learning_version=1）才把容量字段缺失当作“未设置”。
         const declaredCapable = writer_learning_version === 1;
         const preserved = PlannerDocumentSchema.parse(

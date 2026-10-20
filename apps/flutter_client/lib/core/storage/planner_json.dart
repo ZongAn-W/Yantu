@@ -9,10 +9,39 @@ PlannerData parsePlannerJson(String source) {
   if (json['version'] != 1 || value is! Map) {
     throw const FormatException('本地数据版本不兼容');
   }
-  final data = PlannerData.fromJson(JsonMap.from(value));
+  final data = purgeAdHocData(PlannerData.fromJson(JsonMap.from(value)));
   validatePlanner(data);
   return data;
 }
+
+/// 临时学习已下线（2026-10 二期）：清理旧数据里的临时学习记录。
+///
+/// - 纯临时学习日志（没有正式事项归属）直接删除；
+/// - 已转为正式事项 / 已关联到事项的临时学习计时保留真实用时，改写为
+///   「加学」关系并清空 [TimeLog.adHocId]；
+/// - 清空临时学习实体列表。
+///
+/// 该函数在加载、导入、同步合并与持久化边界统一执行，保证本机与云端最终只
+/// 保留清理后的文档（随后由同步把删除上传到服务端）。
+PlannerData purgeAdHocData(PlannerData data) {
+  final hasAdHocLogs = data.logs.any(
+    (log) => log.relation == TimeLogRelation.adHoc || log.adHocId != null,
+  );
+  if (!hasAdHocLogs && data.adHocLearnings.isEmpty) return data;
+  final logs = <TimeLog>[];
+  for (final log in data.logs) {
+    final isAdHoc =
+        log.relation == TimeLogRelation.adHoc || log.adHocId != null;
+    if (!isAdHoc) {
+      logs.add(log);
+      continue;
+    }
+    if (log.taskId == null) continue;
+    logs.add(log.copyWith(relation: TimeLogRelation.extra, adHocId: null));
+  }
+  return data.copyWith(logs: logs, adHocLearnings: const []);
+}
+
 
 void validatePlanner(PlannerData data) {
   if (data.version != 1) throw const FormatException('本地数据版本不兼容');

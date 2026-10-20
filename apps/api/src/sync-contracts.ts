@@ -74,17 +74,6 @@ const MondayKey = z.string().refine((value) => {
     && parsed.getUTCDay() === 1;
 }, "容量覆盖的周标识必须是周一日期");
 
-const AdHocLearningSchema = z
-  .object({
-    ...owned,
-    ...timestamped,
-    title: z.string().min(1).max(500),
-    subject_id: id.nullable().optional(),
-    archived: z.boolean().optional(),
-    converted_task_id: id.nullable().optional(),
-  })
-  .passthrough();
-
 export const PlannerDocumentSchema = z
   .object({
     version: z.literal(1),
@@ -169,14 +158,13 @@ export const PlannerDocumentSchema = z
       )
       .max(10000),
     blocks: z.array(block).max(100000),
-    ad_hoc_learnings: z.array(AdHocLearningSchema).max(10000).optional(),
     logs: z
       .array(
         z
           .object({
             ...owned,
-            /** 归属事项；临时学习没有正式事项时为 null。 */
-            task_id: id.nullable(),
+            /** 归属事项；学习记录必须归属正式事项（临时学习已删除）。 */
+            task_id: id,
             block_id: id.nullable(),
             date,
             minutes,
@@ -184,9 +172,8 @@ export const PlannerDocumentSchema = z
             ended_at: stamp,
             source: z.enum(["timer", "manual"]),
             /** 计时发生时的执行关系；旧数据缺少时保留未知语义。 */
-            relation: z.enum(["scheduled", "extra", "ad_hoc", "legacy_unknown"]).optional(),
+            relation: z.enum(["scheduled", "extra", "legacy_unknown"]).optional(),
             session_id: id.nullable().optional(),
-            ad_hoc_id: id.nullable().optional(),
             quota_minutes: minutes.optional(),
           })
           .passthrough(),
@@ -271,7 +258,6 @@ export const PlannerDocumentSchema = z
   .passthrough()
   .superRefine((data, ctx) => {
     const owner = data.profile.user_id;
-    const adHocLearnings = data.ad_hoc_learnings ?? [];
     const collections = [
       "subjects",
       "tasks",
@@ -279,10 +265,9 @@ export const PlannerDocumentSchema = z
       "logs",
       "fixed_events",
       "replan_runs",
-      "ad_hoc_learnings",
     ] as const;
     for (const key of collections) {
-      const rows = key === "ad_hoc_learnings" ? adHocLearnings : data[key];
+      const rows = data[key];
       const ids = new Set<string>();
       for (const row of rows) {
         if (ids.has(row.id) || row.user_id !== owner)
@@ -296,17 +281,10 @@ export const PlannerDocumentSchema = z
     }
     const subjects = new Set(data.subjects.map((row) => row.id));
     const tasks = new Set(data.tasks.map((row) => row.id));
-    const adHocIds = new Set(adHocLearnings.map((row) => row.id));
     const blocks = new Map(data.blocks.map((row) => [row.id, row]));
     // 容量覆盖使用稳定落点：周覆盖键必须是周一日期，日期覆盖必须是有效日期。
     for (const monday of Object.keys(data.profile.week_capacity_overrides ?? {})) MondayKey.parse(monday);
     for (const day of Object.keys(data.profile.date_capacity_overrides ?? {})) date.parse(day);
-    for (const adHoc of adHocLearnings)
-      if (adHoc.subject_id && !subjects.has(adHoc.subject_id))
-        ctx.addIssue({ code: "custom", path: ["ad_hoc_learnings", adHoc.id], message: "临时学习引用的课程不存在" });
-    for (const adHoc of adHocLearnings)
-      if (adHoc.converted_task_id && !tasks.has(adHoc.converted_task_id))
-        ctx.addIssue({ code: "custom", path: ["ad_hoc_learnings", adHoc.id], message: "临时学习关联的正式事项不存在" });
     for (const task of data.tasks) {
       const workload = task.planning?.workload;
       if (data.planning && workload) {
@@ -361,16 +339,11 @@ export const PlannerDocumentSchema = z
           message: "日程引用不存在的事项",
         });
     for (const log of data.logs) {
-      const taskId = typeof log.task_id === "string" && log.task_id.length > 0 ? log.task_id : null;
-      const adHocId = typeof log.ad_hoc_id === "string" && log.ad_hoc_id.length > 0 ? log.ad_hoc_id : null;
       const invalid =
-        // 每条记录必须能归属到正式事项或临时学习实体之一。
-        (!taskId && !adHocId) ||
-        (taskId !== null && !tasks.has(taskId)) ||
-        (adHocId !== null && !adHocIds.has(adHocId)) ||
+        // 每条学习记录必须归属一个已存在的事项（临时学习已从服务端删除）。
+        !tasks.has(log.task_id) ||
         (log.block_id !== null &&
-          (!taskId || !blocks.has(log.block_id) || blocks.get(log.block_id)!.task_id !== taskId)) ||
-        (log.relation === "ad_hoc" && !adHocId) ||
+          (!blocks.has(log.block_id) || blocks.get(log.block_id)!.task_id !== log.task_id)) ||
         (log.session_id !== undefined && log.session_id !== null && log.session_id.length === 0);
       if (invalid)
         ctx.addIssue({

@@ -51,12 +51,6 @@ const shellDestinations = <ShellDestination>[
     label: '日历',
     icon: Icons.calendar_today_outlined,
   ),
-  ShellDestination(path: '/tasks', label: '事项', icon: Icons.list_alt_outlined),
-  ShellDestination(
-    path: '/progress',
-    label: '进度',
-    icon: Icons.bar_chart_outlined,
-  ),
   ShellDestination(path: '/adjust', label: '调整', icon: Icons.tune_outlined),
   ShellDestination(
     path: '/settings',
@@ -147,17 +141,9 @@ class _ActiveTimerStrip extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final timer = ref.watch(studyTimerProvider);
     final taskId = timer.activeTaskId;
-    final adHocId = timer.activeAdHocId;
-    if (taskId == null && adHocId == null) return const SizedBox.shrink();
+    if (taskId == null) return const SizedBox.shrink();
     final data = ref.watch(plannerDataProvider).data;
-    final task = taskId == null
-        ? null
-        : data?.tasks.where((task) => task.id == taskId).firstOrNull;
-    final adHoc = adHocId == null
-        ? null
-        : data?.adHocLearnings
-              .where((learning) => learning.id == adHocId)
-              .firstOrNull;
+    final task = data?.tasks.where((task) => task.id == taskId).firstOrNull;
     final relation = timer.activeRelation;
     final relationLabel = relation == null
         ? ''
@@ -176,7 +162,7 @@ class _ActiveTimerStrip extends ConsumerWidget {
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                '$relationLabel${task?.title ?? adHoc?.title ?? '正在计时'}',
+                '$relationLabel${task?.title ?? '正在计时'}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(fontSize: 12),

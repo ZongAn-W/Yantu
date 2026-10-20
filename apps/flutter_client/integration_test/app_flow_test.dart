@@ -132,7 +132,7 @@ void main() {
     await login(tester, app);
 
     expect(app.router.state.uri.path, '/');
-    expect(find.text('今天，专注眼前的一步'), findsOneWidget);
+    expect(find.text('今日学习'), findsOneWidget);
     expect(find.text('高数'), findsWidgets);
     expect(find.text('基础一轮'), findsWidgets);
     // The seeded plan has one 90 minute block and one 60 minute block today.
@@ -141,26 +141,29 @@ void main() {
     expect(app.coordinator.metadata.revision, 4);
     expect(app.coordinator.pending, isFalse);
 
-    // 事项 page: both tasks, with the seeded budget.
+    // 事项目录已合并进今日页下方；旧的 /tasks 链接重定向到今日。
     await openRoute(tester, app, '/tasks');
-    expect(app.router.state.uri.path, '/tasks');
-    expect(find.text('事项管理'), findsOneWidget);
+    expect(app.router.state.uri.path, '/');
+    expect(find.text('全部事项'), findsOneWidget);
     expect(find.text('基础一轮'), findsWidgets);
     expect(find.text('真题精读'), findsWidgets);
     expect(find.text('高数'), findsWidgets);
 
-    // 日历 page: the seeded fixed event and its capacity note.
+    // 日历 page: the read-only merged day/week/month windows.
     await openRoute(tester, app, '/calendar');
     expect(app.router.state.uri.path, '/calendar');
-    expect(find.text('学习日历'), findsOneWidget);
-    expect(find.textContaining('午休与午餐'), findsWidgets);
+    expect(find.byKey(const ValueKey('calendar-overview')), findsOneWidget);
+    expect(find.byKey(const ValueKey('calendar-day-chart')), findsNWidgets(2));
 
-    // 进度 page: the same totals derived from the same plan.
+    // 进度 has been merged into 日历; the old link redirects to the calendar,
+    // which keeps only the compact status strip of the former progress page.
     await openRoute(tester, app, '/progress');
-    expect(app.router.state.uri.path, '/progress');
-    expect(find.text('学习进度'), findsOneWidget);
+    expect(app.router.state.uri.path, '/calendar');
     expect(find.textContaining('累计实际学习'), findsOneWidget);
-    expect(find.text('课程进度'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('calendar-learning-overview')),
+      findsNothing,
+    );
   });
 
   testWidgets('an offline edit survives a restart and uploads when back online', (
@@ -214,9 +217,9 @@ void main() {
       reason: '离线重启后协调器未进入离线状态',
     );
     expect(second.router.state.uri.path, '/');
-    expect(find.text('今天，专注眼前的一步'), findsOneWidget);
+    expect(find.text('今日学习'), findsOneWidget);
     await openRoute(tester, second, '/tasks');
-    expect(find.text('事项管理'), findsOneWidget);
+    expect(find.text('全部事项'), findsOneWidget);
     await openRoute(tester, second, '/');
     debugPrint('Offline recovery: workbench routes available');
     expect(second.coordinator.metadata.pending, isTrue);
@@ -303,8 +306,9 @@ void main() {
       await openRoute(tester, app, '/');
       expect(find.textContaining('2小时30分'), findsWidgets);
 
-      // Progress derives its totals from the same logs.
+      // The merged calendar derives the same totals from the same logs.
       await openRoute(tester, app, '/progress');
+      expect(app.router.state.uri.path, '/calendar');
       expect(find.textContaining('累计实际学习'), findsOneWidget);
 
       // The server received exactly the corrected total, not a delta.
@@ -380,8 +384,9 @@ void main() {
     expect(server.document!.tasks.first.title, '导入后的事项');
     expect(app.coordinator.pending, isFalse);
 
-    // The restored plan is visible on the 事项 page after the import.
+    // The restored plan is visible in the 全部事项 directory after the import.
     await openRoute(tester, app, '/tasks');
+    expect(find.text('全部事项'), findsOneWidget);
     expect(find.text('导入后的事项'), findsWidgets);
   });
 }

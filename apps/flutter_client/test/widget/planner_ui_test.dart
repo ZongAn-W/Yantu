@@ -261,9 +261,13 @@ void main() {
     final container = await signIn(tester, respond: server.respond);
     container.read(appRouterProvider).go('/tasks');
     await tester.pumpAndSettle();
-    expect(find.text('旧规划归档事项'), findsOneWidget);
+    // 合并后同一事项会同时出现在今日学习与全部事项目录里。
+    expect(find.text('旧规划归档事项'), findsWidgets);
 
-    await tester.tap(find.byTooltip('编辑或删除事项'));
+    final menu = find.byTooltip('编辑或删除事项');
+    await tester.ensureVisible(menu);
+    await tester.pumpAndSettle();
+    await tester.tap(menu);
     await tester.pumpAndSettle();
     expect(find.text('编辑事项'), findsOneWidget);
     expect(find.text('删除事项'), findsOneWidget);
@@ -404,7 +408,8 @@ void main() {
     await tester.tap(find.text('重试加载'));
     await tester.pumpAndSettle(const Duration(seconds: 5));
     expect(coordinator.status, SyncStatus.connected);
-    expect(find.byKey(const Key('dashboard-quick-start')), findsOneWidget);
+    expect(find.text('今日学习'), findsOneWidget);
+    expect(find.text('全部事项'), findsOneWidget);
     expect(find.text('基础一轮'), findsWidgets);
   });
 
@@ -470,7 +475,10 @@ void main() {
     container.read(appRouterProvider).go('/tasks');
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byKey(const Key('new-course-button')));
+    final newCourse = find.byKey(const Key('new-course-button'));
+    await tester.ensureVisible(newCourse);
+    await tester.pumpAndSettle();
+    await tester.tap(newCourse);
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('新建课程'), findsWidgets);
     await tester.enterText(
@@ -551,51 +559,6 @@ void main() {
     },
   );
 
-  testWidgets('search and course filter narrow the directory', (tester) async {
-    tester.view.physicalSize = const Size(1280, 900);
-    tester.view.devicePixelRatio = 1;
-    addTearDown(tester.view.reset);
-    final base = todayFixture();
-    final source = base.tasks.single;
-    final english = base.subjects.first.copyWith(
-      id: 'english',
-      name: '英语',
-      color: '#1f7a5a',
-    );
-    final server = FakeSyncServer(
-      plan: base.copyWith(
-        subjects: [base.subjects.first, english],
-        tasks: [
-          source,
-          source.copyWith(
-            id: 'task-english',
-            subjectId: english.id,
-            title: '真题精读',
-          ),
-        ],
-      ),
-    );
-    final container = await signIn(tester, respond: server.respond);
-    container.read(appRouterProvider).go('/tasks');
-    await tester.pumpAndSettle();
-
-    await tester.enterText(find.byKey(const Key('tasks-search-field')), '真题');
-    await tester.pumpAndSettle();
-    expect(find.text('真题精读'), findsOneWidget);
-    expect(find.text('基础一轮'), findsNothing);
-
-    await tester.tap(find.byKey(const Key('clear-search-button')));
-    await tester.pumpAndSettle();
-    expect(find.text('基础一轮'), findsOneWidget);
-
-    await tester.tap(find.byKey(const Key('course-filter-button')));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('英语').last);
-    await tester.pumpAndSettle();
-    expect(find.text('真题精读'), findsOneWidget);
-    expect(find.text('基础一轮'), findsNothing);
-  });
-
   testWidgets('study time comes from the inline timer and cannot be edited', (
     tester,
   ) async {
@@ -665,13 +628,13 @@ void main() {
     expect(find.text('学习执行台'), findsOneWidget);
     expect(find.textContaining('2027-12-25'), findsWidgets);
     expect(container.read(plannerSyncProvider).metadata.revision, 9);
-    const navigationLabels = ['今日', '日历', '事项', '进度', '调整', '设置'];
+    const navigationLabels = ['今日', '日历', '调整', '设置'];
     for (final label in navigationLabels) {
       expect(find.text(label), findsOneWidget, reason: '侧栏缺少「$label」');
     }
     expect(find.text('访谈'), findsNothing);
 
-    // Narrow: bottom navigation, no overflow, all six destinations reachable.
+    // Narrow: bottom navigation, no overflow, all four destinations reachable.
     tester.view.physicalSize = const Size(390, 844);
     await tester.pumpAndSettle();
     expect(find.byType(NavigationBar), findsOneWidget);
@@ -683,7 +646,7 @@ void main() {
         reason: '底部导航缺少「$label」',
       );
     }
-    expect(find.byType(NavigationDestination), findsNWidgets(6));
+    expect(find.byType(NavigationDestination), findsNWidgets(4));
     expect(find.widgetWithText(NavigationDestination, '访谈'), findsNothing);
 
     // Very narrow: the layout still renders without an overflow exception.
@@ -824,7 +787,7 @@ void main() {
     final container = await signIn(tester, respond: server.respond);
     container.read(appRouterProvider).go('/tasks');
     await tester.pumpAndSettle();
-    expect(find.text('基础一轮'), findsOneWidget);
+    expect(find.text('基础一轮'), findsWidgets);
 
     final coordinator = container.read(plannerSyncProvider);
     final taskId = coordinator.data!.tasks.single.id;
@@ -891,7 +854,7 @@ void main() {
       final container = await signIn(tester, respond: server.respond);
       container.read(appRouterProvider).go('/tasks');
       await tester.pumpAndSettle();
-      expect(find.text('依赖演练'), findsOneWidget);
+      expect(find.text('依赖演练'), findsWidgets);
 
       final coordinator = container.read(plannerSyncProvider);
       final menu = find.byKey(Key('task-menu-${first.id}'));

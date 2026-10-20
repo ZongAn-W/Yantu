@@ -4,10 +4,10 @@ import { SignJWT } from "jose";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 /**
- * 真实隔离 PostgreSQL 上的同步投影测试（新概念：临时学习 / 三类执行关系 / 灵活容量）。
+ * 真实隔离 PostgreSQL 上的同步投影测试（二期：临时学习已从服务端删除）。
  *
- * 覆盖：PUT→GET→关系投影往返、旧文档兼容、旧写入方保留策略与 426 升级提示、
- * 容量覆盖显式清空、revision 增量有界、账号隔离、task_id 为空的临时学习日志存活。
+ * 覆盖：PUT→GET→关系投影往返、旧文档/旧写入方兼容、容量覆盖显式清空、
+ * revision 增量有界、账号隔离，以及不含任何临时学习结构（表/列/日志归属）。
  */
 describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
   "learning relations synchronization",
@@ -67,13 +67,10 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       return date.toISOString().slice(0, 10);
     })();
 
-    /**
-     * 带全新概念的完整文档：容量口径/基线/范围/周与日期覆盖、临时学习实体、
-     * scheduled/extra/ad_hoc 三类日志与稳定 session 关联。
-     */
+    /** 带新概念的完整文档：容量口径/基线/范围/周与日期覆盖、两类执行关系与稳定 session。 */
     async function learningDocument(
       owner: string,
-      options: { adHocLog?: boolean; label?: string } = {},
+      options: { label?: string } = {},
     ) {
       const data: any = await fixture(owner);
       const label = options.label ?? "learning";
@@ -85,25 +82,6 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
         [monday]: { total_minutes: 180, days: { "6": 60 } },
       };
       data.profile.date_capacity_overrides = { "2026-11-02": 0, "2026-11-03": 90 };
-      const photo = {
-        id: `${label}-photo`,
-        user_id: owner,
-        title: "临时了解摄影构图",
-        created_at: "2026-10-18T09:00:00.000Z",
-        updated_at: "2026-10-18T09:00:00.000Z",
-        archived: false,
-      };
-      const converted = {
-        id: randomUUID(),
-        user_id: owner,
-        title: "已关联到正式事项的临时学习",
-        subject_id: data.subjects[0].id,
-        created_at: "2026-10-18T11:00:00.000Z",
-        updated_at: "2026-10-18T11:00:00.000Z",
-        archived: true,
-        converted_task_id: data.tasks[0].id,
-      };
-      data.ad_hoc_learnings = [photo, converted];
       data.logs = [
         {
           ...data.logs[0],
@@ -121,25 +99,6 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
           started_at: "2026-10-16T14:00:00.000Z",
           ended_at: "2026-10-16T14:30:00.000Z",
         },
-        ...(options.adHocLog === false
-          ? []
-          : [
-              {
-                id: `${label}-log-photo`,
-                user_id: owner,
-                task_id: null,
-                block_id: null,
-                date: "2026-10-18",
-                minutes: 20,
-                started_at: "2026-10-18T10:00:00.000Z",
-                ended_at: "2026-10-18T10:20:00.000Z",
-                source: "timer",
-                relation: "ad_hoc",
-                session_id: "session-photo",
-                ad_hoc_id: photo.id,
-                quota_minutes: 20,
-              },
-            ]),
       ];
       return data;
     }
@@ -169,7 +128,6 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
     /** 模拟旧写入方：它不理解新字段，重新序列化时会把它们全部丢掉。 */
     function asLegacyWriter(document: any) {
       const legacy = structuredClone(document);
-      delete legacy.ad_hoc_learnings;
       for (const key of [
         "capacity_basis",
         "weekly_baseline_minutes",
@@ -182,7 +140,6 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       legacy.logs = legacy.logs.map((log: any) => {
         delete log.relation;
         delete log.session_id;
-        delete log.ad_hoc_id;
         delete log.quota_minutes;
         return log;
       });
@@ -237,7 +194,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       });
       expect(saved.statusCode, saved.body).toBe(200);
 
-      // 1) 同步文档往返：新字段一个都不能丢。
+      // 1) 同步文档往返：容量与执行关系字段一个都不能丢。
       const pulled = await pull(user);
       expect(pulled.data).toEqual(data);
       expect((await pull(user)).data).toEqual(data);
@@ -251,47 +208,18 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       expect(resync.statusCode, resync.body).toBe(200);
       expect(resync.json().data).toEqual(data);
 
-      // 2) 关系投影：临时学习实体、三类执行关系、会话与额度、容量列全部落库。
+      // 2) 关系投影：执行关系、会话与额度、容量列全部落库；不再有临时学习结构。
       const native = await nativeSnapshot(user);
-      const nativeAdHoc = new Map<string, any>(
-        (native.ad_hoc_learnings as any[]).map((row: any) => [row.id, row]),
-      );
-      expect(nativeAdHoc.size).toBe(2);
-      const nativePhoto = [...nativeAdHoc.values()].find(
-        (row: any) => row.title === "临时了解摄影构图",
-      );
-      expect(nativePhoto.archived).toBe(false);
-      expect(native.ad_hoc_learnings.every((row: any) => row.user_id === user.id)).toBe(true);
-      const nativeConverted = [...nativeAdHoc.values()].find(
-        (row: any) => row.title === "已关联到正式事项的临时学习",
-      );
-      expect(nativeConverted.archived).toBe(true);
-      expect(nativeConverted.subject_id).toBe(native.subjects[0].id);
-      expect(nativeConverted.converted_task_id).toBe(native.tasks[0].id);
-
-      const storedAdHoc = await db.query<any>(
-        "select id,user_id,title,subject_id,archived,converted_task_id from ad_hoc_learnings where user_id=$1 order by created_at",
-        [user.id],
-      );
-      expect(storedAdHoc.rows).toHaveLength(2);
-      expect(storedAdHoc.rows[0]).toMatchObject({
-        user_id: user.id,
-        title: "临时了解摄影构图",
-        archived: false,
-        subject_id: null,
-        converted_task_id: null,
-      });
-      const nativePhotoRow = storedAdHoc.rows[0];
-
+      expect(native).not.toHaveProperty("ad_hoc_learnings");
       const storedLogs = (
         await db.query<any>(
-          `select id,item_id,ad_hoc_id,daily_plan_item_id,date::text as date,minutes,
+          `select id,item_id,daily_plan_item_id,date::text as date,minutes,
              relation,session_id,quota_minutes
            from study_logs where user_id=$1 order by created_at`,
           [user.id],
         )
       ).rows;
-      expect(storedLogs).toHaveLength(3);
+      expect(storedLogs).toHaveLength(2);
       // 计时发生关系原样保存；同一件事当天可同时有 scheduled 与 extra。
       expect(
         storedLogs.map((row: any) => ({
@@ -305,13 +233,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       ).toEqual([
         { id: expect.any(String), relation: "scheduled", minutes: 35, session: "session-mixed", quota: 60, hasItem: true },
         { id: expect.any(String), relation: "extra", minutes: 30, session: "session-mixed", quota: null, hasItem: true },
-        { id: expect.any(String), relation: "ad_hoc", minutes: 20, session: "session-photo", quota: 20, hasItem: false },
       ]);
-      // 临时学习日志没有正式事项，但仍能稳定归属临时学习实体。
-      const storedPhotoLog = storedLogs[2];
-      expect(storedPhotoLog.item_id).toBeNull();
-      expect(storedPhotoLog.ad_hoc_id).toBe(nativePhotoRow.id);
-
       const storedProfile = (
         await db.query<any>(
           `select capacity_basis,weekly_baseline_minutes,weekly_range_min_minutes,
@@ -330,21 +252,24 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
         },
         date_capacity_overrides: { "2026-11-02": 0, "2026-11-03": 90 },
       });
+      // 迁移后数据库里不再有临时学习表或列。
+      expect(
+        (await db.query("select to_regclass('ad_hoc_learnings') as table_name")).rows[0].table_name,
+      ).toBeNull();
+      expect(
+        (
+          await db.query(
+            `select column_name from information_schema.columns
+             where table_schema=current_schema() and column_name like '%ad_hoc%'`,
+          )
+        ).rows,
+      ).toEqual([]);
 
-      // 3) 账号隔离：其他账号既看不到实体，也不能复用别人的原生标识。
+      // 3) 账号隔离：其他账号既看不到计划，也不能复用别人的原生标识。
       const other = await account();
       expect(await pull(other)).toEqual({ data: null, revision: 0 });
       const foreignDocument: any = await fixture(other.id);
-      foreignDocument.ad_hoc_learnings = [
-        {
-          id: nativePhotoRow.id,
-          user_id: other.id,
-          title: "盗用别账号标识",
-          created_at: "2026-10-18T09:00:00.000Z",
-          updated_at: "2026-10-18T09:00:00.000Z",
-          archived: false,
-        },
-      ];
+      foreignDocument.logs[0] = { ...foreignDocument.logs[0], id: native.logs[0].id };
       const foreign = await put(other, {
         data: foreignDocument,
         base: null,
@@ -354,12 +279,9 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       expect(foreign.statusCode, foreign.body).toBe(409);
       expect(
         (
-          await db.query<any>(
-            "select title from ad_hoc_learnings where id=$1",
-            [nativePhotoRow.id],
-          )
-        ).rows[0].title,
-      ).toBe("临时了解摄影构图");
+          await db.query<any>("select minutes from study_logs where id=$1", [native.logs[0].id])
+        ).rows[0].minutes,
+      ).toBe(data.logs[0].minutes);
     });
 
     it("keeps legacy documents working and never silently clears new data for old writers", async () => {
@@ -376,21 +298,21 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       expect(legacyPulled.data).toEqual(legacyData);
       const legacyProjection = (
         await db.query<any>(
-          `select (select count(*)::int from ad_hoc_learnings where user_id=$1) as ad_hoc,
+          `select (select count(*)::int from study_logs where user_id=$1 and item_id is null) as missing_item,
                   (select capacity_basis from profiles where user_id=$1) as capacity_basis,
                   (select relation from study_logs where user_id=$1 limit 1) as relation`,
           [legacyUser.id],
         )
       ).rows[0];
       expect(legacyProjection).toEqual({
-        ad_hoc: 0,
+        missing_item: 0,
         capacity_basis: null,
         relation: "legacy_unknown",
       });
 
       // 云端已有新数据时，旧写入方缺字段 → 保留而不是清空（修复前会静默清除）。
       const user = await account();
-      const data = await learningDocument(user.id, { adHocLog: false, label: "preserve" });
+      const data = await learningDocument(user.id, { label: "preserve" });
       const saved = await put(user, {
         data,
         base: null,
@@ -399,7 +321,6 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       });
       expect(saved.statusCode, saved.body).toBe(200);
       const before = await pull(user);
-      expect(before.data.ad_hoc_learnings).toHaveLength(2);
 
       const legacyWriterData = asLegacyWriter(before.data);
       const written = await put(user, {
@@ -409,8 +330,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       });
       expect(written.statusCode, written.body).toBe(200);
       const after = await pull(user);
-      // 临时学习、容量覆盖、执行关系/会话/额度全部保留。
-      expect(after.data.ad_hoc_learnings).toEqual(before.data.ad_hoc_learnings);
+      // 容量覆盖、执行关系/会话/额度全部保留。
       expect(after.data.profile.capacity_basis).toBe("net");
       expect(after.data.profile.weekly_baseline_minutes).toBe(540);
       expect(after.data.profile.week_capacity_overrides).toEqual(
@@ -437,9 +357,9 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       expect(written.json().data.tasks[0].title).toBe(data.tasks[0].title);
     });
 
-    it("asks old writers to upgrade instead of deleting task-less ad-hoc logs", async () => {
+    it("rejects documents that still contain task-less or ad_hoc-relation logs", async () => {
       const user = await account();
-      const data = await learningDocument(user.id);
+      const data = await learningDocument(user.id, { label: "removed" });
       const saved = await put(user, {
         data,
         base: null,
@@ -447,51 +367,52 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
         writer_learning_version: 1,
       });
       expect(saved.statusCode, saved.body).toBe(200);
-      const before = await pull(user);
-      const revisionBefore = Number(before.revision);
-
-      // 旧写入方无法表达 task_id=null 的临时学习日志：它会把这些行整个丢掉。
-      const legacyWriterData = asLegacyWriter(before.data);
-      legacyWriterData.logs = legacyWriterData.logs.filter(
-        (log: any) => log.task_id !== null,
-      );
-      const rejected = await put(user, {
-        data: legacyWriterData,
-        base: before.data,
-        expectedRevision: before.revision,
-      });
-      expect(rejected.statusCode, rejected.body).toBe(426);
-      expect(rejected.json()).toMatchObject({
-        upgradeRequired: true,
-        code: "learning_writer_upgrade_required",
-      });
-      expect(rejected.json().error).toContain("升级客户端");
-
-      // 拒绝时事务回滚：revision、文档、数据库里的真实计时全部不变。
-      const after = await pull(user);
-      expect(Number(after.revision)).toBe(revisionBefore);
-      expect(after.data.logs).toHaveLength(3);
-      expect(
+      const revisionBefore = saved.json().revision;
+      const logCount = async () =>
         (
-          await db.query<any>(
-            "select count(*)::int as n from study_logs where user_id=$1 and item_id is null",
-            [user.id],
-          )
-        ).rows[0].n,
-      ).toBe(1);
-      // 升级后（发送能力声明）同一 revision/base 可以正常重试，不会变成 409。
-      const upgraded = await put(user, {
-        data: before.data,
-        base: before.data,
-        expectedRevision: before.revision,
+          await db.query<{ count: number }>("select count(*)::int as count from study_logs where user_id=$1", [user.id])
+        ).rows[0].count;
+      expect(await logCount()).toBe(2);
+
+      // 旧的临时学习日志没有正式事项：服务端已删除该能力，返回 400 且不写任何数据。
+      const taskLess = structuredClone(saved.json().data);
+      taskLess.logs.push({
+        ...taskLess.logs[0],
+        id: "legacy-ad-hoc-log",
+        task_id: null,
+        block_id: null,
+        relation: "ad_hoc",
+        session_id: "legacy-session",
+      });
+      const rejectedTaskLess = await put(user, {
+        data: taskLess,
+        base: saved.json().data,
+        expectedRevision: saved.json().revision,
         writer_learning_version: 1,
       });
-      expect(upgraded.statusCode, upgraded.body).toBe(200);
+      expect(rejectedTaskLess.statusCode, rejectedTaskLess.body).toBe(400);
+      // relation=ad_hoc 也不再是合法执行关系。
+      const adHocRelation = structuredClone(saved.json().data);
+      adHocRelation.logs[0].relation = "ad_hoc";
+      const rejectedRelation = await put(user, {
+        data: adHocRelation,
+        base: saved.json().data,
+        expectedRevision: saved.json().revision,
+        writer_learning_version: 1,
+      });
+      expect(rejectedRelation.statusCode, rejectedRelation.body).toBe(400);
+
+      // 拒绝时事务整体回滚：revision、日志数量与内容都不变。
+      expect((await pull(user)).revision).toBe(revisionBefore);
+      expect(await logCount()).toBe(2);
+      expect((await pull(user)).data.logs.map((row: any) => row.relation)).toEqual(
+        ["scheduled", "extra"],
+      );
     });
 
     it("clears capacity only when the capable writer explicitly sends an empty value", async () => {
       const user = await account();
-      const data = await learningDocument(user.id, { adHocLog: false, label: "capacity" });
+      const data = await learningDocument(user.id, { label: "capacity" });
       const saved = await put(user, {
         data,
         base: null,
@@ -560,7 +481,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
 
     it("reads blob capacity values when the projection columns are still missing", async () => {
       const user = await account();
-      const data = await learningDocument(user.id, { adHocLog: false, label: "blob" });
+      const data = await learningDocument(user.id, { label: "blob" });
       const saved = await put(user, {
         data,
         base: null,
@@ -606,141 +527,9 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       });
     });
 
-    it("removes ad-hoc entities and their logs in FK-safe order and converts without duplicating minutes", async () => {
-      const user = await account();
-      const data = await learningDocument(user.id, { label: "convert" });
-      const saved = await put(user, {
-        data,
-        base: null,
-        expectedRevision: 0,
-        writer_learning_version: 1,
-      });
-      expect(saved.statusCode, saved.body).toBe(200);
-      const before = await pull(user);
-      const beforeAdHoc = await db.query<any>(
-        "select id,title,archived,converted_task_id from ad_hoc_learnings where user_id=$1 order by created_at",
-        [user.id],
-      );
-      const photoNative = beforeAdHoc.rows.find(
-        (row: any) => row.title === "临时了解摄影构图",
-      );
-      const photoLog = before.data.logs.find(
-        (log: any) => log.ad_hoc_id === "convert-photo",
-      );
-      expect(photoLog.minutes).toBe(20);
-
-      // 1) 关联到已有事项（转换）：原日志 id/session/分钟全部保留，只改归属并归档实体。
-      const converted = structuredClone(before.data);
-      converted.tasks.push({
-        ...converted.tasks[0],
-        id: randomUUID(),
-        title: "摄影构图正式事项",
-        estimated_minutes: 120,
-      });
-      converted.logs = converted.logs.map((log: any) =>
-        log.ad_hoc_id === "convert-photo"
-          ? { ...log, task_id: converted.tasks.at(-1).id }
-          : log,
-      );
-      converted.ad_hoc_learnings = converted.ad_hoc_learnings.map((row: any) =>
-        row.id === "convert-photo"
-          ? {
-              ...row,
-              archived: true,
-              converted_task_id: converted.tasks.at(-1).id,
-              updated_at: "2026-10-19T09:00:00.000Z",
-            }
-          : row,
-      );
-      const convertedResult = await put(user, {
-        data: converted,
-        base: before.data,
-        expectedRevision: before.revision,
-        writer_learning_version: 1,
-      });
-      expect(convertedResult.statusCode, convertedResult.body).toBe(200);
-      const convertedPull = await pull(user);
-      // 任务顺序按 deadline/created_at 排序（并列时顺序不保证），只断言转换相关字段。
-      expect(
-        convertedPull.data.tasks.some(
-          (task: any) => task.id === converted.tasks.at(-1).id,
-        ),
-      ).toBe(true);
-      expect(
-        convertedPull.data.logs.find(
-          (log: any) => log.ad_hoc_id === "convert-photo",
-        ),
-      ).toMatchObject({ task_id: converted.tasks.at(-1).id, minutes: 20 });
-      expect(
-        convertedPull.data.ad_hoc_learnings.find(
-          (row: any) => row.id === "convert-photo",
-        ),
-      ).toMatchObject({
-        archived: true,
-        converted_task_id: converted.tasks.at(-1).id,
-      });
-      const storedConvertedLog = (
-        await db.query<any>(
-          `select item_id,ad_hoc_id,relation,session_id,minutes from study_logs
-           where user_id=$1 and ad_hoc_id=$2`,
-          [user.id, photoNative.id],
-        )
-      ).rows[0];
-      // 不复制分钟：原记录仍是唯一一条，只是归属变成正式事项，历史 ad_hoc 关系保留。
-      expect(storedConvertedLog).toMatchObject({
-        item_id: converted.tasks.at(-1).id,
-        ad_hoc_id: photoNative.id,
-        relation: "ad_hoc",
-        session_id: "session-photo",
-        minutes: 20,
-      });
-      expect(
-        (
-          await db.query<any>(
-            "select archived,converted_task_id from ad_hoc_learnings where id=$1",
-            [photoNative.id],
-          )
-        ).rows[0],
-      ).toEqual({
-        archived: true,
-        converted_task_id: converted.tasks.at(-1).id,
-      });
-
-      // 2) capable writer 同时删除实体与其日志：sync 必须先删日志再删实体（restrict 外键）。
-      const removed = structuredClone(convertedPull.data);
-      removed.logs = removed.logs.filter(
-        (log: any) => log.ad_hoc_id !== "convert-photo",
-      );
-      removed.ad_hoc_learnings = removed.ad_hoc_learnings.filter(
-        (row: any) => row.id !== "convert-photo",
-      );
-      const removedResult = await put(user, {
-        data: removed,
-        base: convertedPull.data,
-        expectedRevision: convertedPull.revision,
-        writer_learning_version: 1,
-      });
-      expect(removedResult.statusCode, removedResult.body).toBe(200);
-      expect(
-        (
-          await db.query<any>("select count(*)::int as n from ad_hoc_learnings where id=$1", [
-            photoNative.id,
-          ])
-        ).rows[0].n,
-      ).toBe(0);
-      expect(
-        (
-          await db.query<any>("select count(*)::int as n from study_logs where ad_hoc_id=$1", [
-            photoNative.id,
-          ])
-        ).rows[0].n,
-      ).toBe(0);
-      expect((await pull(user)).data.logs).toHaveLength(removed.logs.length);
-    });
-
     it("keeps revision deltas bounded for single-record changes", async () => {
       const user = await account();
-      const data = await learningDocument(user.id, { adHocLog: false, label: "revision" });
+      const data = await learningDocument(user.id, { label: "revision" });
       const saved = await put(user, {
         data,
         base: null,
@@ -751,7 +540,6 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       const beforeRevision = Number(saved.json().revision);
       const next = structuredClone(saved.json().data);
       next.logs[0].minutes += 1;
-      next.ad_hoc_learnings[0].title = "临时了解摄影用光";
       next.profile.week_capacity_overrides = {
         [monday]: { total_minutes: 240 },
       };
@@ -762,11 +550,13 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
         writer_learning_version: 1,
       });
       expect(changed.statusCode, changed.body).toBe(200);
-      // 一行日志 + 一行临时学习 + 一行 profile + 状态行，不能被全量重写放大。
+      // 一行日志 + 一行 profile + 状态行，不能被全量重写放大。
       const delta = Number(changed.json().revision) - beforeRevision;
       expect(delta).toBeGreaterThan(0);
       expect(delta).toBeLessThan(20);
-      expect(changed.json().data.ad_hoc_learnings[0].title).toBe("临时了解摄影用光");
+      expect(changed.json().data.profile.week_capacity_overrides).toEqual({
+        [monday]: { total_minutes: 240 },
+      });
     });
   },
 );

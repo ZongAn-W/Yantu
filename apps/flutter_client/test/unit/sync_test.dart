@@ -305,7 +305,8 @@ void main() {
     },
   );
   test(
-    'new fields survive an offline edit, coordinator restart and upload',
+    'new fields survive an offline edit, coordinator restart and upload, '
+    'while legacy ad-hoc records are removed',
     () async {
       await coordinator.initialize();
       remote.offline = true;
@@ -316,31 +317,26 @@ void main() {
       coordinator.dispose();
       coordinator = create();
       await coordinator.initialize();
-      // 重启后本机保存的新字段完整保留。
-      expect(coordinator.data!.adHocLearnings.single.id, 'adhoc-photo');
+      // 重启后本机保存的新字段完整保留；临时学习记录已被清理。
+      expect(coordinator.data!.adHocLearnings, isEmpty);
       expect(coordinator.data!.profile.dateCapacityOverrides, {'2026-10-22': 0});
-      expect(coordinator.data!.logs.any((log) => log.id == 'log-adhoc'), isTrue);
+      expect(coordinator.data!.logs.any((log) => log.id == 'log-adhoc'), isFalse);
       remote.offline = false;
       await coordinator.sync();
       expect(coordinator.pending, isFalse);
       expect(coordinator.status, SyncStatus.connected);
-      expect(remote.data!.adHocLearnings.single.id, 'adhoc-photo');
+      expect(remote.data!.adHocLearnings, isEmpty);
       expect(remote.data!.profile.capacityBasis, CapacityBasis.net);
       expect(
         remote.data!.profile.weekCapacityOverrides!.keys.single,
         '2026-10-19',
       );
-      final uploaded = remote.data!.logs.firstWhere(
-        (log) => log.id == 'log-adhoc',
-      );
-      expect(uploaded.taskId, isNull);
-      expect(uploaded.adHocId, 'adhoc-photo');
-      expect(uploaded.sessionId, 'session-x');
-      expect(uploaded.relation, TimeLogRelation.adHoc);
+      expect(remote.data!.logs.any((log) => log.id == 'log-adhoc'), isFalse);
     },
   );
   test(
-    'JSON export and import keep new fields and re-tag them for the account',
+    'JSON export and import keep new fields, re-tag them for the account '
+    'and drop ad-hoc records',
     () async {
       final transfer = FakeTransfer();
       final transferStorage = SembastStorageRepository(
@@ -359,42 +355,42 @@ void main() {
       await exportCoordinator.edit(withNewLearningFields);
       await exportCoordinator.exportJson();
       expect(transfer.exported, isNotNull);
-      expect(transfer.exported!.adHocLearnings.single.id, 'adhoc-photo');
-      // 另一账号的导出被导入当前账号：id 重新映射，但新字段与 session 标识保留。
+      expect(transfer.exported!.adHocLearnings, isEmpty);
+      expect(
+        transfer.exported!.logs.any((log) => log.id == 'log-adhoc'),
+        isFalse,
+      );
+      // 另一账号的导出被导入当前账号：id 重新映射，新字段保留，临时学习被清理。
       transfer.imported = forAccount(
         withNewLearningFields(plannerFixture()),
         'other-account',
       );
       await exportCoordinator.importJson();
       expect(exportCoordinator.pending, isFalse);
-      final adHoc = exportCoordinator.data!.adHocLearnings.single;
-      expect(adHoc.userId, base.profile.userId);
-      expect(adHoc.id, isNot('adhoc-photo'));
-      final imported = exportCoordinator.data!.logs.firstWhere(
-        (log) => log.taskId == null,
+      expect(exportCoordinator.data!.adHocLearnings, isEmpty);
+      expect(
+        exportCoordinator.data!.logs.every((log) => log.taskId != null),
+        isTrue,
       );
-      expect(imported.adHocId, adHoc.id);
-      expect(imported.sessionId, 'session-x');
-      expect(imported.relation, TimeLogRelation.adHoc);
       expect(exportCoordinator.data!.profile.dateCapacityOverrides, {
         '2026-10-22': 0,
       });
-      expect(remote.data!.adHocLearnings.single.userId, base.profile.userId);
+      expect(remote.data!.adHocLearnings, isEmpty);
       expect(
         remote.data!.profile.weekCapacityOverrides!.keys.single,
         '2026-10-19',
       );
     },
   );
-  test('explicit backup recovery keeps the new fields', () async {
+  test('explicit backup recovery keeps the new fields and drops ad-hoc records', () async {
     await coordinator.initialize();
     final rich = withNewLearningFields(base);
     await coordinator.edit((_) => rich);
     await coordinator.edit((data) => data.copyWith(phases: []));
     await coordinator.recover();
-    expect(coordinator.data!.adHocLearnings.single.id, 'adhoc-photo');
+    expect(coordinator.data!.adHocLearnings, isEmpty);
     expect(coordinator.data!.profile.dateCapacityOverrides, {'2026-10-22': 0});
-    expect(coordinator.data!.logs.any((log) => log.id == 'log-adhoc'), isTrue);
-    expect(remote.data!.adHocLearnings.single.id, 'adhoc-photo');
+    expect(coordinator.data!.logs.any((log) => log.id == 'log-adhoc'), isFalse);
+    expect(remote.data!.adHocLearnings, isEmpty);
   });
 }

@@ -12,42 +12,35 @@ import 'planner_dialogs.dart';
 /// The same read-only clock and timer action on today's list and the calendar.
 ///
 /// The widget also renders extra-study rows (a study item without a block on
-/// today's list) and temporary-learning rows: [adHocId] switches the owner to a
-/// task-less ad-hoc entity and [extraOnly] starts an explicit extra-study
-/// interval instead of the scheduled one.
+/// today's list): [extraOnly] starts an explicit extra-study interval instead of
+/// the scheduled one.
 class TaskStudyTimer extends ConsumerWidget {
   const TaskStudyTimer({
-    this.taskId,
-    this.adHocId,
+    required this.taskId,
     required this.date,
     required this.plannedMinutes,
     required this.color,
     required this.canStart,
     this.canDiscard = true,
     this.extraOnly = false,
-    this.adHocTitle,
-    this.adHocSubjectId,
     this.heading,
     this.secondaryAction,
     this.detailsAction,
     super.key,
-  }) : assert(taskId != null || adHocId != null);
+  });
 
-  final String? taskId;
-  final String? adHocId;
+  final String taskId;
   final String date;
   final int plannedMinutes;
   final Color color;
   final bool canStart;
   final bool canDiscard;
   final bool extraOnly;
-  final String? adHocTitle;
-  final String? adHocSubjectId;
   final Widget? heading;
   final Widget? secondaryAction;
   final Widget? detailsAction;
 
-  String get _ownerKey => adHocId ?? taskId!;
+  String get _ownerKey => taskId;
 
   String _elapsed(Duration value) => [
     value.inHours,
@@ -82,19 +75,11 @@ class TaskStudyTimer extends ConsumerWidget {
     );
     if (!confirmed || !context.mounted) return;
     try {
-      if (adHocId != null) {
-        await timer.discardLastAdHocSession(
-          adHocId!,
-          date,
-          expectedSessionId: session.id,
-        );
-      } else {
-        await timer.discardLastSession(
-          taskId!,
-          date,
-          expectedSessionId: session.id,
-        );
-      }
+      await timer.discardLastSession(
+        taskId,
+        date,
+        expectedSessionId: session.id,
+      );
       if (context.mounted) {
         showPlannerMessage(context, '已撤销 ${_elapsed(session.elapsed)} 的计时');
       }
@@ -103,45 +88,14 @@ class TaskStudyTimer extends ConsumerWidget {
     }
   }
 
-  /// Offers the optional follow-up of a paused extra/temporary interval without
+  /// Offers the optional follow-up of a paused extra interval without
   /// completing anything automatically.
   void _afterPause(BuildContext context, WidgetRef ref, StudyTimer timer) {
     if (!context.mounted) return;
-    final session = adHocId != null
-        ? timer.lastSessionForAdHoc(adHocId!, date)
-        : timer.lastSessionFor(taskId!, date);
-    final relation = session?.relation;
-    final messenger = ScaffoldMessenger.maybeOf(context);
-    if (relation == TimeLogRelation.adHoc && adHocId != null) {
-      messenger?.showSnackBar(
-        SnackBar(
-          content: const Text('临时学习已保存。需要的话可以转为正式事项或关联到已有事项。'),
-          action: SnackBarAction(
-            label: '转为正式事项',
-            onPressed: () => AdHocConvertDialog.show(context, adHocId!),
-          ),
-        ),
-      );
+    if (timer.lastSessionFor(taskId, date)?.relation != TimeLogRelation.extra) {
       return;
     }
-    if (relation != TimeLogRelation.extra || taskId == null) return;
-    final data = ref.read(plannerSessionProvider).data;
-    final task = data.tasks.where((item) => item.id == taskId).firstOrNull;
-    if (task == null || task.status == TaskStatus.completed) {
-      messenger?.showSnackBar(
-        const SnackBar(content: Text('复习计时已记录：内容完成状态保持不变。')),
-      );
-      return;
-    }
-    messenger?.showSnackBar(
-      SnackBar(
-        content: const Text('加学时间已保存。需要的话可以记录本次内容进度与困难。'),
-        action: SnackBarAction(
-          label: '记录内容进度',
-          onPressed: () => ContentFeedbackDialog.show(context, taskId!),
-        ),
-      ),
-    );
+    showExtraStudyPauseFollowUp(context, ref, taskId);
   }
 
   Future<void> _toggle(
@@ -150,23 +104,13 @@ class TaskStudyTimer extends ConsumerWidget {
     StudyTimer timer,
   ) async {
     try {
-      if (timer.activeTaskId == taskId && adHocId == null ||
-          timer.activeAdHocId == adHocId && adHocId != null) {
+      if (timer.activeTaskId == taskId) {
         await timer.pause();
         if (context.mounted) _afterPause(context, ref, timer);
-      } else if (adHocId != null) {
-        final data = ref.read(plannerSessionProvider).data;
-        final learning = data.adHocLearnings
-            .where((item) => item.id == adHocId)
-            .firstOrNull;
-        await timer.startAdHoc(
-          title: learning?.title ?? adHocTitle ?? '',
-          subjectId: learning?.subjectId ?? adHocSubjectId,
-        );
       } else if (extraOnly) {
-        await timer.startExtra(taskId!);
+        await timer.startExtra(taskId);
       } else {
-        await timer.start(taskId!, date);
+        await timer.start(taskId, date);
       }
     } catch (_) {
       // The controller retains the clock and exposes the error inline.
@@ -176,18 +120,10 @@ class TaskStudyTimer extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final timer = ref.watch(studyTimerProvider);
-    final elapsed = adHocId != null
-        ? timer.elapsedForAdHoc(adHocId!, date)
-        : timer.elapsedFor(taskId!, date);
-    final running = adHocId != null
-        ? timer.isRunningAdHoc(adHocId!, date)
-        : timer.activeTaskId == taskId;
+    final elapsed = timer.elapsedFor(taskId, date);
+    final running = timer.activeTaskId == taskId;
     final clock = _elapsed(elapsed);
-    final last = running
-        ? null
-        : adHocId != null
-        ? timer.lastSessionForAdHoc(adHocId!, date)
-        : timer.lastSessionFor(taskId!, date);
+    final last = running ? null : timer.lastSessionFor(taskId, date);
     final targetSeconds = plannedMinutes * 60;
     final ratio = targetSeconds <= 0
         ? 0.0
@@ -196,16 +132,10 @@ class TaskStudyTimer extends ConsumerWidget {
         ? '暂停计时'
         : elapsed > Duration.zero
         ? '继续计时'
-        : adHocId != null
-        ? '开始临时学习'
         : extraOnly
         ? '开始加学'
         : '开始计时';
-    final targetLabel = adHocId != null || extraOnly
-        ? (elapsed > Duration.zero
-              ? '已学 ${duration(elapsed.inMinutes)}'
-              : '名称即可计时')
-        : '目标 ${duration(plannedMinutes)}';
+    final targetLabel = extraOnly ? '加学计时' : '目标 ${duration(plannedMinutes)}';
     final ring = Semantics(
       key: Key('study-progress-$_ownerKey-$date'),
       label: '学习用时',
@@ -267,22 +197,31 @@ class TaskStudyTimer extends ConsumerWidget {
       children: [
         LayoutBuilder(
           builder: (context, constraints) {
+            // 今日加学卡只是加学计时的展示与控制：没有进行中的计时会话时
+            // 不再提供“开始加学”，入口统一在下方事项行的闹钟。
+            final showPrimaryAction =
+                !extraOnly || running || elapsed > Duration.zero;
             final actions = <Widget>[
-              FilledButton.icon(
-                key: Key('study-timer-action-$_ownerKey-$date'),
-                style: FilledButton.styleFrom(
-                  minimumSize: const Size(0, 36),
-                  padding: const EdgeInsets.symmetric(horizontal: 10),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(6),
+              if (showPrimaryAction)
+                FilledButton.icon(
+                  key: Key('study-timer-action-$_ownerKey-$date'),
+                  style: FilledButton.styleFrom(
+                    minimumSize: const Size(0, 36),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(6),
+                    ),
                   ),
+                  onPressed:
+                      !timer.ready || timer.busy || (!running && !canStart)
+                      ? null
+                      : () => _toggle(context, ref, timer),
+                  icon: Icon(
+                    running ? Icons.pause : Icons.play_arrow,
+                    size: 18,
+                  ),
+                  label: Text(action),
                 ),
-                onPressed: !timer.ready || timer.busy || (!running && !canStart)
-                    ? null
-                    : () => _toggle(context, ref, timer),
-                icon: Icon(running ? Icons.pause : Icons.play_arrow, size: 18),
-                label: Text(action),
-              ),
               if (running)
                 TextButton.icon(
                   key: Key('study-timer-end-$_ownerKey-$date'),
@@ -420,4 +359,37 @@ class TaskStudyTimer extends ConsumerWidget {
       ],
     );
   }
+}
+
+/// 事项行闹钟暂停后的可选后续：加学/复习计时保存后提示记录本次内容进度。
+///
+/// 只在本事项当天最后一段计时是 [TimeLogRelation.extra] 时提示，绝不自动完成
+/// 内容或解锁依赖；已完成事项只说明复习计时已记录，内容完成状态保持不变。
+void showExtraStudyPauseFollowUp(
+  BuildContext context,
+  WidgetRef ref,
+  String taskId,
+) {
+  if (!context.mounted) return;
+  final date = shanghaiToday();
+  final session = ref.read(studyTimerProvider).lastSessionFor(taskId, date);
+  if (session?.relation != TimeLogRelation.extra) return;
+  final messenger = ScaffoldMessenger.maybeOf(context);
+  final data = ref.read(plannerSessionProvider).data;
+  final task = data.tasks.where((item) => item.id == taskId).firstOrNull;
+  if (task == null || task.status == TaskStatus.completed) {
+    messenger?.showSnackBar(
+      const SnackBar(content: Text('复习计时已记录：内容完成状态保持不变。')),
+    );
+    return;
+  }
+  messenger?.showSnackBar(
+    SnackBar(
+      content: const Text('加学时间已保存。需要的话可以记录本次内容进度与困难。'),
+      action: SnackBarAction(
+        label: '记录内容进度',
+        onPressed: () => ContentFeedbackDialog.show(context, taskId),
+      ),
+    ),
+  );
 }

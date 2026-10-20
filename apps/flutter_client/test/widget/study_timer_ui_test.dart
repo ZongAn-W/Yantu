@@ -58,6 +58,7 @@ class _FixtureSync implements SyncApi {
 PlannerData _planFor(String date) {
   final fixture = plannerFixture();
   return fixture.copyWith(
+    planning: {'version': 1, 'mode': 'full', 'rolling': false},
     blocks: [fixture.blocks.single.copyWith(date: date)],
     logs: const [],
   );

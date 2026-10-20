@@ -102,11 +102,40 @@ class PlannerCoordinator extends ChangeNotifier {
     return next;
   }
 
+  /// 临时学习已下线：同步基线（base）里也可能残留 ad-hoc 字段。服务端契约已
+  /// 删除 relation 的 ad_hoc 值，旧 base 原样上传会导致 400，因此落盘与上传前
+  /// 统一清理。
+  StorageMetadata _purgedMetadata(StorageMetadata meta) {
+    final base = meta.base;
+    if (base == null) return meta;
+    final cleaned = purgeAdHocData(base);
+    if (identical(cleaned, base)) return meta;
+    return meta.copyWith(base: cleaned);
+  }
+
   Future<void> initialize() async {
     final snapshot = await storage.load(key);
     if (_disposed) return;
-    data = snapshot.data;
-    metadata = snapshot.metadata;
+    var loaded = snapshot.data;
+    var meta = _purgedMetadata(snapshot.metadata);
+    if (loaded != null) {
+      final purged = purgeAdHocData(loaded);
+      if (!identical(purged, loaded)) {
+        // 临时学习已下线：立即把清理后的数据落盘并标记待上传，让下一次同步
+        // 把删除带到服务端；即使落盘失败也先以清理后的内存数据进入工作台。
+        meta = meta.copyWith(pending: true, updatedAt: DateTime.now().toUtc());
+        loaded = purged;
+      }
+      if (!identical(meta, snapshot.metadata)) {
+        try {
+          await storage.save(key, loaded, meta);
+        } catch (_) {
+          // 后续同步仍会重新持久化并上传清理后的文档。
+        }
+      }
+    }
+    data = loaded;
+    metadata = meta;
     blocked = snapshot.error != null && snapshot.data == null;
     message = snapshot.error ?? '正在连接云端…';
     ready = true;
@@ -119,10 +148,18 @@ class PlannerCoordinator extends ChangeNotifier {
     StorageMetadata meta, {
     bool recovery = false,
   }) async {
-    await storage.save(key, next, meta, recovery: recovery);
+    final cleaned = purgeAdHocData(next);
+    var effective = _purgedMetadata(meta);
+    if (!identical(cleaned, next) && !effective.pending) {
+      effective = effective.copyWith(
+        pending: true,
+        updatedAt: DateTime.now().toUtc(),
+      );
+    }
+    await storage.save(key, cleaned, effective, recovery: recovery);
     if (_disposed) return;
-    data = next;
-    metadata = meta;
+    data = cleaned;
+    metadata = effective;
     blocked = false;
     _notify();
   }
@@ -260,9 +297,9 @@ class PlannerCoordinator extends ChangeNotifier {
     }
     await _serial(() async {
       final merged = mergePlans(
-        metadata.base,
-        data!,
-        remote.data,
+        metadata.base == null ? null : purgeAdHocData(metadata.base!),
+        purgeAdHocData(data!),
+        remote.data == null ? null : purgeAdHocData(remote.data!),
         preferLocal: useLocal,
       );
       await _persist(
@@ -357,7 +394,13 @@ class PlannerCoordinator extends ChangeNotifier {
         } else {
           await _serial(() async {
             if (metadata.pending && data != null) {
-              final merged = mergePlans(metadata.base, data!, snapshot.data);
+              final merged = mergePlans(
+                metadata.base == null ? null : purgeAdHocData(metadata.base!),
+                purgeAdHocData(data!),
+                snapshot.data == null
+                    ? null
+                    : purgeAdHocData(snapshot.data!),
+              );
               if (merged.conflicts.isNotEmpty) {
                 conflicts = merged.conflicts;
                 _conflictLogs = merged.logConflicts;
