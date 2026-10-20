@@ -6,11 +6,11 @@ const fixture = JSON.parse(readFileSync("packages/planner-engine/fixtures/strate
 export function strategyInput(row: any): StrategyInput {
   return {
     profile: { user_id: "fixture-user", planning_mode: "daily", daily_limit_minutes: 120, buffer_minutes: 30,
-      granularity_minutes: 30, subject_limit_minutes: 240, study_start_minute: 480, study_end_minute: 1320,
+      granularity_minutes: 30, study_start_minute: 480, study_end_minute: 1320,
       plan_start_date: row.plan_start_date ?? row.from, plan_end_date: row.plan_end_date ?? row.to,
       weekly_minutes: row.weekly_minutes ?? { "0": 0, "1": 120, "2": 120, "3": 120, "4": 120, "5": 120, "6": 0 },
       ...(row.profile ?? {}) },
-    tasks: row.tasks.map((task: Partial<StrategyTask>) => ({ user_id: "fixture-user", subject_id: "course",
+    tasks: row.tasks.map((task: Partial<StrategyTask>) => ({ user_id: "fixture-user",
       title: task.id, estimated_minutes: 30, completed_minutes: 0, priority: 2, deadline: row.to,
       is_fixed: false, status: "not_started", ...task })),
     blocks: row.blocks ?? [], logs: row.logs ?? [], fixed_events: (row.fixed_events ?? []).map((event: any) => ({

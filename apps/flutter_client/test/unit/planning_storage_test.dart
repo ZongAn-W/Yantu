@@ -79,7 +79,7 @@ void main() {
       final data = strategyFixture();
       final draft = ItemDraft(
         id: data.tasks.single.id,
-        courseId: data.subjects.single.id,
+        tagNames: const ['数学', '真题'],
         title: 'Practice',
         estimatedMinutes: 3780,
         deadline: '2026-11-12',
@@ -205,11 +205,7 @@ void main() {
     expect(next.planning!['route'], isEmpty, reason: '删空的阶段不留在元数据里');
     expect(next.planning!['needs_review'], isTrue);
     expect(next.planning!['quality'], isNull);
-    expect(
-      parsePlannerJson(next.toJsonString()),
-      next,
-      reason: '导出后重新读取仍通过校验',
-    );
+    expect(parsePlannerJson(next.toJsonString()), next, reason: '导出后重新读取仍通过校验');
     final wire = plannerDocumentForSync(next, base);
     expect(wire['planning'], isNotNull);
   });

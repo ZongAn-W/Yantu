@@ -25,7 +25,6 @@ void main() {
           'daily_limit_minutes': 120,
           'buffer_minutes': 30,
           'granularity_minutes': 30,
-          'subject_limit_minutes': 240,
           'study_start_minute': 480,
           'study_end_minute': 1320,
           'foundation': '',
@@ -44,12 +43,12 @@ void main() {
               },
           ...JsonMap.from(row['profile'] as Map? ?? const {}),
         },
-        'subjects': <Object?>[],
+        'tags': <Object?>[],
         'tasks': [
           for (final task in row['tasks'] as List)
             {
               'user_id': 'fixture-user',
-              'subject_id': 'course',
+              'tag_ids': <String>[],
               'title': task['id'],
               'estimated_minutes': 30,
               'completed_minutes': 0,

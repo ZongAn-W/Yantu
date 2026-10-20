@@ -5,7 +5,7 @@ import {
 } from "./onboarding-evidence.js";
 import { FIRST_QUESTION, newSession, type OnboardingSession } from "./onboarding-contracts.js";
 import { advanceOnboarding } from "./onboarding.js";
-import { generateCourses, nextInterview } from "./onboarding-ai.js";
+import { generateItems, nextInterview } from "./onboarding-ai.js";
 
 const aiConfig = vi.hoisted(() => ({ aiApiKey: "", aiBaseUrl: "https://ai.invalid", aiModel: "test", aiReasoningEffort: "max" }));
 vi.mock("./config.js", () => ({ config: aiConfig }));
@@ -30,16 +30,15 @@ afterEach(() => {
 });
 
 describe("exam information confirmation", () => {
-  it("keeps unverified generated exam subjects explicit without blocking an editable draft", async () => {
+  it("accepts item tag suggestions by name without requiring prior course objects", async () => {
     aiConfig.aiApiKey = "key";
-    const session = newSession();
-    session.profile = { ...session.profile, goal_type: "exam", goal_subtype: "考研" };
-    session.answers = [{ question: FIRST_QUESTION, answer: "考研" }];
-    aiResponse({ courses: [{ id: "english", name: "英语一", description: "阅读练习", priority: 2 }], summary: "课程草案", assumptions: [], warnings: [] });
-    const result = await generateCourses(session);
-    expect(result.courses[0].name).toBe("英语一");
-    expect(result.assumptions.join(" ")).toContain("英语一");
-    expect(result.warnings.join(" ")).toContain("核实依据");
+    const session = { ...newSession(), stage: "constraints" as const, start_date: "2026-10-17", end_date: "2026-11-13" };
+    aiResponse({ items: [{ id: "english-reading", title: "阅读练习", tag_names: ["英语", "薄弱项"], estimated_minutes: 60,
+      deadline: "2026-11-13", deadline_kind: "plan_end", priority: 2 }], summary: "事项草案", assumptions: [], warnings: [] });
+    const result = await generateItems(session);
+    expect(result.items[0].tag_names).toEqual(["英语", "薄弱项"]);
+    const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
+    expect(request.messages[0].content).toContain("不得编造数据库ID");
   });
   it("clarifies the exam type when only 考试备考 is answered", async () => {
     const session = await answer(newSession(), "考试备考");

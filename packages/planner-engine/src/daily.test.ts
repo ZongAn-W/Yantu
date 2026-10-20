@@ -30,7 +30,6 @@ const profile: Profile = {
   daily_limit_minutes: 480,
   buffer_minutes: 30,
   granularity_minutes: 30,
-  subject_limit_minutes: 240,
   study_start_minute: 480,
   study_end_minute: 1200,
   foundation: "3.4",
@@ -38,7 +37,7 @@ const profile: Profile = {
 const task = (id = "math", overrides: Partial<Task> = {}): Task => ({
   id,
   user_id: profile.user_id,
-  subject_id: "math",
+  tag_ids: [],
   title: id,
   estimated_minutes: 600,
   completed_minutes: 0,
@@ -100,7 +99,7 @@ const data = (source: ReplanInput): PlannerData => ({
   blocks: source.blocks,
   logs: source.logs,
   fixed_events: source.fixed_events,
-  subjects: [],
+  tags: [],
   phases: [],
   replan_runs: [],
 });
@@ -147,7 +146,7 @@ describe("每日任务与时长模式", () => {
     expect(availableDailyMinutes(profile, events, date)).toBe(450);
     const source = data(
       input({
-        tasks: [task(), task("english", { subject_id: "english" })],
+        tasks: [task(), task("english")],
         blocks: [block("math", { duration_minutes: 240 })],
         fixed_events: events,
       }),
@@ -250,10 +249,10 @@ describe("每日任务与时长模式", () => {
     );
   });
 
-  it("同科4小时和每日450分钟硬上限在每日模式仍生效", () => {
+  it("所有事项共同受每日450分钟容量限制", () => {
     const preview = generateReplanPreview(
       input({
-        tasks: [task(), task("english", { subject_id: "english" })],
+        tasks: [task(), task("english")],
         blocks: [
           block("math", { date: today, duration_minutes: 600 }),
           block("english", {
@@ -269,14 +268,6 @@ describe("每日任务与时长模式", () => {
       expect(
         total(preview.after.filter((item) => item.date === day)),
       ).toBeLessThanOrEqual(450);
-      for (const id of ["math", "english"])
-        expect(
-          total(
-            preview.after.filter(
-              (item) => item.date === day && item.task_id === id,
-            ),
-          ),
-        ).toBeLessThanOrEqual(240);
     }
   });
 

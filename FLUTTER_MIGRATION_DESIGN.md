@@ -397,7 +397,8 @@ Widget 只订阅 provider 并发送意图，规则全部位于 domain/applicatio
 | application | `onboarding_controller.dart` | 备考资料六步校验、AI 草案生成/编辑/确认、设置草稿校验与应用 |
 | presentation | `planner_dialogs.dart` | 记录用时、调整日期、事项编辑、安排时间块、标记完成、固定事件、结束今天、重排预览 |
 | presentation | `planner_page_state.dart` | 统一的加载/失败/阻断/重试外壳 |
-| presentation | `shell/app_shell.dart` | 侧栏（≥900px）与底部导航、同步状态条、账号与同步对话框 |
+| presentation | `shell/app_shell.dart` | 侧栏（≥900px）与底部导航、同步状态条；不设全局账号入口 |
+| presentation | `settings/presentation/settings_page.dart` | 学习目标与规划、每日可用时间、数据管理、服务器连接，以及账号（登录身份、退出登录、注销） |
 | core | `theme.dart`、`widgets.dart` | 设计令牌、面板/提示/进度条/异步按钮 |
 
 页面路由沿用 `/`、`/calendar`、`/tasks`、`/progress`、`/settings`，新增 `/onboarding` 和内部 `/loading`（等待备考资料查询，避免已完成账号闪现代理向导）。应用层 `plannerSyncProvider` 不再使用 `autoDispose`：路由在等待资料时没有页面订阅计划，autoDispose 会丢弃协调器并在每次切换路由时重新初始化。
@@ -408,7 +409,7 @@ Widget 只订阅 provider 并发送意图，规则全部位于 domain/applicatio
 - 事项：搜索/课程/状态/优先级/截止日期筛选、默认隐藏后续事项、新建/编辑/安排时间块/标记完成/删除（删除前确认）、时间投入与预算。
 - 日历：日/周视图、日期步进与今天、每列计划与容量、固定事件（含重复）与删除、超出容量提示、长按拖动或“调整日期”移动、事项行记录用时。
 - 进度：课程进度、近 7 天计划/实际柱状图、月度热力图与中断天数、总体燃尽与预计完成、累计实际学习。
-- 设置：备考信息、排程边界（上限/粒度/机动/单科/时间窗口）、课程优先级、导出/导入/备份恢复、同步状态与冲突二选一、账号信息。
+- 设置：备考信息、排程边界（上限/粒度/机动/单科/时间窗口）、导出/导入/备份恢复、同步状态与冲突二选一，以及账号信息、退出登录与账号注销；账号相关功能集中在设置页，工作台不提供全局账号对话框。
 - 备考向导：六步表单校验 + AI 草案编辑（名称/预算/说明/增删）+ 确认；确认后刷新本机计划并跳转今日。
 
 ### 本阶段修复的问题

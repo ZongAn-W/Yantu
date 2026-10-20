@@ -182,7 +182,7 @@ function mappedNative(
   const owner = document.profile.user_id;
   const ids = (table: string, rows: { id: string }[]) =>
     new Map(rows.map((row) => [dbId(owner, table, row.id), row.id]));
-  const subjects = ids("courses", document.subjects),
+  const tags = ids("tags", document.tags),
     tasks = ids("items", document.tasks),
     logs = ids("study_logs", document.logs);
   const blocks = new Map<string, string>();
@@ -201,14 +201,14 @@ function mappedNative(
     ...native,
     ...(native.planning ? { planning: { ...native.planning, route: native.planning.route.map(stage => ({ ...stage,
       item_ids: stage.item_ids.map(id => tasks.get(id) ?? id) })) } } : {}),
-    subjects: native.subjects.map((row) => ({
+    tags: native.tags.map((row) => ({
       ...row,
-      id: subjects.get(row.id) ?? row.id,
+      id: tags.get(row.id) ?? row.id,
     })),
     tasks: native.tasks.map((row) => ({
       ...row,
       id: tasks.get(row.id) ?? row.id,
-      subject_id: subjects.get(row.subject_id) ?? row.subject_id,
+      tag_ids: row.tag_ids.map((tagId) => tags.get(tagId) ?? tagId),
       ...(row.planning ? { planning: { ...row.planning,
         ...(row.planning.dependencies ? { dependencies: row.planning.dependencies.map(dependency => ({ ...dependency, task_id: tasks.get(dependency.task_id) ?? dependency.task_id })) } : {}) } } : {}),
     })),
@@ -246,6 +246,33 @@ function applyRemoteRows(base: Row[], local: Row[], remote: Row[]): Row[] {
   return [...result.values()];
 }
 
+function mergeTaskTagSets(base: Row[], local: Row[], remote: Row[]): Row[] {
+  const merged = new Map(applyRemoteRows(base, local, remote).map(row => [row.id, row]));
+  const before = new Map(base.map(row => [row.id, row]));
+  const localById = new Map(local.map(row => [row.id, row]));
+  const remoteById = new Map(remote.map(row => [row.id, row]));
+  for (const [id, old] of before) {
+    const left = localById.get(id), right = remoteById.get(id), result = merged.get(id);
+    if (!left || !right || !result || !Array.isArray(old.tag_ids) || !Array.isArray(left.tag_ids) || !Array.isArray(right.tag_ids)) continue;
+    const baseIds = new Set(old.tag_ids as string[]), localIds = new Set(left.tag_ids as string[]), remoteIds = new Set(right.tag_ids as string[]);
+    if (same([...baseIds].sort(), [...localIds].sort())) result.tag_ids = [...remoteIds];
+    else if (same([...baseIds].sort(), [...remoteIds].sort())) result.tag_ids = [...localIds];
+    else {
+      const removed = new Set([
+        ...[...baseIds].filter(tagId => !localIds.has(tagId)),
+        ...[...baseIds].filter(tagId => !remoteIds.has(tagId)),
+      ]);
+      const added = new Set([
+        ...[...localIds].filter(tagId => !baseIds.has(tagId)),
+        ...[...remoteIds].filter(tagId => !baseIds.has(tagId)),
+      ]);
+      result.tag_ids = [...new Set([...baseIds].filter(tagId => !removed.has(tagId)).concat([...added]))];
+    }
+    merged.set(id, result);
+  }
+  return [...merged.values()];
+}
+
 function rebase(
   document: PlannerDocument,
   previous: PlannerDocument,
@@ -258,8 +285,8 @@ function rebase(
     if (!same(base.profile[key], remote.profile[key]))
       result.profile[key] = remote.profile[key];
   if (!same(base.planning, remote.planning)) result.planning = clone(remote.planning);
-  for (const key of ["subjects", "tasks"] as const)
-    result[key] = applyRemoteRows(base[key], result[key], remote[key]) as any;
+  result.tags = applyRemoteRows(base.tags, result.tags, remote.tags) as any;
+  result.tasks = mergeTaskTagSets(base.tasks, result.tasks, remote.tasks) as any;
   const blockGroup = (row: Row) => `${row.task_id}:${row.date}`;
   for (const key of new Set(
     [...base.blocks, ...remote.blocks].map(blockGroup),
@@ -285,6 +312,9 @@ function rebase(
   // lossy block_id projection cannot detach unchanged logs from their split slots.
   result.logs = applyRemoteRows(base.logs, result.logs, remote.logs) as PlannerDocument["logs"];
   const tasks = new Set(result.tasks.map((row) => row.id));
+  const tagIds = new Set(result.tags.map((row) => row.id));
+  if (result.tasks.some(task => task.tag_ids.some(tagId => !tagIds.has(tagId))))
+    throw new ProjectionConflict("标签在另一台设备被删除，但本机仍在编辑该标签的关联；请先核对后重试同步");
   result.blocks = result.blocks.filter((row) => tasks.has(row.task_id));
   const blocks = new Set(result.blocks.map((row) => row.id));
   result.logs = result.logs
@@ -536,15 +566,18 @@ async function writeProjection(
 ) {
   const id = (table: string, value: string) => dbId(owner, table, value);
   // 先批量读取当前投影行：写入阶段只处理新增或确实变化的行，删除仍走显式 DELETE。
-  const existingCourses = (
+  const existingTags = (
     await client.query<Row>(
-      "select id,name,priority from courses where user_id=$1",
+      "select id,name,color,created_at,updated_at from tags where user_id=$1",
       [owner],
     )
   ).rows;
+  const existingTaskTags = (
+    await client.query<Row>("select task_id,tag_id from task_tags where user_id=$1", [owner])
+  ).rows;
   const existingItems = (
     await client.query<Row>(
-      `select id,course_id,title,description,completion_criteria,estimated_minutes,
+      `select id,title,description,completion_criteria,estimated_minutes,
         earliest_date::text,deadline::text,deadline_kind,priority,status,planning_metadata
        from items where user_id=$1`,
       [owner],
@@ -566,7 +599,7 @@ async function writeProjection(
     )
   ).rows;
   const byId = (rows: Row[]) => new Map(rows.map((row) => [String(row.id), row]));
-  const coursesById = byId(existingCourses);
+  const tagsById = byId(existingTags);
   const itemsById = byId(existingItems);
   const daysById = byId(existingDays);
   const logsById = byId(existingLogs);
@@ -605,10 +638,12 @@ async function writeProjection(
     blockToDay.set(block.id, day.id);
   }
   const days = [...groups.values()];
-  const courseTargets = data.subjects.map((subject) => ({
-    id: id("courses", subject.id),
-    name: subject.name,
-    priority: subject.priority,
+  const tagTargets = data.tags.map((tag) => ({
+    id: id("tags", tag.id),
+    name: tag.name.trim(),
+    color: tag.color ?? null,
+    created_at: tag.created_at ?? new Date().toISOString(),
+    updated_at: tag.updated_at ?? new Date().toISOString(),
   }));
   const itemTargets = data.tasks.map((task) => {
     const itemId = id("items", task.id);
@@ -631,7 +666,7 @@ async function writeProjection(
     }
     return {
       id: itemId,
-      course_id: id("courses", task.subject_id),
+      tag_ids: [...new Set(task.tag_ids.map((tagId) => id("tags", tagId)))],
       title: task.title,
       description,
       criteria,
@@ -678,7 +713,7 @@ async function writeProjection(
     };
   });
   await assertOwnership(client, owner, [
-    { table: "courses", ids: courseTargets.map((row) => row.id) },
+    { table: "tags", ids: tagTargets.map((row) => row.id) },
     { table: "items", ids: itemTargets.map((row) => row.id) },
     { table: "study_logs", ids: logTargets.map((row) => row.id) },
     { table: "daily_plan_items", ids: days.map((row) => row.id) },
@@ -779,27 +814,27 @@ async function writeProjection(
     item_ids: stage.item_ids.map(value => id("items", value)) })) } : null;
   await client.query("update profiles set planning_metadata=$2 where user_id=$1", [owner, nativePlanning ? JSON.stringify(nativePlanning) : null]);
   // 差异写入：只有新增或旧 upsert 确实会改写的行才落库；每行写入仍触发既有 revision 触发器。
-  const changedCourses = courseTargets.filter((target) => {
-    const previous = coursesById.get(target.id);
+  const changedTags = tagTargets.filter((target) => {
+    const previous = tagsById.get(target.id);
     return (
       !previous ||
       previous.name !== target.name ||
-      previous.priority !== target.priority
+      (previous.color ?? null) !== target.color
     );
   });
   await insertBatch(
     client,
-    "courses",
-    ["id", "user_id", "name", "priority"],
-    ["uuid", "uuid", "text", "int"],
-    "on conflict(id) do update set name=excluded.name,priority=excluded.priority where courses.user_id=excluded.user_id",
-    changedCourses.map((row) => [row.id, owner, row.name, row.priority]),
+    "tags",
+    ["id", "user_id", "name", "color", "created_at", "updated_at"],
+    ["uuid", "uuid", "text", "text", "timestamptz", "timestamptz"],
+    `on conflict(id) do update set name=excluded.name,color=excluded.color,updated_at=excluded.updated_at
+      where tags.user_id=excluded.user_id`,
+    changedTags.map((row) => [row.id, owner, row.name, row.color, row.created_at, row.updated_at]),
   );
   const changedItems = itemTargets.filter((target) => {
     const previous = itemsById.get(target.id);
     if (!previous) return true;
     return (
-      previous.course_id !== target.course_id ||
       previous.title !== target.title ||
       previous.description !== target.description ||
       previous.completion_criteria !== target.criteria ||
@@ -816,15 +851,15 @@ async function writeProjection(
     client,
     "items",
     [
-      "id", "user_id", "course_id", "title", "description", "completion_criteria",
+      "id", "user_id", "title", "description", "completion_criteria",
       "estimated_minutes", "earliest_date", "deadline", "deadline_kind", "priority",
       "status", "confirmed", "created_at", "updated_at", "planning_metadata",
     ],
     [
-      "uuid", "uuid", "uuid", "text", "text", "text", "int", "date", "date", "text",
+      "uuid", "uuid", "text", "text", "text", "int", "date", "date", "text",
       "int", "text", "boolean", "timestamptz", "timestamptz", "jsonb",
     ],
-    `on conflict(id) do update set course_id=excluded.course_id,title=excluded.title,
+    `on conflict(id) do update set title=excluded.title,
       description=excluded.description,completion_criteria=excluded.completion_criteria,
       estimated_minutes=excluded.estimated_minutes,earliest_date=excluded.earliest_date,
       deadline=excluded.deadline,deadline_kind=excluded.deadline_kind,priority=excluded.priority,
@@ -833,7 +868,6 @@ async function writeProjection(
     changedItems.map((row) => [
       row.id,
       owner,
-      row.course_id,
       row.title,
       row.description,
       row.criteria,
@@ -848,6 +882,24 @@ async function writeProjection(
       row.updated_at,
       row.planning ? JSON.stringify(row.planning) : null,
     ]),
+  );
+  const tagPairs = data.tasks.flatMap((task) => {
+    const taskId = id("items", task.id);
+    return [...new Set(task.tag_ids.map((tagId) => id("tags", tagId)))].map((tagId) => ({ task_id: taskId, tag_id: tagId }));
+  });
+  const previousTagPairs = new Set(existingTaskTags.map((row) => `${row.task_id}:${row.tag_id}`));
+  const desiredTagPairs = new Set(tagPairs.map((row) => `${row.task_id}:${row.tag_id}`));
+  const removedTagPairs = existingTaskTags.filter((row) => !desiredTagPairs.has(`${row.task_id}:${row.tag_id}`));
+  for (const pair of removedTagPairs)
+    await client.query("delete from task_tags where user_id=$1 and task_id=$2 and tag_id=$3", [owner, pair.task_id, pair.tag_id]);
+  const addedTagPairs = tagPairs.filter((row) => !previousTagPairs.has(`${row.task_id}:${row.tag_id}`));
+  await insertBatch(
+    client,
+    "task_tags",
+    ["user_id", "task_id", "tag_id"],
+    ["uuid", "uuid", "uuid"],
+    "on conflict(task_id,tag_id) do nothing",
+    addedTagPairs.map((row) => [owner, row.task_id, row.tag_id]),
   );
   // Remove vanished children before parents. Foreign keys continue protecting old API rows.
   const logTargetIds = new Set(logTargets.map((row) => row.id));
@@ -962,14 +1014,14 @@ async function writeProjection(
       .map((row) => String(row.id))
       .filter((rowId) => !itemTargetIds.has(rowId)),
   );
-  const courseTargetIds = new Set(courseTargets.map((row) => row.id));
+  const tagTargetIds = new Set(tagTargets.map((row) => row.id));
   await deleteBatch(
     client,
-    "courses",
+    "tags",
     owner,
-    existingCourses
+    existingTags
       .map((row) => String(row.id))
-      .filter((rowId) => !courseTargetIds.has(rowId)),
+      .filter((rowId) => !tagTargetIds.has(rowId)),
   );
 }
 
@@ -984,7 +1036,13 @@ const PutSchema = z.object({
    * 缺失时按“缺失=保留云端值”的旧写入方语义处理；旧写入方不发送该字段。
    */
   writer_learning_version: z.literal(1).optional(),
+  /** Supports lossless many-to-many tag writes. Older writers can only express one tag per task. */
+  writer_tags_version: z.literal(1).optional(),
 });
+
+export function hasUnrepresentableTags(document: PlannerDocument | null): boolean {
+  return Boolean(document && (document.tags.length > 0 || document.tasks.some((task) => task.tag_ids.length > 0)));
+}
 
 async function withSnapshot<T>(
   operation: (client: pg.PoolClient) => Promise<T>,
@@ -1049,7 +1107,7 @@ export async function syncRoutes(app: FastifyInstance) {
         return reply
           .code(400)
           .send({ error: parsed.error.issues[0]?.message ?? "计划格式不正确" });
-      const { data, base, expectedRevision, writer_planning_version, writer_learning_version } = parsed.data;
+      const { data, base, expectedRevision, writer_planning_version, writer_learning_version, writer_tags_version } = parsed.data;
       if (
         data.profile.user_id !== user.id ||
         (base && base.profile.user_id !== user.id)
@@ -1060,6 +1118,11 @@ export async function syncRoutes(app: FastifyInstance) {
         const current = await currentState(client, user.id, state, { persist: false });
         if (writer_planning_version !== 1 && [data, base, current.data].some(hasPlanningMetadata))
           return { upgradeRequired: true as const, error: "当前计划包含新版学习策略，请升级客户端后再同步", code: "planning_writer_upgrade_required" };
+        const tagShapePresent = Array.isArray((request.body as Row)?.data?.tags)
+          && Array.isArray((request.body as Row)?.data?.tasks)
+          && ((request.body as Row).data.tasks as Row[]).every(task => Array.isArray(task.tag_ids));
+        if (writer_tags_version !== 1 && !tagShapePresent && hasUnrepresentableTags(current.data))
+          return { upgradeRequired: true as const, error: "当前计划包含多标签事项，请升级客户端后再同步", code: "tag_writer_upgrade_required" };
         const comparableBase = base ? normalizeProfilePlaceholders(base) : null;
         if (current.revision !== expectedRevision || !same(comparableBase, current.data))
           return { conflict: true as const, ...current };

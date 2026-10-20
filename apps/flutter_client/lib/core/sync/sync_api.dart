@@ -182,10 +182,10 @@ class HttpSyncApi implements SyncApi {
             'data': plannerDocumentForSync(data, base),
             'base': base?.toJson(),
             'expectedRevision': revision,
-            // 新客户端的写作能力声明：服务端据此区分“能表达 relation/临时学习/
-            // 容量覆盖”的写入方与旧客户端，避免把缺失当成删除。
+            // Writer capabilities prevent older clients from erasing fields they cannot express.
             'writer_planning_version': 1,
             'writer_learning_version': 1,
+            'writer_tags_version': 1,
           },
         )).data,
       );

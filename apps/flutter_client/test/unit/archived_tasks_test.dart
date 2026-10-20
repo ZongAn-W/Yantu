@@ -40,11 +40,10 @@ void main() {
         month: '2026-10',
       );
       expect(metrics.totalActual, 35);
-      expect(metrics.weekStats.single.actual, 35);
-      expect(metrics.weekStats.single.planned, 30);
-      expect(metrics.subjectProgress.single.actual, 35);
-      expect(metrics.subjectProgress.single.estimated, 0);
-      expect(metrics.subjectProgress.single.completed, 0);
+      expect(metrics.weekProgress.actual, 35);
+      expect(metrics.weekProgress.planned, 30);
+      expect(metrics.goalActual, 0);
+      expect(metrics.completedMinutes, 0);
       expect(metrics.overallMinutes, 0);
       expect(metrics.remainingMinutes, 0);
       expect(metrics.burnValues, everyElement(0));

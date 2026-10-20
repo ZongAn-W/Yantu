@@ -105,7 +105,7 @@ abstract class PlannerData with _$PlannerData {
   const factory PlannerData({
     @JsonKey(fromJson: _versionOne) required int version,
     required Profile profile,
-    required List<Subject> subjects,
+    @Default([]) List<Tag> tags,
     required List<Task> tasks,
     required List<ScheduleBlock> blocks,
     required List<TimeLog> logs,
@@ -116,8 +116,68 @@ abstract class PlannerData with _$PlannerData {
     Map<String, String>? dailyFeedback,
     JsonMap? planning,
   }) = _PlannerData;
-  factory PlannerData.fromJson(JsonMap json) => _$PlannerDataFromJson(json);
+  factory PlannerData.fromJson(JsonMap json) =>
+      _$PlannerDataFromJson(normalizePlannerJson(json));
   String toJsonString() => jsonEncode(toJson());
+}
+
+JsonMap normalizePlannerJson(JsonMap json) {
+  final normalized = JsonMap.from(json);
+  final rawTags = normalized['tags'];
+  final rawSubjects = normalized['subjects'];
+  final tags = <JsonMap>[];
+  final tagIdByLegacySubject = <String, String>{};
+  final seenNames = <String, String>{};
+
+  final sourceRows = [
+    if (rawTags is List) ...rawTags,
+    if (rawSubjects is List) ...rawSubjects,
+  ];
+  for (final value in sourceRows) {
+    if (value is! Map) continue;
+    final row = JsonMap.from(value);
+    final id = row['id'];
+    final nameValue = row['name'];
+    if (id is! String || id.isEmpty || nameValue is! String) continue;
+    final name = nameValue.trim();
+    if (name.isEmpty) continue;
+    final key = name.toLowerCase();
+    final canonicalId = seenNames.putIfAbsent(key, () => id);
+    if (rawSubjects is List) tagIdByLegacySubject[id] = canonicalId;
+    if (canonicalId != id) continue;
+    tags.add({
+      'id': canonicalId,
+      'user_id': row['user_id'] ?? row['userId'] ?? '',
+      'name': name,
+      'color': row['color'],
+      'created_at': row['created_at'] ?? row['createdAt'] ?? '',
+      'updated_at': row['updated_at'] ?? row['updatedAt'] ?? '',
+    });
+  }
+
+  final rawTasks = normalized['tasks'];
+  if (rawTasks is List) {
+    normalized['tasks'] = [
+      for (final value in rawTasks)
+        if (value is Map)
+          () {
+            final task = JsonMap.from(value);
+            if (!task.containsKey('tag_ids')) {
+              final legacyId = task['subjectId'] ?? task['subject_id'];
+              final tagId = legacyId is String
+                  ? tagIdByLegacySubject[legacyId]
+                  : null;
+              task['tag_ids'] = tagId == null ? <String>[] : <String>[tagId];
+            }
+            task.remove('subjectId');
+            task.remove('subject_id');
+            return task;
+          }(),
+    ];
+  }
+  normalized['tags'] = tags;
+  normalized.remove('subjects');
+  return normalized;
 }
 
 @freezed
@@ -175,7 +235,6 @@ abstract class Profile with _$Profile {
     required int dailyLimitMinutes,
     required int granularityMinutes,
     required int bufferMinutes,
-    required int subjectLimitMinutes,
     required int studyStartMinute,
     required int studyEndMinute,
     required String foundation,
@@ -197,7 +256,8 @@ abstract class Profile with _$Profile {
     Map<String, WeekCapacityOverride>? weekCapacityOverrides,
 
     /// 特定日期的净容量覆盖；显式 0 表示该日休息，删除键表示恢复上层规则。
-    @JsonKey(name: 'date_capacity_overrides') Map<String, int>? dateCapacityOverrides,
+    @JsonKey(name: 'date_capacity_overrides')
+    Map<String, int>? dateCapacityOverrides,
   }) = _Profile;
   factory Profile.fromJson(JsonMap json) =>
       _$ProfileFromJson(normalizeProfileJson(json));
@@ -224,26 +284,26 @@ JsonMap normalizeProfileJson(JsonMap json) {
   return map;
 }
 
+/// 可选分类标签。标签只描述事项，不参与计划容量计算。
 @freezed
-abstract class Subject with _$Subject {
-  const factory Subject({
+abstract class Tag with _$Tag {
+  const factory Tag({
     required String id,
-    required String userId,
+    @JsonKey(name: 'user_id') required String userId,
     required String name,
-    required String color,
-    @JsonKey(fromJson: _priority) required int priority,
-  }) = _Subject;
-  factory Subject.fromJson(JsonMap json) => _$SubjectFromJson(json);
+    String? color,
+    @JsonKey(name: 'created_at') @Default('') String createdAt,
+    @JsonKey(name: 'updated_at') @Default('') String updatedAt,
+  }) = _Tag;
+  factory Tag.fromJson(JsonMap json) => _$TagFromJson(json);
 }
-
-typedef Course = Subject;
 
 @freezed
 abstract class Task with _$Task {
   const factory Task({
     required String id,
     required String userId,
-    required String subjectId,
+    @JsonKey(name: 'tag_ids') @Default([]) List<String> tagIds,
     required String title,
     String? description,
     required int estimatedMinutes,
@@ -339,8 +399,6 @@ abstract class AdHocLearning with _$AdHocLearning {
     required String userId,
     required String title,
 
-    /// 可选分类/课程归属；临时学习不强制正式课程。
-    String? subjectId,
     required String createdAt,
     required String updatedAt,
 
@@ -348,8 +406,7 @@ abstract class AdHocLearning with _$AdHocLearning {
     @Default(false) bool archived,
     @JsonKey(name: 'converted_task_id') String? convertedTaskId,
   }) = _AdHocLearning;
-  factory AdHocLearning.fromJson(JsonMap json) =>
-      _$AdHocLearningFromJson(json);
+  factory AdHocLearning.fromJson(JsonMap json) => _$AdHocLearningFromJson(json);
 }
 
 typedef StudyLog = TimeLog;

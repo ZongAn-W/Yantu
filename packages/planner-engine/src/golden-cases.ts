@@ -4,12 +4,12 @@ import type { FixedEvent, PlannerData, Profile, ScheduleBlock, Task, TimeLog } f
 const today = '2026-10-16';
 const stamp = '2026-09-01T00:00:00Z';
 export const goldenClock = '2026-10-16T08:09:10.123Z';
-const profile: Profile = { user_id: 'user-1', planning_mode: 'daily', goal_text: '', goal_type: 'other', goal_subtype: '', target_date: '', target_date_confirmed: false, plan_start_date: '2026-10-16', plan_end_date: '2026-11-12', weekly_minutes: Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(day => [String(day), 480])), constraints: '', target_school: '上海交通大学', target_program: '408', exam_date: '2027-12-25', exam_end_date: '2027-12-26', daily_limit_minutes: 480, granularity_minutes: 30, buffer_minutes: 30, subject_limit_minutes: 240, study_start_minute: 480, study_end_minute: 1200, foundation: '' };
-const task = (id = 'math', changes: Partial<Task> = {}): Task => ({ id, user_id: 'user-1', subject_id: 'math', title: `任务 ${id}`, estimated_minutes: 600, completed_minutes: 0, priority: 3, deadline: '2026-11-30', deadline_kind: 'deadline', is_fixed: false, status: 'not_started', created_at: stamp, updated_at: stamp, ...changes });
+const profile: Profile = { user_id: 'user-1', planning_mode: 'daily', goal_text: '', goal_type: 'other', goal_subtype: '', target_date: '', target_date_confirmed: false, plan_start_date: '2026-10-16', plan_end_date: '2026-11-12', weekly_minutes: Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(day => [String(day), 480])), constraints: '', target_school: '上海交通大学', target_program: '408', exam_date: '2027-12-25', exam_end_date: '2027-12-26', daily_limit_minutes: 480, granularity_minutes: 30, buffer_minutes: 30, study_start_minute: 480, study_end_minute: 1200, foundation: '' };
+const task = (id = 'math', changes: Partial<Task> = {}): Task => ({ id, user_id: 'user-1', tag_ids: [], title: `任务 ${id}`, estimated_minutes: 600, completed_minutes: 0, priority: 3, deadline: '2026-11-30', deadline_kind: 'deadline', is_fixed: false, status: 'not_started', created_at: stamp, updated_at: stamp, ...changes });
 const block = (id = 'today', changes: Partial<ScheduleBlock> = {}): ScheduleBlock => ({ id, user_id: 'user-1', task_id: 'math', date: today, start_minute: 480, duration_minutes: 60, actual_minutes: 0, is_fixed: false, status: 'planned', created_at: stamp, updated_at: stamp, ...changes });
 const log = (id = 'log', changes: Partial<TimeLog> = {}): TimeLog => ({ id, user_id: 'user-1', task_id: 'math', block_id: 'today', date: today, minutes: 30, started_at: stamp, ended_at: stamp, source: 'manual', ...changes });
 const event = (id = 'event', changes: Partial<FixedEvent> = {}): FixedEvent => ({ id, user_id: 'user-1', title: id, date: today, start_minute: 480, duration_minutes: 60, kind: 'course', repeat: 'none', created_at: stamp, updated_at: stamp, ...changes });
-const data = (changes: Partial<PlannerData> = {}): PlannerData => ({ version: 1, profile, subjects: [{ id: 'math', user_id: 'user-1', name: '数学', color: '#123456', priority: 3 }, { id: 'english', user_id: 'user-1', name: '英语', color: '#654321', priority: 2 }], tasks: [task()], blocks: [block()], logs: [], fixed_events: [], replan_runs: [], phases: [], ...changes });
+const data = (changes: Partial<PlannerData> = {}): PlannerData => ({ version: 1, profile, tags: [], tasks: [task()], blocks: [block()], logs: [], fixed_events: [], replan_runs: [], phases: [], ...changes });
 
 export type GoldenCase = { name: string; operation: string; args: Record<string, unknown>; expected?: unknown };
 export function goldenInputs(): GoldenCase[] {
@@ -25,7 +25,7 @@ export function goldenInputs(): GoldenCase[] {
   for (const planning_mode of ['daily', 'timed'] as const) {
     add(`${planning_mode} rest capacity`, 'capacity', { profile: { ...profile, planning_mode }, events: recurring, date: today });
     preview(`${planning_mode} partial completion`, { profile: { ...profile, planning_mode }, tasks: [task('math', { estimated_minutes: 120, completed_minutes: 60, status: 'in_progress' })], blocks: [block('today', { duration_minutes: 120, actual_minutes: 60, advice_text: '保留建议', advice_topics: ['范围'], completion_status: 'partial', feedback: '卡点' })], logs: [log('actual', { minutes: 60 })] });
-    preview(`${planning_mode} hard daily and subject cap`, { profile: { ...profile, planning_mode, daily_limit_minutes: 1200, buffer_minutes: 0, subject_limit_minutes: 600 }, tasks: [task(), task('english', { subject_id: 'english' })], blocks: [block('math', { duration_minutes: 600 }), block('english', { task_id: 'english', duration_minutes: 600 })] });
+    preview(`${planning_mode} hard daily limit across untagged tasks`, { profile: { ...profile, planning_mode, daily_limit_minutes: 1200, buffer_minutes: 0 }, tasks: [task(), task('english')], blocks: [block('math', { duration_minutes: 600 }), block('english', { task_id: 'english', duration_minutes: 600 })] });
     preview(`${planning_mode} fixed overlapping events`, { profile: { ...profile, planning_mode }, blocks: [block('today', { duration_minutes: 120 })], fixed_events: [event('course', { date: '2026-10-17', duration_minutes: 120 }), event('rest', { date: '2026-10-17', start_minute: 540, duration_minutes: 120, kind: 'rest' }), event('official', { date: '2026-10-18', duration_minutes: 720, kind: 'official_exam' })] });
     place(`${planning_mode} overlapping block`, { profile: { ...profile, planning_mode } });
     place(`${planning_mode} unaligned start`, { profile: { ...profile, planning_mode }, blocks: [] }, { start_minute: 511 });
@@ -34,12 +34,11 @@ export function goldenInputs(): GoldenCase[] {
     place(`${planning_mode} actual extends overlap`, { profile: { ...profile, planning_mode }, blocks: [block('actual', { duration_minutes: 30, actual_minutes: 90 })] }, { start_minute: 540, duration_minutes: 30 });
     place(`${planning_mode} immutable move`, { profile: { ...profile, planning_mode }, blocks: [block('fixed', { is_fixed: true })] }, { date: '2026-10-17' }, 'fixed');
   }
-  place('daily exact 450 capacity', { tasks: [task(), task('english', { subject_id: 'english' })], blocks: [block('used', { duration_minutes: 240 })] }, { task_id: 'english', duration_minutes: 210 });
-  place('daily above 450 capacity', { tasks: [task(), task('english', { subject_id: 'english' })], blocks: [block('used', { duration_minutes: 240 })] }, { task_id: 'english', duration_minutes: 211 });
-  place('exact subject 240', { blocks: [block('used', { duration_minutes: 210 })] }, { duration_minutes: 30 });
-  place('above subject 240', { blocks: [block('used', { duration_minutes: 211 })] }, { duration_minutes: 30 });
-  place('orphan log consumes daily capacity', { tasks: [task(), task('english', { subject_id: 'english' })], blocks: [], logs: [log('orphan', { block_id: null, task_id: 'english', minutes: 430 })] }, { duration_minutes: 30 });
-  place('missing block reference consumes subject capacity', { blocks: [], logs: [log('orphan', { block_id: 'missing', minutes: 220 })] }, { duration_minutes: 30 });
+  place('daily exact 450 capacity across untagged tasks', { tasks: [task(), task('english')], blocks: [block('used', { duration_minutes: 240 })] }, { task_id: 'english', duration_minutes: 210 });
+  place('daily above 450 capacity across untagged tasks', { tasks: [task(), task('english')], blocks: [block('used', { duration_minutes: 240 })] }, { task_id: 'english', duration_minutes: 211 });
+  place('daily capacity permits 241 minutes across items', { blocks: [block('used', { duration_minutes: 211 })] }, { duration_minutes: 30 });
+  place('orphan log consumes daily capacity', { tasks: [task(), task('english')], blocks: [], logs: [log('orphan', { block_id: null, task_id: 'english', minutes: 430 })] }, { duration_minutes: 30 });
+  place('missing block reference consumes daily capacity', { blocks: [], logs: [log('orphan', { block_id: 'missing', minutes: 220 })] }, { duration_minutes: 30 });
   place('actual above plan consumes capacity', { blocks: [block('used', { duration_minutes: 30, actual_minutes: 220 })] }, { duration_minutes: 30 });
   place('completed only consumes actual', { blocks: [block('used', { duration_minutes: 240, actual_minutes: 30, status: 'completed' })] }, { duration_minutes: 210 });
   place('linked log not double counted', { blocks: [block('used', { duration_minutes: 30 })], logs: [log('linked', { block_id: 'used', minutes: 210 })] }, { duration_minutes: 30 });
@@ -73,7 +72,7 @@ export function goldenInputs(): GoldenCase[] {
   preview('short source permits partial quantum', { blocks: [block('future', { date: '2026-10-17', duration_minutes: 15 })] }, 'overcompleted', 15);
   preview('overcompleted stable eligible ties', { blocks: [block('z-source', { date: '2026-10-17' }), block('a-source', { date: '2026-10-17' })] }, 'overcompleted', 30);
   preview('overcompleted stable eligible ties large array', { blocks: Array.from({ length: 40 }, (_, index) => block(`source-${40 - index}`, { date: '2026-10-17' })) }, 'overcompleted', 30);
-  preview('overcompleted respects actual orphan capacity', { tasks: [task(), task('english', { subject_id: 'english' })], blocks: [block('future', { date: '2026-10-17' })], logs: [log('orphan', { task_id: 'english', block_id: null, minutes: 420 })] }, 'overcompleted', 60);
+  preview('overcompleted respects actual orphan capacity', { tasks: [task(), task('english')], blocks: [block('future', { date: '2026-10-17' })], logs: [log('orphan', { task_id: 'english', block_id: null, minutes: 420 })] }, 'overcompleted', 60);
   preview('overcompleted fixed completed and earliest', { tasks: [task('math', { earliest_date: '2026-10-17' }), task('done', { status: 'completed' })], blocks: [block('fixed', { date: '2026-10-17', is_fixed: true }), block('actual', { date: '2026-10-17', actual_minutes: 5 }), block('completed', { date: '2026-10-17', status: 'completed' }), block('early', { date: '2026-10-18' }), block('done', { task_id: 'done', date: '2026-10-18' })] }, 'overcompleted', 120);
   preview('legacy missing planning mode', { profile: { ...profile, planning_mode: undefined } });
   add('task totals use max not sum', 'totals', { task: task('math', { estimated_minutes: 120, completed_minutes: 60 }), logs: [log('a', { minutes: 60 }), log('b', { task_id: 'other', minutes: 500 })] });

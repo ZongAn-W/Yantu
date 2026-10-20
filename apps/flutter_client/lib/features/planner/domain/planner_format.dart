@@ -101,20 +101,22 @@ PlanCycleState planCycleState(Profile profile, String date) {
 
 const goalTypeLabels = {
   GoalType.exam: '考试备考',
-  GoalType.course: '课程学习',
+  GoalType.course: '系统学习',
   GoalType.skill: '技能提升',
   GoalType.selfStudy: '自主学习',
   GoalType.other: '其他',
 };
 
 /// 服务端用字符串表达目标类型，界面统一映射为中文标签。
-String goalTypeLabelOf(String type) => const {
-  'exam': '考试备考',
-  'course': '课程学习',
-  'skill': '技能提升',
-  'self_study': '自主学习',
-  'other': '其他',
-}[type] ?? '其他';
+String goalTypeLabelOf(String type) =>
+    const {
+      'exam': '考试备考',
+      'course': '系统学习',
+      'skill': '技能提升',
+      'self_study': '自主学习',
+      'other': '其他',
+    }[type] ??
+    '其他';
 
 const itemDateKindLabels = {
   ItemDateKind.deadline: '截止日期',

@@ -15,7 +15,7 @@ Map<String, dynamic> onboardingFixture({
     'goal_subtype': '考研',
     'weekly_minutes': {for (var i = 0; i < 7; i++) '$i': 120},
   },
-  'courses': <Map<String, dynamic>>[],
+  'tags': <Map<String, dynamic>>[],
   'items': <Map<String, dynamic>>[],
   'summary': '',
   'assumptions': <String>[],

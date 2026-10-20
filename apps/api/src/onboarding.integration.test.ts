@@ -60,7 +60,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)("persisted onboarding", () 
       session = response.json().session;
     }
     for (const text of ["考研", "上海交通大学", "计算机", "2027年", "高数一轮"]) await next({ type: "answer", answer: text });
-    // 第五题之后不再暂停，直接显示下一题；生成入口由问卷页面提供。
+    // 第五题之后仍可继续访谈，也可直接进入规划条件。
     expect(session.stage).toBe("interview");
     expect(session.question).not.toBe(newSession().question);
     const { shanghaiDate: cycleToday } = await import("./onboarding-ai.js");
@@ -68,14 +68,8 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)("persisted onboarding", () 
     expect(session.recommendations.target_date).toBe("");
     // 本会话没有形成初试年份（“2027年”回答落在专业问题上），推荐值仍用28天默认。
     expect(session.recommendations.plan_end_date).toBe(cycleAdd(cycleToday(), 27));
-    await next({ type: "generate_courses" });
-    expect(session.items).toEqual([]);
-    expect((await get(user, "/api/onboarding/profile")).json().profile).toBeNull();
-    await next({ type: "confirm_courses", courses: [
-      { id: "math", name: "高数", priority: 3 }, { id: "english", name: "英语", priority: 2 },
-    ] });
+    await next({ type: "continue" });
     expect(session.stage).toBe("constraints");
-    expect(session.items).toEqual([]);
     const { shanghaiDate } = await import("./onboarding-ai.js");
     const { dateAdd } = await import("./planner.js");
     const start = dateAdd(shanghaiDate(), 5), end = dateAdd(start, 3);
@@ -84,7 +78,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)("persisted onboarding", () 
     expect(session.stage).toBe("items");
     expect(session.constraints_confirmed).toBe(true);
     expect(session.items.every(item => item.deadline === end && item.deadline_kind === "plan_end")).toBe(true);
-    await next({ type: "confirm_items", items: session.items.map(i => ({ ...i, estimated_minutes: 300, earliest_date: start, deadline: end,
+    await next({ type: "confirm_items", items: session.items.map(i => ({ ...i, tag_names: ["数学", "考试备考"], estimated_minutes: 300, earliest_date: start, deadline: end,
       planning: { workload: { components: [{ id: "practice", label: "练习", quantity: 1, unit: "份", minutes_per_unit: 300 }],
         source: "测试确认范围", confidence: "medium", calibration: "完成后核对" }, activity: { kind: "finite", starts_on: start, ends_on: end } } })) });
     expect((await act(user, session, { type: "finish", start_date: start, end_date: end, weekly_minutes: week })).statusCode).toBe(400);
@@ -99,10 +93,8 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)("persisted onboarding", () 
     expect(daily.rows[0].date).toBe(start);
     expect(daily.rows.every(row => row.date <= end && row.total <= 450)).toBe(true);
     expect(daily.rows.reduce((sum, row) => sum + row.total, 0)).toBe(1200);
-    const perCourse = await db.query<{ total: number }>("select sum(d.planned_minutes)::int as total from daily_plan_items d join items i on i.id=d.item_id where d.user_id=$1 group by d.date,i.course_id", [user.id]);
-    expect(perCourse.rows.every(row => row.total <= 240)).toBe(true);
     expect((await act(user, before, finish)).statusCode).toBe(200);
-    expect((await db.query<{ count: number }>("select count(*)::int as count from courses where user_id=$1", [user.id])).rows[0].count).toBe(2);
+    expect((await db.query<{ count: number }>("select count(*)::int as count from tags where user_id=$1", [user.id])).rows[0].count).toBeGreaterThan(0);
     expect((await get(user, "/api/planner/sync")).json().data.blocks.length).toBeGreaterThan(0);
     const live = (await get(user, "/api/planner/sync")).json();
     expect(live.data.planning.version).toBe(1);
@@ -112,7 +104,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)("persisted onboarding", () 
       expect(rejected.json().error).toContain("预览");
     }
     const { confirmDraft } = await import("./planner.js");
-    await expect(confirmDraft(user.id, { courses: [], items: [], analysis_summary: "", assumptions: [], warnings: [] })).rejects.toThrow("预览");
+    await expect(confirmDraft(user.id, { items: [], analysis_summary: "", assumptions: [], warnings: [] })).rejects.toThrow("预览");
     expect((await get(user, "/api/planner/sync")).json()).toEqual(live);
   });
 
@@ -123,8 +115,8 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)("persisted onboarding", () 
     await saveProfile(user.id, { ...newSession().profile, goal_text: "考研复习", goal_type: "exam", goal_subtype: "考研",
       plan_start_date: start, plan_end_date: end, target_school: "上海交通大学",
       weekly_minutes: Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(day => [String(day), 240])) });
-    await confirmDraft(user.id, { courses: [{ id: "math", name: "高数", description: "", priority: 2 }], items: ["继续复习", "旧事项"].map((title, i) => ({
-      id: `task-${i}`, course_id: "math", title, description: "复习", completion_criteria: "", estimated_minutes: 1200, earliest_date: start, deadline: end, deadline_kind: "plan_end" as const, priority: 2 })), analysis_summary: "", assumptions: [], warnings: [] }, { from: start, advice: false });
+    await confirmDraft(user.id, { items: ["继续复习", "旧事项"].map((title, i) => ({
+      id: `task-${i}`, tag_names: ["高数"], title, description: "复习", completion_criteria: "", estimated_minutes: 1200, earliest_date: start, deadline: end, deadline_kind: "plan_end" as const, priority: 2 })), analysis_summary: "", assumptions: [], warnings: [] }, { from: start, advice: false });
     return { start, end, state: (await get(user, "/api/planner/sync")).json() };
   }
 
@@ -142,8 +134,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)("persisted onboarding", () 
       end_date: end,
       profile: ProfileSchema.parse({ goal_text: "从零学习 Python", goal_type: "skill",
         plan_start_date: start, plan_end_date: end, weekly_minutes: week }),
-      courses: [{ id: "python", name: "Python 基础", description: "", priority: 2 }],
-      items: [0, 1].map(index => ({ id: `item-${index}`, course_id: "python", title: `练习 ${index}`,
+      items: [0, 1].map(index => ({ id: `item-${index}`, tag_names: ["Python 基础"], title: `练习 ${index}`,
         description: "", completion_criteria: "", estimated_minutes: 600,
         earliest_date: start, deadline: end, deadline_kind: "plan_end" as const, priority: 2 })),
       ...extra,
@@ -205,8 +196,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)("persisted onboarding", () 
       end_date: end,
       profile: ProfileSchema.parse({ goal_text: "长期阅读", goal_type: "self_study",
         plan_start_date: start, plan_end_date: end, weekly_minutes: week }),
-      courses: [{ id: "reading", name: "阅读", description: "", priority: 2 }],
-      items: [{ id: "far", course_id: "reading", title: "读完一本书", description: "",
+      items: [{ id: "far", tag_names: ["阅读"], title: "读完一本书", description: "",
         completion_criteria: "读完并写笔记", estimated_minutes: 600,
         earliest_date: start, deadline: realDeadline, deadline_kind: "deadline", priority: 2 }],
     };
@@ -334,18 +324,18 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)("persisted onboarding", () 
     expect((await db.query<{ count: number }>("select count(*)::int as count from plan_versions where user_id=$1 and kind='replan'", [user.id])).rows[0].count).toBe(0);
   });
 
-  it("rolls back profile, courses and items together when scheduling cannot produce a day", async () => {
+  it("rolls back profile, tags and items together when scheduling cannot produce a day", async () => {
     const user = await account();
     const { shanghaiDate } = await import("./onboarding-ai.js");
     const date = shanghaiDate();
     const weekday = new Date(`${date}T00:00:00Z`).getUTCDay();
-    const session: OnboardingSession = { ...newSession(), stage: "schedule", courses: [{ id: "test", name: "测试", description: "", priority: 2 }],
-      items: [{ id: "task", course_id: "test", title: "事项", description: "", completion_criteria: "", estimated_minutes: 60, deadline: date, deadline_kind: "plan_end", priority: 2 }] };
+    const session: OnboardingSession = { ...newSession(), stage: "schedule",
+      items: [{ id: "task", tag_names: ["测试"], title: "事项", description: "", completion_criteria: "", estimated_minutes: 60, deadline: date, deadline_kind: "plan_end", priority: 2 }] };
     await db.query("insert into onboarding_sessions(user_id,payload) values($1,$2)", [user.id, JSON.stringify(session)]);
     const response = await act(user, session, { type: "finish", start_date: date, end_date: date, weekly_minutes: { [String((weekday + 1) % 7)]: 120 } });
     expect(response.statusCode).toBe(400);
     expect((await get(user)).json().session.stage).toBe("schedule");
-    for (const table of ["profiles", "courses", "items", "daily_plan_items", "plan_versions"]) {
+    for (const table of ["profiles", "tags", "items", "daily_plan_items", "plan_versions"]) {
       expect((await db.query<{ count: number }>(`select count(*)::int as count from ${table} where user_id=$1`, [user.id])).rows[0].count).toBe(0);
     }
   });

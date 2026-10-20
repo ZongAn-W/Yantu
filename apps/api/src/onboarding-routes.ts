@@ -30,7 +30,7 @@ async function writeSession<T>(operation: (client: pg.PoolClient) => Promise<T>)
 
 function planContext(document: PlannerDocument) {
   const fixed = new Set(document.blocks.filter(block => block.is_fixed).map(block => block.task_id));
-  return { profile: document.profile, courses: document.subjects, items: document.tasks.map(task => ({ ...task, is_fixed: task.is_fixed || fixed.has(task.id) })),
+  return { profile: document.profile, tags: document.tags, items: document.tasks.map(task => ({ ...task, is_fixed: task.is_fixed || fixed.has(task.id) })),
     planning: document.planning,
     feedback_signals: document.tasks.flatMap(task => {
       const feedback = task.planning?.feedback;
@@ -49,10 +49,8 @@ function planContext(document: PlannerDocument) {
 function seedDraft(session: OnboardingSession, document: PlannerDocument) {
   const fixed = new Set(document.blocks.filter(block => block.is_fixed).map(block => block.task_id));
   const tasks = document.tasks.filter(task => task.is_fixed || fixed.has(task.id) || task.status !== "archived" && task.status !== "completed").slice(0, 500);
-  const subjectIds = new Set(tasks.map(task => task.subject_id));
-  session.courses = document.subjects.filter(course => subjectIds.has(course.id)).slice(0, 100)
-    .map(course => ({ id: course.id, name: course.name, description: "", priority: course.priority }));
-  session.items = tasks.map(task => ({ id: task.id, course_id: task.subject_id, title: task.title,
+  const tagsById = new Map(document.tags.map(tag => [tag.id, tag.name]));
+  session.items = tasks.map(task => ({ id: task.id, tag_names: task.tag_ids.map(id => tagsById.get(id)).filter((name): name is string => Boolean(name)), title: task.title,
     description: task.description ?? "", completion_criteria: "", estimated_minutes: task.estimated_minutes,
     earliest_date: task.earliest_date, deadline: task.deadline,
     deadline_kind: (task.deadline_kind ?? "deadline") as "deadline" | "plan_end", priority: task.priority, planning: task.planning }));
@@ -63,7 +61,7 @@ async function loadSession(client: pg.PoolClient, userId: string) {
   const plan = await readPlannerState(client, userId);
   const result = await client.query<{ payload: unknown }>("select payload from onboarding_sessions where user_id=$1", [userId]);
   const session = result.rows[0] ? SessionSchema.parse(result.rows[0].payload) : newSession();
-  const hasPlan = Boolean(plan.data && (plan.data.subjects.length || plan.data.tasks.length));
+  const hasPlan = Boolean(plan.data && (plan.data.tags.length || plan.data.tasks.length));
   session.has_plan = hasPlan;
   if (hasPlan && plan.data && !result.rows[0]) {
     session.stage = "complete";
@@ -110,7 +108,7 @@ export async function onboardingRoutes(app: FastifyInstance) {
         const locked = await client.query<{ revision: number }>("select revision from onboarding_sessions where user_id=$1 for update", [user.id]);
         if (locked.rows[0].revision !== current.revision) throw new SessionConflict("引导已更新，请刷新读取最新进度");
         if (next.stage === "complete") {
-          const hasPlan = Boolean(latestPlan.data && (latestPlan.data.subjects.length || latestPlan.data.tasks.length));
+          const hasPlan = Boolean(latestPlan.data && (latestPlan.data.tags.length || latestPlan.data.tasks.length));
           if (hasPlan && (!next.replanning || next.plan_revision !== latestPlan.revision))
             throw new PlannerRevisionConflict("当前计划已更新，请重新读取当前计划后再确认，访谈草案已保留");
           await saveProfile(user.id, next.profile, client);
@@ -131,7 +129,7 @@ export async function onboardingRoutes(app: FastifyInstance) {
             await client.query("insert into plan_versions(user_id,kind,payload) values($1,'replan',$2)", [user.id, JSON.stringify({ summary: next.summary,
               start_date: next.start_date, previous_revision: latestPlan.revision, previous_document: latestPlan.data, previous_session: current })]);
           } else {
-            const result = await confirmDraft(user.id, { courses: next.courses, items: next.items,
+            const result = await confirmDraft(user.id, { items: next.items,
               analysis_summary: next.summary, assumptions: next.assumptions, warnings: next.warnings }, { client, from: next.start_date, advice: false });
             if (!result.generated.count) throw new Error("所选日期内没有可安排的学习时间，请检查每周可用时间和事项日期");
             document = (await snapshot(user.id, client)) as PlannerDocument;
@@ -163,8 +161,8 @@ export async function onboardingRoutes(app: FastifyInstance) {
 }
 
 export async function onboardingProfileVisible(userId: string) {
-  const courses = await query("select 1 from courses where user_id=$1 limit 1", [userId]);
-  if (courses.rowCount) return true;
+  const tasks = await query("select 1 from items where user_id=$1 limit 1", [userId]);
+  if (tasks.rowCount) return true;
   const result = await query<{ payload: OnboardingSession }>("select payload from onboarding_sessions where user_id=$1", [userId]);
   return result.rows[0]?.payload.stage === "complete" || false;
 }

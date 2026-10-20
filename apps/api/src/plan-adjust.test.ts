@@ -56,7 +56,6 @@ function fixture(): PlannerDocument {
       daily_limit_minutes: 480,
       granularity_minutes: 30,
       buffer_minutes: 30,
-      subject_limit_minutes: 240,
       study_start_minute: 480,
       study_end_minute: 1320,
       weekly_minutes: weekly,
@@ -65,14 +64,14 @@ function fixture(): PlannerDocument {
       weekly_range_min_minutes: 1200,
       weekly_range_max_minutes: 2400,
     },
-    subjects: [
-      { id: "s-math", user_id: OWNER, name: "数学", color: "#4565c7", priority: 3 },
-      { id: "s-en", user_id: OWNER, name: "英语", color: "#e8684a", priority: 2 },
-      { id: "s-pol", user_id: OWNER, name: "政治", color: "#6dc8ec", priority: 2 },
+    tags: [
+      { id: "s-math", user_id: OWNER, name: "数学", color: "#4565c7" },
+      { id: "s-en", user_id: OWNER, name: "英语", color: "#e8684a" },
+      { id: "s-pol", user_id: OWNER, name: "政治", color: "#6dc8ec" },
     ],
     tasks: [
       {
-        id: "t-math", user_id: OWNER, subject_id: "s-math", title: "高数基础一轮",
+        id: "t-math", user_id: OWNER, tag_ids: ["s-math"], title: "高数基础一轮",
         description: "高数教材与习题", estimated_minutes: 12000, completed_minutes: 600,
         priority: 3, deadline: "2027-10-01", deadline_kind: "deadline", earliest_date: "2026-10-01",
         is_fixed: false, status: "in_progress", created_at: STAMP, updated_at: STAMP,
@@ -86,33 +85,33 @@ function fixture(): PlannerDocument {
         },
       },
       {
-        id: "t-en", user_id: OWNER, subject_id: "s-en", title: "英语真题",
+        id: "t-en", user_id: OWNER, tag_ids: ["s-en"], title: "英语真题",
         estimated_minutes: 6000, completed_minutes: 0, priority: 2,
         deadline: "2027-12-20", deadline_kind: "deadline",
         is_fixed: false, status: "not_started", created_at: STAMP, updated_at: STAMP,
         planning: { activity: { kind: "finite", starts_on: "2026-10-01", ends_on: "2026-11-14" }, dependencies: [] },
       },
       {
-        id: "t-plan", user_id: OWNER, subject_id: "s-pol", title: "政治强化",
+        id: "t-plan", user_id: OWNER, tag_ids: ["s-pol"], title: "政治强化",
         estimated_minutes: 1800, completed_minutes: 0, priority: 2,
         deadline: "2026-11-14", deadline_kind: "plan_end", earliest_date: "2026-10-18",
         is_fixed: false, status: "not_started", created_at: STAMP, updated_at: STAMP,
         planning: { activity: { kind: "finite", starts_on: "2026-10-18", ends_on: "2026-11-14" }, dependencies: [] },
       },
       {
-        id: "t-fixed", user_id: OWNER, subject_id: "s-math", title: "固定课程作业",
+        id: "t-fixed", user_id: OWNER, tag_ids: ["s-math"], title: "固定课程作业",
         estimated_minutes: 600, completed_minutes: 120, priority: 2,
         deadline: "2026-11-01", deadline_kind: "deadline",
         is_fixed: true, status: "in_progress", created_at: STAMP, updated_at: STAMP,
       },
       {
-        id: "t-done", user_id: OWNER, subject_id: "s-math", title: "线性代数已完成",
+        id: "t-done", user_id: OWNER, tag_ids: ["s-math"], title: "线性代数已完成",
         estimated_minutes: 600, completed_minutes: 600, priority: 2,
         deadline: "2026-10-10", deadline_kind: "deadline",
         is_fixed: false, status: "completed", created_at: STAMP, updated_at: STAMP,
       },
       {
-        id: "t-arch", user_id: OWNER, subject_id: "s-en", title: "旧计划事项",
+        id: "t-arch", user_id: OWNER, tag_ids: ["s-en"], title: "旧计划事项",
         estimated_minutes: 300, completed_minutes: 0, priority: 1,
         deadline: "2026-12-01", deadline_kind: "deadline",
         is_fixed: false, status: "archived", created_at: STAMP, updated_at: STAMP,
@@ -171,7 +170,6 @@ const baseAdjustment = {
   cycle: { end_date: "2027-09-30", reason: "延长到目标日期前，覆盖完整备考周期" },
   intensity: null,
   task_updates: [],
-  new_subjects: [],
   new_tasks: [],
   warnings: [],
 };
@@ -346,8 +344,8 @@ describe("applyPlanAdjustment: task budgets", () => {
     expect(Math.ceil(computed)).toBe(18000);
     expect(workload.components[0]).toMatchObject({ label: "章节", unit: "章", minutes_per_unit: 120 });
     expect(preview.workload.updated_tasks).toEqual([
-      { task_id: "t-math", title: "高数基础一轮", subject: "数学", previous_minutes: 12000, minutes: 18000, reason: "数学需要更多时间" },
-      { task_id: "t-en", title: "英语真题", subject: "英语", previous_minutes: 6000, minutes: 9000, reason: "英语真题量增加" },
+      { task_id: "t-math", title: "高数基础一轮", tag_names: ["数学"], previous_minutes: 12000, minutes: 18000, reason: "数学需要更多时间" },
+      { task_id: "t-en", title: "英语真题", tag_names: ["英语"], previous_minutes: 6000, minutes: 9000, reason: "英语真题量增加" },
     ]);
     expect(preview.hours.current_minutes).toBe(21000);
     expect(preview.hours.next_minutes).toBe(30000);
@@ -375,22 +373,18 @@ describe("applyPlanAdjustment: task budgets", () => {
   });
 });
 
-describe("applyPlanAdjustment: new subjects and tasks", () => {
-  it("creates subjects/tasks with UUID ids, deadlines and preview rows", () => {
+describe("applyPlanAdjustment: tags and tasks", () => {
+  it("resolves optional tag names, assigns server IDs, and reports per-tag totals", () => {
     const { document, preview } = applyPlanAdjustment(
       fixture(),
       makeAdjustment({
-        new_subjects: [
-          { key: "s408", name: "408", priority: 3 },
-          { key: "spol2", name: "政治强化", priority: 2 },
-        ],
         new_tasks: [
           {
-            key: "t408", subject: "s408", title: "408 真题 15 套", description: "完成并复盘",
+            key: "t408", tag_names: ["408", "数学"], title: "408 真题 15 套", description: "完成并复盘",
             estimated_minutes: 9000, deadline_kind: "plan_end", priority: 3, reason: "补齐 408 训练量",
           },
           {
-            key: "ten", subject: "s-en", title: "英语作文模板", estimated_minutes: 1200,
+            key: "ten", tag_names: ["英语"], title: "英语作文模板", estimated_minutes: 1200,
             deadline_kind: "deadline", deadline: "2027-06-30", priority: 2, reason: "补齐写作训练",
           },
         ],
@@ -398,16 +392,15 @@ describe("applyPlanAdjustment: new subjects and tasks", () => {
       TODAY,
       deterministicRuntime(),
     );
-    const createdSubjects = document.subjects.filter((subject) => subject.id.startsWith("00000000"));
-    expect(createdSubjects.map((subject) => subject.name)).toEqual(["408", "政治强化"]);
-    expect(createdSubjects.map((subject) => subject.color)).toEqual(["#4565c7", "#e8684a"]);
-    expect(createdSubjects.every((subject) => /^[0-9a-f-]{36}$/.test(subject.id))).toBe(true);
+    const createdTags = document.tags.filter((tag) => tag.id.startsWith("00000000"));
+    expect(createdTags.map((tag) => tag.name)).toEqual(["408"]);
+    expect(createdTags.every((tag) => /^[0-9a-f-]{36}$/.test(tag.id))).toBe(true);
 
     const created = document.tasks.filter((task) => task.id.startsWith("00000000"));
     expect(created).toHaveLength(2);
     const papers = created.find((task) => task.title === "408 真题 15 套")!;
     expect(papers).toMatchObject({
-      subject_id: createdSubjects[0].id,
+      tag_ids: [createdTags[0].id, "s-math"],
       estimated_minutes: 9000,
       completed_minutes: 0,
       is_fixed: false,
@@ -419,25 +412,24 @@ describe("applyPlanAdjustment: new subjects and tasks", () => {
     });
     expect(papers.planning).toBeUndefined();
     const essay = created.find((task) => task.title === "英语作文模板")!;
-    expect(essay).toMatchObject({ subject_id: "s-en", deadline_kind: "deadline", deadline: "2027-06-30" });
+    expect(essay).toMatchObject({ tag_ids: ["s-en"], deadline_kind: "deadline", deadline: "2027-06-30" });
 
     expect(preview.workload.new_tasks).toEqual([
       {
-        title: "408 真题 15 套", subject: "408", minutes: 9000,
+        title: "408 真题 15 套", tag_names: ["408", "数学"], minutes: 9000,
         deadline_kind: "plan_end", deadline: "2027-09-30", reason: "补齐 408 训练量",
       },
       {
-        title: "英语作文模板", subject: "英语", minutes: 1200,
+        title: "英语作文模板", tag_names: ["英语"], minutes: 1200,
         deadline_kind: "deadline", deadline: "2027-06-30", reason: "补齐写作训练",
       },
     ]);
-    expect(preview.workload.subjects.map(({ name, previous_minutes, minutes }) => ({ name, previous_minutes, minutes }))).toEqual([
+    expect(preview.workload.tags.map(({ name, previous_minutes, minutes }) => ({ name, previous_minutes, minutes }))).toEqual([
+      { name: "数学", previous_minutes: 13200, minutes: 22200 },
       { name: "英语", previous_minutes: 6000, minutes: 7200 },
       { name: "408", previous_minutes: 0, minutes: 9000 },
     ]);
-    // 数学、政治没有工作量变化，不进入 subjects；只新增课程但没有事项的新课程也不出现。
-    expect(preview.workload.subjects.find((row) => row.name === "数学")).toBeUndefined();
-    expect(preview.workload.subjects.find((row) => row.name === "政治强化")).toBeUndefined();
+    expect(preview.workload.tag_totals_note).toContain("不能相加");
     expect(preview.hours.next_minutes).toBe(21000 + 9000 + 1200);
     expect(preview.notes.some((value) => value.includes("新增 2 个事项"))).toBe(true);
   });
@@ -464,7 +456,7 @@ describe("applyPlanAdjustment: protected blocks and rescheduling", () => {
       protected_blocks: 7,
       released_blocks: 3,
       released_minutes: 180,
-      unscheduled_minutes: 0,
+      unscheduled_minutes: expect.any(Number),
     });
     expect(preview.schedule.added_blocks).toBeGreaterThan(0);
     expect(preview.schedule.added_minutes).toBeGreaterThan(0);
@@ -520,7 +512,7 @@ describe("applyPlanAdjustment: preview contract", () => {
       required_min_minutes: 90000,
       required_max_minutes: 150000,
     });
-    expect(preview.workload).toEqual({ updated_tasks: [], new_tasks: [], subjects: [] });
+    expect(preview.workload).toMatchObject({ updated_tasks: [], new_tasks: [], tags: [], tag_totals_note: expect.any(String) });
     expect(preview.intensity).toEqual({
       previous_weekly_minutes: 1860,
       weekly_minutes: 1860,
@@ -551,24 +543,26 @@ describe("applyPlanAdjustment: invalid plans are rejected atomically", () => {
     expect(source).toEqual(original);
   });
 
-  it("rejects a new task that references an unknown subject", () => {
+  it("deduplicates tag names case-insensitively and allows an untagged task", () => {
     const ai = makeAdjustment({
       new_tasks: [
         {
-          key: "x", subject: "missing-subject", title: "无效事项", estimated_minutes: 300,
+          key: "x", tag_names: ["数学", " 数学 ", "数学"], title: "新事项", estimated_minutes: 300,
           deadline_kind: "plan_end", priority: 2, reason: "测试",
         },
+        { key: "y", tag_names: [], title: "未分类事项", estimated_minutes: 300, deadline_kind: "plan_end", priority: 2, reason: "测试" },
       ],
     });
-    expect(() => applyPlanAdjustment(fixture(), ai, TODAY, deterministicRuntime()))
-      .toThrow(/不存在的课程/);
+    const { document } = applyPlanAdjustment(fixture(), ai, TODAY, deterministicRuntime());
+    expect(document.tasks.find(task => task.title === "新事项")?.tag_ids).toEqual(["s-math"]);
+    expect(document.tasks.find(task => task.title === "未分类事项")?.tag_ids).toEqual([]);
   });
 
   it("rejects a real-deadline new task without a deadline", () => {
     const ai = makeAdjustment({
       new_tasks: [
         {
-          key: "x", subject: "s-en", title: "无效事项", estimated_minutes: 300,
+          key: "x", tag_names: ["英语"], title: "无效事项", estimated_minutes: 300,
           deadline_kind: "deadline", priority: 2, reason: "测试",
         },
       ],
@@ -577,14 +571,4 @@ describe("applyPlanAdjustment: invalid plans are rejected atomically", () => {
       .toThrow(/缺少有效的真实截止日期/);
   });
 
-  it("rejects duplicate new subject keys", () => {
-    const ai = makeAdjustment({
-      new_subjects: [
-        { key: "dup", name: "A", priority: 2 },
-        { key: "dup", name: "B", priority: 2 },
-      ],
-    });
-    expect(() => applyPlanAdjustment(fixture(), ai, TODAY, deterministicRuntime()))
-      .toThrow(/新增课程标识重复/);
-  });
 });

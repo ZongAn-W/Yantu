@@ -1,96 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+
 import '../../../shared/models/api_models.dart';
 import '../../planner/presentation/planner_dialogs.dart' show DateField;
 
-Future<CourseDraft?> editCourseDraft(
-  BuildContext context,
-  CourseDraft course,
-) async {
-  final name = TextEditingController(text: course.name);
-  final description = TextEditingController(text: course.description);
-  final form = GlobalKey<FormState>();
-  var priority = course.priority;
-  final result = await showDialog<CourseDraft>(
-    context: context,
-    builder: (context) => StatefulBuilder(
-      builder: (context, setState) => AlertDialog(
-        title: const Text('编辑课程'),
-        content: SizedBox(
-          width: 500,
-          child: SingleChildScrollView(
-            child: Form(
-              key: form,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  TextFormField(
-                    controller: name,
-                    autofocus: true,
-                    maxLength: 100,
-                    decoration: const InputDecoration(labelText: '课程名称'),
-                    validator: _required,
-                  ),
-                  const SizedBox(height: 12),
-                  TextFormField(
-                    controller: description,
-                    maxLength: 1000,
-                    minLines: 2,
-                    maxLines: 5,
-                    decoration: const InputDecoration(labelText: '课程说明'),
-                  ),
-                  const SizedBox(height: 12),
-                  priorityField(
-                    priority,
-                    (value) => setState(() => priority = value),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (form.currentState!.validate()) {
-                Navigator.pop(
-                  context,
-                  course.copyWith(
-                    name: name.text.trim(),
-                    description: description.text.trim(),
-                    priority: priority,
-                  ),
-                );
-              }
-            },
-            child: const Text('保存'),
-          ),
-        ],
-      ),
-    ),
-  );
-  // The dialog's closing animation still reads its text controllers.
-  await Future<void>.delayed(const Duration(milliseconds: 250));
-  name.dispose();
-  description.dispose();
-  return result;
-}
-
-Future<ItemDraft?> editItemDraft(
-  BuildContext context,
-  ItemDraft item,
-  List<CourseDraft> courses,
-) async {
+Future<ItemDraft?> editItemDraft(BuildContext context, ItemDraft item) async {
   final title = TextEditingController(text: item.title);
   final description = TextEditingController(text: item.description);
   final criteria = TextEditingController(text: item.completionCriteria);
   final minutes = TextEditingController(text: '${item.estimatedMinutes}');
+  final tags = TextEditingController(text: item.tagNames.join(', '));
   final form = GlobalKey<FormState>();
-  var courseId = item.courseId;
   var start = item.earliestDate;
   var deadline = item.deadline;
   var priority = item.priority;
@@ -109,24 +29,8 @@ Future<ItemDraft?> editItemDraft(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  DropdownButtonFormField<String>(
-                    initialValue: courseId,
-                    isExpanded: true,
-                    decoration: const InputDecoration(labelText: '所属课程'),
-                    items: [
-                      for (final course in courses)
-                        DropdownMenuItem(
-                          value: course.id,
-                          child: Text(
-                            course.name,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                    ],
-                    onChanged: (value) => courseId = value!,
-                  ),
-                  const SizedBox(height: 12),
                   TextFormField(
+                    key: const Key('draft-item-title'),
                     controller: title,
                     maxLength: 200,
                     decoration: const InputDecoration(labelText: '事项名称'),
@@ -147,6 +51,15 @@ Future<ItemDraft?> editItemDraft(
                     minLines: 2,
                     maxLines: 4,
                     decoration: const InputDecoration(labelText: '完成标准'),
+                  ),
+                  const SizedBox(height: 12),
+                  TextFormField(
+                    controller: tags,
+                    maxLength: 200,
+                    decoration: const InputDecoration(
+                      labelText: '标签（选填，用逗号分隔）',
+                      hintText: '例如：数学，薄弱项，真题',
+                    ),
                   ),
                   const SizedBox(height: 12),
                   TextFormField(
@@ -211,10 +124,15 @@ Future<ItemDraft?> editItemDraft(
               Navigator.pop(
                 context,
                 item.copyWith(
-                  courseId: courseId,
                   title: title.text.trim(),
                   description: description.text.trim(),
                   completionCriteria: criteria.text.trim(),
+                  tagNames: tags.text
+                      .split(RegExp(r'[,，]'))
+                      .map((tag) => tag.trim())
+                      .where((tag) => tag.isNotEmpty)
+                      .toSet()
+                      .toList(),
                   estimatedMinutes: int.parse(minutes.text),
                   earliestDate: start,
                   deadline: deadline,
@@ -233,6 +151,7 @@ Future<ItemDraft?> editItemDraft(
   description.dispose();
   criteria.dispose();
   minutes.dispose();
+  tags.dispose();
   return result;
 }
 

@@ -15,8 +15,38 @@ JsonMap readPlannerFixture() => JsonMap.from(
 /// 不使用子集断言，避免掩盖真正的字段丢失。
 JsonMap legacyExportWithModelDefaults(JsonMap source) {
   final expected = JsonMap.from(source);
+  final oldSubjects = expected.remove('subjects') as List? ?? const [];
+  final tags = [
+    for (final value in oldSubjects)
+      if (value is Map)
+        {
+          'id': value['id'],
+          'user_id': value['user_id'] ?? value['userId'],
+          'name': (value['name'] as String).trim(),
+          if (value['color'] != null) 'color': value['color'],
+          'created_at': value['created_at'] ?? value['createdAt'] ?? '',
+          'updated_at': value['updated_at'] ?? value['updatedAt'] ?? '',
+        },
+  ];
+  expected['tags'] = tags;
+  final subjectTag = {for (final tag in tags) tag['id']: tag['id']};
+  expected['tasks'] = [
+    for (final value in expected['tasks'] as List)
+      if (value is Map)
+        () {
+          final task = JsonMap.from(value);
+          final oldSubject =
+              task.remove('subject_id') ?? task.remove('subjectId');
+          task['tag_ids'] =
+              oldSubject is String && subjectTag.containsKey(oldSubject)
+              ? [subjectTag[oldSubject]]
+              : <String>[];
+          return task;
+        }(),
+  ];
   expected.putIfAbsent('ad_hoc_learnings', () => <dynamic>[]);
   expected['profile'] = JsonMap.from(expected['profile'] as Map)
+    ..remove('subject_limit_minutes')
     ..putIfAbsent('capacity_basis', () => 'gross_buffer');
   expected['logs'] = [
     for (final row in expected['logs'] as List)
@@ -34,13 +64,51 @@ void main() {
       final expected = legacyExportWithModelDefaults(source);
       expect(data.toJson(), expected);
       expect(jsonDecode(data.toJsonString()), expected);
-      expect(data.tasks.single.subjectId, data.subjects.single.id);
+      expect(data.tasks.single.tagIds, [data.tags.single.id]);
       expect(data.logs.single.blockId, isNull);
       expect(data.replanRuns.single.changes.single.before, isNull);
       expect(data.replanRuns.single.changes.single.after, data.blocks.single);
       expect(() => data.tasks.clear(), throwsUnsupportedError);
       expect(data.copyWith(tasks: []).tasks, isEmpty);
       expect(data.tasks, hasLength(1));
+    },
+  );
+
+  test('new multi-tag task documents round-trip without course fields', () {
+    final source = readPlannerFixture();
+    final data = PlannerData.fromJson(source);
+    final expanded = data.copyWith(
+      tags: [
+        ...data.tags,
+        Tag(
+          id: 'tag-weak',
+          userId: data.profile.userId,
+          name: '薄弱项',
+          color: '#1f7a5a',
+        ),
+      ],
+      tasks: [
+        data.tasks.single.copyWith(tagIds: [data.tags.single.id, 'tag-weak']),
+      ],
+    );
+    final exported = expanded.toJson();
+    expect(exported['subjects'], isNull);
+    expect((exported['tasks'] as List).single['subject_id'], isNull);
+    expect((exported['tasks'] as List).single['tag_ids'], [
+      data.tags.single.id,
+      'tag-weak',
+    ]);
+    expect(PlannerData.fromJson(exported), expanded);
+  });
+
+  test(
+    'legacy orphan or invalid subject references normalize to untagged tasks',
+    () {
+      final source = readPlannerFixture();
+      (source['tasks'] as List).single['subject_id'] = 'missing-subject';
+      final parsed = PlannerData.fromJson(source);
+      expect(parsed.tasks.single.tagIds, isEmpty);
+      expect(parsed.toJson()['subjects'], isNull);
     },
   );
 
@@ -78,68 +146,74 @@ void main() {
     },
   );
 
-  test('a goal without a target date survives export, validation and import', () {
-    final json = readPlannerFixture();
-    final profile = JsonMap.from(json['profile'] as Map)
-      ..['goal_text'] = '长期阅读中国近现代史'
-      ..['goal_type'] = 'self_study'
-      ..['goal_subtype'] = ''
-      ..['target_date'] = ''
-      ..['target_date_confirmed'] = false
-      ..['plan_start_date'] = '2026-10-17'
-      ..['plan_end_date'] = '2026-11-13'
-      // 新文档不再写旧镜像字段；客户端把缺失的镜像保留为空字符串。
-      ..['exam_date'] = ''
-      ..['exam_end_date'] = ''
-      ..['weekly_minutes'] = {
-        '0': 0,
-        '1': 120,
-        '2': 0,
-        '3': 120,
-        '4': 0,
-        '5': 120,
-        '6': 0,
-      };
-    final tasks = [
-      for (final row in json['tasks'] as List)
-        JsonMap.from(row as Map)..['deadline_kind'] = 'plan_end',
-    ];
-    final source = JsonMap.from(json)
-      ..['profile'] = profile
-      ..['tasks'] = tasks;
-    final expected = legacyExportWithModelDefaults(source);
-    final encoded = jsonEncode(source);
-    final parsed = parsePlannerJson(encoded);
-    expect(parsed.profile.resolvedTargetDate, isEmpty);
-    expect(parsed.profile.goalType, GoalType.selfStudy);
-    expect(parsed.profile.resolvedPlanEnd('2026-10-17'), '2026-11-13');
-    expect(parsed.profile.weekMinutes['2'], 0);
-    expect(parsed.tasks.single.deadlineKind, ItemDateKind.planEnd);
-    expect(parsed.toJson(), expected);
-  });
-
-  test('legacy plans without the new fields read as an unknown date and a real deadline', () {
-    final source = readPlannerFixture();
-    final profile = JsonMap.from(source['profile'] as Map)
-      ..remove('goal_text')
-      ..remove('goal_type')
-      ..remove('target_date')
-      ..remove('plan_start_date')
-      ..remove('plan_end_date')
-      ..remove('weekly_minutes');
-    final task = JsonMap.from((source['tasks'] as List).single as Map)
-      ..remove('deadline_kind');
-    final parsed = PlannerData.fromJson(
-      JsonMap.from(source)
+  test(
+    'a goal without a target date survives export, validation and import',
+    () {
+      final json = readPlannerFixture();
+      final profile = JsonMap.from(json['profile'] as Map)
+        ..['goal_text'] = '长期阅读中国近现代史'
+        ..['goal_type'] = 'self_study'
+        ..['goal_subtype'] = ''
+        ..['target_date'] = ''
+        ..['target_date_confirmed'] = false
+        ..['plan_start_date'] = '2026-10-17'
+        ..['plan_end_date'] = '2026-11-13'
+        // 新文档不再写旧镜像字段；客户端把缺失的镜像保留为空字符串。
+        ..['exam_date'] = ''
+        ..['exam_end_date'] = ''
+        ..['weekly_minutes'] = {
+          '0': 0,
+          '1': 120,
+          '2': 0,
+          '3': 120,
+          '4': 0,
+          '5': 120,
+          '6': 0,
+        };
+      final tasks = [
+        for (final row in json['tasks'] as List)
+          JsonMap.from(row as Map)..['deadline_kind'] = 'plan_end',
+      ];
+      final source = JsonMap.from(json)
         ..['profile'] = profile
-        ..['tasks'] = [task],
-    );
-    expect(parsed.profile.goalType, GoalType.other);
-    expect(parsed.profile.resolvedTargetDate, '2027-12-25');
-    expect(parsed.profile.resolvedPlanEnd('2026-10-17'), '2027-12-26');
-    expect(parsed.profile.weekMinutes['1'], parsed.profile.dailyLimitMinutes);
-    expect(parsed.tasks.single.deadlineKind, ItemDateKind.deadline);
-  });
+        ..['tasks'] = tasks;
+      final expected = legacyExportWithModelDefaults(source);
+      final encoded = jsonEncode(source);
+      final parsed = parsePlannerJson(encoded);
+      expect(parsed.profile.resolvedTargetDate, isEmpty);
+      expect(parsed.profile.goalType, GoalType.selfStudy);
+      expect(parsed.profile.resolvedPlanEnd('2026-10-17'), '2026-11-13');
+      expect(parsed.profile.weekMinutes['2'], 0);
+      expect(parsed.tasks.single.deadlineKind, ItemDateKind.planEnd);
+      expect(parsed.toJson(), expected);
+    },
+  );
+
+  test(
+    'legacy plans without the new fields read as an unknown date and a real deadline',
+    () {
+      final source = readPlannerFixture();
+      final profile = JsonMap.from(source['profile'] as Map)
+        ..remove('goal_text')
+        ..remove('goal_type')
+        ..remove('target_date')
+        ..remove('plan_start_date')
+        ..remove('plan_end_date')
+        ..remove('weekly_minutes');
+      final task = JsonMap.from((source['tasks'] as List).single as Map)
+        ..remove('deadline_kind');
+      final parsed = PlannerData.fromJson(
+        JsonMap.from(source)
+          ..['profile'] = profile
+          ..['tasks'] = [task],
+      );
+      expect(parsed.profile.goalType, GoalType.other);
+      expect(parsed.profile.resolvedTargetDate, '2027-12-25');
+      expect(parsed.profile.resolvedPlanEnd('2026-10-17'), '2027-12-26');
+      expect(parsed.profile.weekMinutes['1'], parsed.profile.dailyLimitMinutes);
+      expect(parsed.tasks.single.deadlineKind, ItemDateKind.deadline);
+    },
+  );
 
   test(
     'sync metadata preserves revision, pending, base and camelCase updatedAt',

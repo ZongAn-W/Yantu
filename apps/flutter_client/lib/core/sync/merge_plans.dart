@@ -107,6 +107,18 @@ MergeResult mergePlans(
     if (semanticallyEqual(right, old) || semanticallyEqual(left, right)) {
       return left;
     }
+    if (old is List && left is List && right is List && label == '标签关联') {
+      final beforeIds = old.whereType<String>().toSet();
+      final leftIds = left.whereType<String>().toSet();
+      final rightIds = right.whereType<String>().toSet();
+      final removed = (beforeIds.difference(
+        leftIds,
+      )).union(beforeIds.difference(rightIds));
+      final added = leftIds
+          .difference(beforeIds)
+          .union(rightIds.difference(beforeIds));
+      return [...beforeIds.difference(removed).union(added)];
+    }
     if (old is Map && left is Map && right is Map) {
       final result = <String, dynamic>{};
       // 以本机键顺序为主：没有实际变化时合并结果与原文档同序，乐观编辑的
@@ -119,6 +131,15 @@ MergeResult mergePlans(
           'updated_at',
         ].contains(key)) {
           result[key as String] = left[key] ?? right[key];
+          continue;
+        }
+        if (key == 'tag_ids') {
+          result[key as String] = merge(
+            old[key] ?? const [],
+            left[key] ?? const [],
+            right[key] ?? const [],
+            '标签关联',
+          );
           continue;
         }
         final next = merge(old[key], left[key], right[key], label);
@@ -173,7 +194,7 @@ MergeResult mergePlans(
     );
   }
   for (final entry in {
-    'subjects': '课程',
+    'tags': '标签',
     'tasks': '事项',
     'blocks': '日程安排',
     'ad_hoc_learnings': '临时学习',
@@ -233,7 +254,7 @@ MergeResult mergePlans(
     );
   }
   final taskRows = (result['tasks'] as List).cast<Map>();
-  final subjectRows = (result['subjects'] as List).cast<Map>();
+  final tagRows = (result['tags'] as List).cast<Map>();
   final blockRows = (result['blocks'] as List).cast<Map>();
   final adHocRows = (result['ad_hoc_learnings'] as List).cast<Map>();
   // Preserve locally changed children when another device removed their parent.
@@ -270,17 +291,33 @@ MergeResult mergePlans(
       }
     }
   }
+  // Resolve same-name tags created concurrently on different devices, then drop
+  // references to deleted definitions without disturbing unrelated associations.
+  final canonicalByName = <String, String>{};
+  final canonicalById = <String, String>{};
+  final uniqueTags = <Map>[];
+  for (final tag in tagRows) {
+    final name = (tag['name'] as String? ?? '').trim();
+    final key = name.toLowerCase();
+    final id = tag['id'] as String;
+    final canonical = canonicalByName.putIfAbsent(key, () => id);
+    canonicalById[id] = canonical;
+    if (canonical == id) {
+      tag['name'] = name;
+      uniqueTags.add(tag);
+    } else {
+      conflicts.add('同名标签已合并');
+    }
+  }
+  final validTags = uniqueTags.map((tag) => tag['id']).toSet();
   for (final task in taskRows) {
-    if (subjectRows.any((subject) => subject['id'] == task['subject_id'])) {
-      continue;
-    }
-    final subject =
-        local.subjects.where((s) => s.id == task['subject_id']).firstOrNull ??
-        remote.subjects.where((s) => s.id == task['subject_id']).firstOrNull;
-    if (subject != null) {
-      conflicts.add('事项所属课程被云端删除');
-      subjectRows.add(subject.toJson());
-    }
+    final ids = (task['tag_ids'] as List? ?? const [])
+        .whereType<String>()
+        .map((id) => canonicalById[id] ?? id)
+        .where(validTags.contains)
+        .toSet()
+        .toList(growable: false);
+    task['tag_ids'] = ids;
   }
   // 临时学习实体与其历史记录必须成对存在：实体被另一台设备删除时恢复该实体，
   // 否则保留可归属的记录并退回 unknown 关系，避免整份合并结果不可读。
@@ -311,7 +348,7 @@ MergeResult mergePlans(
   }
   final tasks = taskRows.map((row) => row['id']).toSet();
   result['tasks'] = taskRows;
-  result['subjects'] = subjectRows;
+  result['tags'] = uniqueTags;
   result['ad_hoc_learnings'] = adHocRows;
   result['blocks'] = blockRows
       .where((row) => tasks.contains(row['task_id']))

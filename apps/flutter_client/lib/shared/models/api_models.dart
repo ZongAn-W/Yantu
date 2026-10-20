@@ -54,7 +54,7 @@ abstract class CourseDraft with _$CourseDraft {
 abstract class ItemDraft with _$ItemDraft {
   const factory ItemDraft({
     required String id,
-    required String courseId,
+    @JsonKey(name: 'tag_names') @Default([]) List<String> tagNames,
     required String title,
     @Default('') String description,
     @Default('') String completionCriteria,
@@ -71,14 +71,50 @@ abstract class ItemDraft with _$ItemDraft {
 @freezed
 abstract class PlanDraft with _$PlanDraft {
   const factory PlanDraft({
-    required List<CourseDraft> courses,
     required List<ItemDraft> items,
     required String analysisSummary,
     @Default([]) List<String> assumptions,
     @Default([]) List<String> warnings,
     JsonMap? planning,
   }) = _PlanDraft;
-  factory PlanDraft.fromJson(JsonMap json) => _$PlanDraftFromJson(json);
+  factory PlanDraft.fromJson(JsonMap json) =>
+      _$PlanDraftFromJson(normalizePlanDraftJson(json));
+}
+
+JsonMap normalizePlanDraftJson(JsonMap json) {
+  final normalized = JsonMap.from(json);
+  final coursesById = <String, String>{};
+  final rawCourses = normalized.remove('courses');
+  if (rawCourses is List) {
+    for (final value in rawCourses) {
+      if (value is Map && value['id'] is String && value['name'] is String) {
+        coursesById[value['id'] as String] = value['name'] as String;
+      }
+    }
+  }
+  final rawItems = normalized['items'];
+  if (rawItems is List) {
+    normalized['items'] = [
+      for (final value in rawItems)
+        if (value is Map)
+          () {
+            final item = JsonMap.from(value);
+            if (!item.containsKey('tag_names')) {
+              final legacyCourse = item.remove('course_id');
+              final legacyName = legacyCourse is String
+                  ? coursesById[legacyCourse]
+                  : null;
+              item['tag_names'] = legacyName == null
+                  ? <String>[]
+                  : <String>[legacyName];
+            } else {
+              item.remove('course_id');
+            }
+            return item;
+          }(),
+    ];
+  }
+  return normalized;
 }
 
 @freezed

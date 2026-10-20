@@ -232,15 +232,11 @@ bool dependencySatisfied({
 
 class _Limits {
   const _Limits({
-    required this.daily,
-    required this.subject,
     required this.quantum,
     required this.start,
     required this.end,
   });
 
-  final int daily;
-  final int subject;
   final int quantum;
   final int start;
   final int end;
@@ -261,12 +257,6 @@ int dailyStudyBudget(Profile profile, String date) =>
     capacity_core.resolveDayCapacity(profile, date).minutes;
 
 _Limits _limits(Profile profile) => _Limits(
-  daily: math.max(
-    0,
-    math.min(480, _finite(profile.dailyLimitMinutes)) -
-        math.max(30, _finite(profile.bufferMinutes)),
-  ),
-  subject: math.min(240, _finite(profile.subjectLimitMinutes)),
   quantum: math.max(30, _finite(profile.granularityMinutes)),
   start: math.max(0, _finite(profile.studyStartMinute)),
   end: math.min(1440, _finite(profile.studyEndMinute)),
@@ -399,30 +389,6 @@ String? _placementError(
     return capacity_core.supportsLightweightScheduling(input.profile)
         ? '超出当天可用的净学习时间，请调整当天安排或设置该日期的容量'
         : '超出当天可用的学习时间（每日上限），须保留至少30分钟机动时间';
-  }
-  final subjectOccupied = occupiedDayMinutes(
-    profile: input.profile,
-    fixedEvents: const [],
-    dayBlocks: dayBlocks.where((block) {
-      final blockTask = input.tasks
-          .where((item) => item.id == block.taskId)
-          .firstOrNull;
-      return blockTask?.subjectId == task.subjectId;
-    }).toList(),
-    logs: input.logs,
-    date: candidate.date,
-  );
-  final orphanSubjectLoad = orphanLogs
-      .where((log) {
-        final logTask = input.tasks
-            .where((item) => item.id == log.taskId)
-            .firstOrNull;
-        return logTask?.subjectId == task.subjectId;
-      })
-      .fold<int>(0, (sum, log) => sum + _finite(log.minutes));
-  if (subjectOccupied + orphanSubjectLoad + candidate.durationMinutes >
-      capacity.subject) {
-    return '同一科目每天最多安排4小时';
   }
   return null;
 }
@@ -709,7 +675,7 @@ ReplanPreview generateReplanPreview(
             PlannerData(
               version: 1,
               profile: input.profile,
-              subjects: const [],
+              tags: const [],
               tasks: input.tasks,
               blocks: kept,
               logs: input.logs,
@@ -972,7 +938,7 @@ ReplanPreview generateReplanPreview(
           minutes: missed,
           reason: task.deadline.compareTo(input.today) <= 0
               ? '截止日期已到，未来没有可安排的日期'
-              : '截止日期前或未来14天内容量不足；未突破每日上限、机动时间和科目上限',
+              : '截止日期前或未来14天内容量不足；未突破每日容量',
         ),
       );
     }

@@ -7,22 +7,15 @@ import '../support/planner_fixture.dart';
 
 PlannerData progressFixture() {
   final base = plannerFixture();
-  final subject = Subject(
-    id: 'english',
-    userId: base.profile.userId,
-    name: '英语',
-    color: '#1f7a5a',
-    priority: 2,
-  );
+  final tagId = base.tags.first.id;
   final second = base.tasks.first.copyWith(
     id: 'task-2',
-    subjectId: 'english',
+    tagIds: [tagId],
     title: '真题精读',
     estimatedMinutes: 600,
     completedMinutes: 0,
   );
   return base.copyWith(
-    subjects: [...base.subjects, subject],
     tasks: [base.tasks.first, second],
     logs: [
       ...base.logs,
@@ -39,11 +32,7 @@ PlannerData progressFixture() {
 void main() {
   test('totals, remaining budget and target date come from the plan', () {
     final data = progressFixture();
-    final metrics = progressMetrics(
-      data,
-      date: '2026-10-16',
-      month: '2026-10',
-    );
+    final metrics = progressMetrics(data, date: '2026-10-16', month: '2026-10');
     expect(metrics.totalActual, 95);
     expect(
       metrics.remainingMinutes,
@@ -56,58 +45,72 @@ void main() {
     expect(metrics.week.last, '2026-10-16');
     expect(metrics.week.first, '2026-10-10');
   });
-  test('per-subject planned, actual and lifetime totals stay separated', () {
+  test('weekly planned and actual totals count tasks once', () {
     final metrics = progressMetrics(
       progressFixture(),
       date: '2026-10-16',
       month: '2026-10',
     );
-    final calculus = metrics.weekStats.firstWhere(
-      (stat) => stat.subject.id == 'calculus',
-    );
-    final english = metrics.weekStats.firstWhere(
-      (stat) => stat.subject.id == 'english',
-    );
-    // The fixture plans 30 minutes of calculus and logs 35; the English task has
-    // a 60 minute log but no planned block.
-    expect(calculus.planned, 30);
-    expect(calculus.actual, 35);
-    expect(english.planned, 0);
-    expect(english.actual, 60);
-    expect(calculus.totalActual, 35);
-    expect(english.totalActual, 60);
-    expect(metrics.maxWeekly, 60);
+    // The fixture plans 30 minutes and records 35 + 60 minutes across tasks.
+    expect(metrics.weekProgress.planned, 30);
+    expect(metrics.weekProgress.actual, 95);
+    expect(metrics.maxWeekly, 95);
   });
-  test('subject progress reports completed, remaining and completion rate', () {
+  test('task progress reports one overall completed and remaining budget', () {
     final metrics = progressMetrics(
       progressFixture(),
       date: '2026-10-16',
       month: '2026-10',
     );
-    final calculus = metrics.subjectProgress.firstWhere(
-      (item) => item.subject.id == 'calculus',
-    );
-    expect(calculus.estimated, 15600);
-    // `completed` mirrors the task field, which `refreshTaskProgress` maintains
-    // whenever minutes are recorded; `actual` always reads the study log.
-    expect(calculus.completed, 0);
-    expect(calculus.remaining, 15600);
-    expect(calculus.actual, 35);
-    expect(calculus.ratio, 0);
-    final english = metrics.subjectProgress.firstWhere(
-      (item) => item.subject.id == 'english',
-    );
-    expect(english.estimated, 600);
-    expect(english.actual, 60);
+    expect(metrics.overallMinutes, 16200);
+    // Completed mirrors task fields, while actual minutes come from logs.
+    expect(metrics.completedMinutes, 0);
+    expect(metrics.remainingMinutes, 16200);
   });
 
-  test('burn values never fall below zero', () {
+  test('adding multiple tags does not duplicate progress totals', () {
     final data = progressFixture();
-    final metrics = progressMetrics(
+    final task = data.tasks.first;
+    final addedTag = Tag(
+      id: 'second-tag',
+      userId: data.profile.userId,
+      name: '薄弱项',
+    );
+    final tagged = data.copyWith(
+      tags: [...data.tags, addedTag],
+      tasks: [
+        task.copyWith(tagIds: [...task.tagIds, addedTag.id]),
+        ...data.tasks.skip(1),
+      ],
+    );
+    final original = progressMetrics(
       data,
       date: '2026-10-16',
       month: '2026-10',
     );
+    final withMultipleTags = progressMetrics(
+      tagged,
+      date: '2026-10-16',
+      month: '2026-10',
+    );
+    expect(withMultipleTags.overallMinutes, original.overallMinutes);
+    expect(withMultipleTags.completedMinutes, original.completedMinutes);
+    expect(withMultipleTags.remainingMinutes, original.remainingMinutes);
+    expect(withMultipleTags.totalActual, original.totalActual);
+    expect(
+      withMultipleTags.weekProgress.planned,
+      original.weekProgress.planned,
+    );
+    expect(withMultipleTags.weekProgress.actual, original.weekProgress.actual);
+    expect(
+      withMultipleTags.weekProgress.scheduled,
+      original.weekProgress.scheduled,
+    );
+  });
+
+  test('burn values never fall below zero', () {
+    final data = progressFixture();
+    final metrics = progressMetrics(data, date: '2026-10-16', month: '2026-10');
     expect(metrics.burnDays, hasLength(15));
     expect(metrics.burnValues, hasLength(15));
     expect(metrics.burnValues.every((value) => value >= 0), isTrue);
@@ -129,11 +132,7 @@ void main() {
     expect(empty.paceMinutes, 0);
 
     // 35 minutes on day one against a 15600 minute budget cannot finish in time.
-    final paced = progressMetrics(
-      base,
-      date: '2026-10-16',
-      month: '2026-10',
-    );
+    final paced = progressMetrics(base, date: '2026-10-16', month: '2026-10');
     expect(paced.forecast, isNotNull);
     expect(paced.paceMinutes, 35);
     expect(paced.lagging, isTrue);
@@ -145,11 +144,7 @@ void main() {
 
   test('heat map covers the month with a Monday-leading offset', () {
     final data = progressFixture();
-    final metrics = progressMetrics(
-      data,
-      date: '2026-10-16',
-      month: '2026-10',
-    );
+    final metrics = progressMetrics(data, date: '2026-10-16', month: '2026-10');
     expect(metrics.heatCells, hasLength(31));
     // 2026-10-01 is a Thursday, so four leading blanks in a Monday-first grid.
     expect(metrics.heatLead, 3);
@@ -167,18 +162,12 @@ void main() {
 
   test('interrupted days count planned past days without records', () {
     final data = progressFixture();
-    final metrics = progressMetrics(
-      data,
-      date: '2026-10-20',
-      month: '2026-10',
-    );
+    final metrics = progressMetrics(data, date: '2026-10-20', month: '2026-10');
     // Only 2026-10-16 has both a plan and a record, so nothing is interrupted.
     expect(metrics.interruptedDays, 0);
     final planned = data.copyWith(
       logs: const [],
-      blocks: [
-        data.blocks.first.copyWith(date: '2026-10-18'),
-      ],
+      blocks: [data.blocks.first.copyWith(date: '2026-10-18')],
     );
     expect(
       progressMetrics(
@@ -295,11 +284,7 @@ void main() {
 
     test('temporary learning never speeds up the goal content forecast', () {
       final base = plannerFixture();
-      final without = progressMetrics(
-        base,
-        date: date,
-        month: '2026-10',
-      );
+      final without = progressMetrics(base, date: date, month: '2026-10');
       final withAdHoc = progressMetrics(
         base.copyWith(
           logs: [
@@ -331,7 +316,7 @@ void main() {
       expect(withAdHoc.paceMinutes, without.paceMinutes);
     });
 
-    test('extra and temporary minutes reach their course attribution', () {
+    test('weekly totals aggregate extra and temporary minutes once', () {
       final base = plannerFixture();
       final task = base.tasks.single;
       final data = base.copyWith(
@@ -357,7 +342,6 @@ void main() {
             id: 'photo',
             userId: base.profile.userId,
             title: '摄影构图',
-            subjectId: task.subjectId,
             createdAt: '2026-10-01T00:00:00.000Z',
             updatedAt: '2026-10-01T00:00:00.000Z',
           ),
@@ -365,55 +349,49 @@ void main() {
         blocks: [base.blocks.single.copyWith(durationMinutes: 60)],
       );
       final metrics = progressMetrics(data, date: date, month: '2026-10');
-      final calculus = metrics.weekStats.single;
-      expect(calculus.planned, 60);
-      expect(calculus.actual, 105);
-      expect(calculus.scheduled, 60);
-      expect(calculus.extra, 15);
-      expect(calculus.adHoc, 30);
-      // Content completion mirrors the item field, never the total actual time.
-      expect(calculus.totalActual, 105);
-      final progress = metrics.subjectProgress.single;
-      expect(progress.completed, task.completedMinutes);
-      expect(progress.actual, 105);
+      final weekly = metrics.weekProgress;
+      expect(weekly.planned, 60);
+      expect(weekly.actual, 105);
+      expect(weekly.scheduled, 60);
+      expect(weekly.extra, 15);
+      expect(weekly.adHoc, 30);
     });
 
-    test('heat cells separate relations and interruption ignores temporary time', () {
-      final base = plannerFixture();
-      final data = base.copyWith(
-        blocks: [base.blocks.single.copyWith(date: '2026-10-10')],
-        logs: [
-          logFor(
-            base,
-            30,
-            id: 'photo-log',
-            adHocId: 'photo',
-            relation: TimeLogRelation.adHoc,
-            day: '2026-10-10',
-          ),
-        ],
-        adHocLearnings: [
-          AdHocLearning(
-            id: 'photo',
-            userId: base.profile.userId,
-            title: '摄影构图',
-            createdAt: '2026-10-01T00:00:00.000Z',
-            updatedAt: '2026-10-01T00:00:00.000Z',
-          ),
-        ],
-      );
-      final metrics = progressMetrics(data, date: date, month: '2026-10');
-      final cell = metrics.heatCells
-          .where((item) => item.date == '2026-10-10')
-          .single;
-      expect(cell.actual, 30);
-      expect(cell.scheduled, 0);
-      expect(cell.adHoc, 30);
-      expect(
-        metrics.interruptedDays,
-        1,
-        reason: '临时学习不能冒充当天原定安排已执行',
-      );
-    });
+    test(
+      'heat cells separate relations and interruption ignores temporary time',
+      () {
+        final base = plannerFixture();
+        final data = base.copyWith(
+          blocks: [base.blocks.single.copyWith(date: '2026-10-10')],
+          logs: [
+            logFor(
+              base,
+              30,
+              id: 'photo-log',
+              adHocId: 'photo',
+              relation: TimeLogRelation.adHoc,
+              day: '2026-10-10',
+            ),
+          ],
+          adHocLearnings: [
+            AdHocLearning(
+              id: 'photo',
+              userId: base.profile.userId,
+              title: '摄影构图',
+              createdAt: '2026-10-01T00:00:00.000Z',
+              updatedAt: '2026-10-01T00:00:00.000Z',
+            ),
+          ],
+        );
+        final metrics = progressMetrics(data, date: date, month: '2026-10');
+        final cell = metrics.heatCells
+            .where((item) => item.date == '2026-10-10')
+            .single;
+        expect(cell.actual, 30);
+        expect(cell.scheduled, 0);
+        expect(cell.adHoc, 30);
+        expect(metrics.interruptedDays, 1, reason: '临时学习不能冒充当天原定安排已执行');
+      },
+    );
   });
 }

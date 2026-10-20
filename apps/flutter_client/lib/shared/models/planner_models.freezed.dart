@@ -15,7 +15,7 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$PlannerData {
 
-@JsonKey(fromJson: _versionOne) int get version; Profile get profile; List<Subject> get subjects; List<Task> get tasks; List<ScheduleBlock> get blocks; List<TimeLog> get logs; List<FixedEvent> get fixedEvents; List<ReplanRun> get replanRuns; List<Phase> get phases; List<AdHocLearning> get adHocLearnings; Map<String, String>? get dailyFeedback; JsonMap? get planning;
+@JsonKey(fromJson: _versionOne) int get version; Profile get profile; List<Tag> get tags; List<Task> get tasks; List<ScheduleBlock> get blocks; List<TimeLog> get logs; List<FixedEvent> get fixedEvents; List<ReplanRun> get replanRuns; List<Phase> get phases; List<AdHocLearning> get adHocLearnings; Map<String, String>? get dailyFeedback; JsonMap? get planning;
 /// Create a copy of PlannerData
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -28,16 +28,16 @@ $PlannerDataCopyWith<PlannerData> get copyWith => _$PlannerDataCopyWithImpl<Plan
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlannerData&&(identical(other.version, version) || other.version == version)&&(identical(other.profile, profile) || other.profile == profile)&&const DeepCollectionEquality().equals(other.subjects, subjects)&&const DeepCollectionEquality().equals(other.tasks, tasks)&&const DeepCollectionEquality().equals(other.blocks, blocks)&&const DeepCollectionEquality().equals(other.logs, logs)&&const DeepCollectionEquality().equals(other.fixedEvents, fixedEvents)&&const DeepCollectionEquality().equals(other.replanRuns, replanRuns)&&const DeepCollectionEquality().equals(other.phases, phases)&&const DeepCollectionEquality().equals(other.adHocLearnings, adHocLearnings)&&const DeepCollectionEquality().equals(other.dailyFeedback, dailyFeedback)&&const DeepCollectionEquality().equals(other.planning, planning));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlannerData&&(identical(other.version, version) || other.version == version)&&(identical(other.profile, profile) || other.profile == profile)&&const DeepCollectionEquality().equals(other.tags, tags)&&const DeepCollectionEquality().equals(other.tasks, tasks)&&const DeepCollectionEquality().equals(other.blocks, blocks)&&const DeepCollectionEquality().equals(other.logs, logs)&&const DeepCollectionEquality().equals(other.fixedEvents, fixedEvents)&&const DeepCollectionEquality().equals(other.replanRuns, replanRuns)&&const DeepCollectionEquality().equals(other.phases, phases)&&const DeepCollectionEquality().equals(other.adHocLearnings, adHocLearnings)&&const DeepCollectionEquality().equals(other.dailyFeedback, dailyFeedback)&&const DeepCollectionEquality().equals(other.planning, planning));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,version,profile,const DeepCollectionEquality().hash(subjects),const DeepCollectionEquality().hash(tasks),const DeepCollectionEquality().hash(blocks),const DeepCollectionEquality().hash(logs),const DeepCollectionEquality().hash(fixedEvents),const DeepCollectionEquality().hash(replanRuns),const DeepCollectionEquality().hash(phases),const DeepCollectionEquality().hash(adHocLearnings),const DeepCollectionEquality().hash(dailyFeedback),const DeepCollectionEquality().hash(planning));
+int get hashCode => Object.hash(runtimeType,version,profile,const DeepCollectionEquality().hash(tags),const DeepCollectionEquality().hash(tasks),const DeepCollectionEquality().hash(blocks),const DeepCollectionEquality().hash(logs),const DeepCollectionEquality().hash(fixedEvents),const DeepCollectionEquality().hash(replanRuns),const DeepCollectionEquality().hash(phases),const DeepCollectionEquality().hash(adHocLearnings),const DeepCollectionEquality().hash(dailyFeedback),const DeepCollectionEquality().hash(planning));
 
 @override
 String toString() {
-  return 'PlannerData(version: $version, profile: $profile, subjects: $subjects, tasks: $tasks, blocks: $blocks, logs: $logs, fixedEvents: $fixedEvents, replanRuns: $replanRuns, phases: $phases, adHocLearnings: $adHocLearnings, dailyFeedback: $dailyFeedback, planning: $planning)';
+  return 'PlannerData(version: $version, profile: $profile, tags: $tags, tasks: $tasks, blocks: $blocks, logs: $logs, fixedEvents: $fixedEvents, replanRuns: $replanRuns, phases: $phases, adHocLearnings: $adHocLearnings, dailyFeedback: $dailyFeedback, planning: $planning)';
 }
 
 
@@ -48,7 +48,7 @@ abstract mixin class $PlannerDataCopyWith<$Res>  {
   factory $PlannerDataCopyWith(PlannerData value, $Res Function(PlannerData) _then) = _$PlannerDataCopyWithImpl;
 @useResult
 $Res call({
-@JsonKey(fromJson: _versionOne) int version, Profile profile, List<Subject> subjects, List<Task> tasks, List<ScheduleBlock> blocks, List<TimeLog> logs, List<FixedEvent> fixedEvents, List<ReplanRun> replanRuns, List<Phase> phases, List<AdHocLearning> adHocLearnings, Map<String, String>? dailyFeedback, JsonMap? planning
+@JsonKey(fromJson: _versionOne) int version, Profile profile, List<Tag> tags, List<Task> tasks, List<ScheduleBlock> blocks, List<TimeLog> logs, List<FixedEvent> fixedEvents, List<ReplanRun> replanRuns, List<Phase> phases, List<AdHocLearning> adHocLearnings, Map<String, String>? dailyFeedback, JsonMap? planning
 });
 
 
@@ -65,12 +65,12 @@ class _$PlannerDataCopyWithImpl<$Res>
 
 /// Create a copy of PlannerData
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? version = null,Object? profile = null,Object? subjects = null,Object? tasks = null,Object? blocks = null,Object? logs = null,Object? fixedEvents = null,Object? replanRuns = null,Object? phases = null,Object? adHocLearnings = null,Object? dailyFeedback = freezed,Object? planning = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? version = null,Object? profile = null,Object? tags = null,Object? tasks = null,Object? blocks = null,Object? logs = null,Object? fixedEvents = null,Object? replanRuns = null,Object? phases = null,Object? adHocLearnings = null,Object? dailyFeedback = freezed,Object? planning = freezed,}) {
   return _then(_self.copyWith(
 version: null == version ? _self.version : version // ignore: cast_nullable_to_non_nullable
 as int,profile: null == profile ? _self.profile : profile // ignore: cast_nullable_to_non_nullable
-as Profile,subjects: null == subjects ? _self.subjects : subjects // ignore: cast_nullable_to_non_nullable
-as List<Subject>,tasks: null == tasks ? _self.tasks : tasks // ignore: cast_nullable_to_non_nullable
+as Profile,tags: null == tags ? _self.tags : tags // ignore: cast_nullable_to_non_nullable
+as List<Tag>,tasks: null == tasks ? _self.tasks : tasks // ignore: cast_nullable_to_non_nullable
 as List<Task>,blocks: null == blocks ? _self.blocks : blocks // ignore: cast_nullable_to_non_nullable
 as List<ScheduleBlock>,logs: null == logs ? _self.logs : logs // ignore: cast_nullable_to_non_nullable
 as List<TimeLog>,fixedEvents: null == fixedEvents ? _self.fixedEvents : fixedEvents // ignore: cast_nullable_to_non_nullable
@@ -173,10 +173,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(fromJson: _versionOne)  int version,  Profile profile,  List<Subject> subjects,  List<Task> tasks,  List<ScheduleBlock> blocks,  List<TimeLog> logs,  List<FixedEvent> fixedEvents,  List<ReplanRun> replanRuns,  List<Phase> phases,  List<AdHocLearning> adHocLearnings,  Map<String, String>? dailyFeedback,  JsonMap? planning)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function(@JsonKey(fromJson: _versionOne)  int version,  Profile profile,  List<Tag> tags,  List<Task> tasks,  List<ScheduleBlock> blocks,  List<TimeLog> logs,  List<FixedEvent> fixedEvents,  List<ReplanRun> replanRuns,  List<Phase> phases,  List<AdHocLearning> adHocLearnings,  Map<String, String>? dailyFeedback,  JsonMap? planning)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _PlannerData() when $default != null:
-return $default(_that.version,_that.profile,_that.subjects,_that.tasks,_that.blocks,_that.logs,_that.fixedEvents,_that.replanRuns,_that.phases,_that.adHocLearnings,_that.dailyFeedback,_that.planning);case _:
+return $default(_that.version,_that.profile,_that.tags,_that.tasks,_that.blocks,_that.logs,_that.fixedEvents,_that.replanRuns,_that.phases,_that.adHocLearnings,_that.dailyFeedback,_that.planning);case _:
   return orElse();
 
 }
@@ -194,10 +194,10 @@ return $default(_that.version,_that.profile,_that.subjects,_that.tasks,_that.blo
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(fromJson: _versionOne)  int version,  Profile profile,  List<Subject> subjects,  List<Task> tasks,  List<ScheduleBlock> blocks,  List<TimeLog> logs,  List<FixedEvent> fixedEvents,  List<ReplanRun> replanRuns,  List<Phase> phases,  List<AdHocLearning> adHocLearnings,  Map<String, String>? dailyFeedback,  JsonMap? planning)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function(@JsonKey(fromJson: _versionOne)  int version,  Profile profile,  List<Tag> tags,  List<Task> tasks,  List<ScheduleBlock> blocks,  List<TimeLog> logs,  List<FixedEvent> fixedEvents,  List<ReplanRun> replanRuns,  List<Phase> phases,  List<AdHocLearning> adHocLearnings,  Map<String, String>? dailyFeedback,  JsonMap? planning)  $default,) {final _that = this;
 switch (_that) {
 case _PlannerData():
-return $default(_that.version,_that.profile,_that.subjects,_that.tasks,_that.blocks,_that.logs,_that.fixedEvents,_that.replanRuns,_that.phases,_that.adHocLearnings,_that.dailyFeedback,_that.planning);case _:
+return $default(_that.version,_that.profile,_that.tags,_that.tasks,_that.blocks,_that.logs,_that.fixedEvents,_that.replanRuns,_that.phases,_that.adHocLearnings,_that.dailyFeedback,_that.planning);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -214,10 +214,10 @@ return $default(_that.version,_that.profile,_that.subjects,_that.tasks,_that.blo
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(fromJson: _versionOne)  int version,  Profile profile,  List<Subject> subjects,  List<Task> tasks,  List<ScheduleBlock> blocks,  List<TimeLog> logs,  List<FixedEvent> fixedEvents,  List<ReplanRun> replanRuns,  List<Phase> phases,  List<AdHocLearning> adHocLearnings,  Map<String, String>? dailyFeedback,  JsonMap? planning)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function(@JsonKey(fromJson: _versionOne)  int version,  Profile profile,  List<Tag> tags,  List<Task> tasks,  List<ScheduleBlock> blocks,  List<TimeLog> logs,  List<FixedEvent> fixedEvents,  List<ReplanRun> replanRuns,  List<Phase> phases,  List<AdHocLearning> adHocLearnings,  Map<String, String>? dailyFeedback,  JsonMap? planning)?  $default,) {final _that = this;
 switch (_that) {
 case _PlannerData() when $default != null:
-return $default(_that.version,_that.profile,_that.subjects,_that.tasks,_that.blocks,_that.logs,_that.fixedEvents,_that.replanRuns,_that.phases,_that.adHocLearnings,_that.dailyFeedback,_that.planning);case _:
+return $default(_that.version,_that.profile,_that.tags,_that.tasks,_that.blocks,_that.logs,_that.fixedEvents,_that.replanRuns,_that.phases,_that.adHocLearnings,_that.dailyFeedback,_that.planning);case _:
   return null;
 
 }
@@ -229,16 +229,16 @@ return $default(_that.version,_that.profile,_that.subjects,_that.tasks,_that.blo
 @JsonSerializable()
 
 class _PlannerData extends PlannerData {
-  const _PlannerData({@JsonKey(fromJson: _versionOne) required this.version, required this.profile, required final  List<Subject> subjects, required final  List<Task> tasks, required final  List<ScheduleBlock> blocks, required final  List<TimeLog> logs, required final  List<FixedEvent> fixedEvents, required final  List<ReplanRun> replanRuns, required final  List<Phase> phases, final  List<AdHocLearning> adHocLearnings = const [], final  Map<String, String>? dailyFeedback, final  JsonMap? planning}): _subjects = subjects,_tasks = tasks,_blocks = blocks,_logs = logs,_fixedEvents = fixedEvents,_replanRuns = replanRuns,_phases = phases,_adHocLearnings = adHocLearnings,_dailyFeedback = dailyFeedback,_planning = planning,super._();
+  const _PlannerData({@JsonKey(fromJson: _versionOne) required this.version, required this.profile, final  List<Tag> tags = const [], required final  List<Task> tasks, required final  List<ScheduleBlock> blocks, required final  List<TimeLog> logs, required final  List<FixedEvent> fixedEvents, required final  List<ReplanRun> replanRuns, required final  List<Phase> phases, final  List<AdHocLearning> adHocLearnings = const [], final  Map<String, String>? dailyFeedback, final  JsonMap? planning}): _tags = tags,_tasks = tasks,_blocks = blocks,_logs = logs,_fixedEvents = fixedEvents,_replanRuns = replanRuns,_phases = phases,_adHocLearnings = adHocLearnings,_dailyFeedback = dailyFeedback,_planning = planning,super._();
   factory _PlannerData.fromJson(Map<String, dynamic> json) => _$PlannerDataFromJson(json);
 
 @override@JsonKey(fromJson: _versionOne) final  int version;
 @override final  Profile profile;
- final  List<Subject> _subjects;
-@override List<Subject> get subjects {
-  if (_subjects is EqualUnmodifiableListView) return _subjects;
+ final  List<Tag> _tags;
+@override@JsonKey() List<Tag> get tags {
+  if (_tags is EqualUnmodifiableListView) return _tags;
   // ignore: implicit_dynamic_type
-  return EqualUnmodifiableListView(_subjects);
+  return EqualUnmodifiableListView(_tags);
 }
 
  final  List<Task> _tasks;
@@ -322,16 +322,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlannerData&&(identical(other.version, version) || other.version == version)&&(identical(other.profile, profile) || other.profile == profile)&&const DeepCollectionEquality().equals(other._subjects, _subjects)&&const DeepCollectionEquality().equals(other._tasks, _tasks)&&const DeepCollectionEquality().equals(other._blocks, _blocks)&&const DeepCollectionEquality().equals(other._logs, _logs)&&const DeepCollectionEquality().equals(other._fixedEvents, _fixedEvents)&&const DeepCollectionEquality().equals(other._replanRuns, _replanRuns)&&const DeepCollectionEquality().equals(other._phases, _phases)&&const DeepCollectionEquality().equals(other._adHocLearnings, _adHocLearnings)&&const DeepCollectionEquality().equals(other._dailyFeedback, _dailyFeedback)&&const DeepCollectionEquality().equals(other._planning, _planning));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlannerData&&(identical(other.version, version) || other.version == version)&&(identical(other.profile, profile) || other.profile == profile)&&const DeepCollectionEquality().equals(other._tags, _tags)&&const DeepCollectionEquality().equals(other._tasks, _tasks)&&const DeepCollectionEquality().equals(other._blocks, _blocks)&&const DeepCollectionEquality().equals(other._logs, _logs)&&const DeepCollectionEquality().equals(other._fixedEvents, _fixedEvents)&&const DeepCollectionEquality().equals(other._replanRuns, _replanRuns)&&const DeepCollectionEquality().equals(other._phases, _phases)&&const DeepCollectionEquality().equals(other._adHocLearnings, _adHocLearnings)&&const DeepCollectionEquality().equals(other._dailyFeedback, _dailyFeedback)&&const DeepCollectionEquality().equals(other._planning, _planning));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,version,profile,const DeepCollectionEquality().hash(_subjects),const DeepCollectionEquality().hash(_tasks),const DeepCollectionEquality().hash(_blocks),const DeepCollectionEquality().hash(_logs),const DeepCollectionEquality().hash(_fixedEvents),const DeepCollectionEquality().hash(_replanRuns),const DeepCollectionEquality().hash(_phases),const DeepCollectionEquality().hash(_adHocLearnings),const DeepCollectionEquality().hash(_dailyFeedback),const DeepCollectionEquality().hash(_planning));
+int get hashCode => Object.hash(runtimeType,version,profile,const DeepCollectionEquality().hash(_tags),const DeepCollectionEquality().hash(_tasks),const DeepCollectionEquality().hash(_blocks),const DeepCollectionEquality().hash(_logs),const DeepCollectionEquality().hash(_fixedEvents),const DeepCollectionEquality().hash(_replanRuns),const DeepCollectionEquality().hash(_phases),const DeepCollectionEquality().hash(_adHocLearnings),const DeepCollectionEquality().hash(_dailyFeedback),const DeepCollectionEquality().hash(_planning));
 
 @override
 String toString() {
-  return 'PlannerData(version: $version, profile: $profile, subjects: $subjects, tasks: $tasks, blocks: $blocks, logs: $logs, fixedEvents: $fixedEvents, replanRuns: $replanRuns, phases: $phases, adHocLearnings: $adHocLearnings, dailyFeedback: $dailyFeedback, planning: $planning)';
+  return 'PlannerData(version: $version, profile: $profile, tags: $tags, tasks: $tasks, blocks: $blocks, logs: $logs, fixedEvents: $fixedEvents, replanRuns: $replanRuns, phases: $phases, adHocLearnings: $adHocLearnings, dailyFeedback: $dailyFeedback, planning: $planning)';
 }
 
 
@@ -342,7 +342,7 @@ abstract mixin class _$PlannerDataCopyWith<$Res> implements $PlannerDataCopyWith
   factory _$PlannerDataCopyWith(_PlannerData value, $Res Function(_PlannerData) _then) = __$PlannerDataCopyWithImpl;
 @override @useResult
 $Res call({
-@JsonKey(fromJson: _versionOne) int version, Profile profile, List<Subject> subjects, List<Task> tasks, List<ScheduleBlock> blocks, List<TimeLog> logs, List<FixedEvent> fixedEvents, List<ReplanRun> replanRuns, List<Phase> phases, List<AdHocLearning> adHocLearnings, Map<String, String>? dailyFeedback, JsonMap? planning
+@JsonKey(fromJson: _versionOne) int version, Profile profile, List<Tag> tags, List<Task> tasks, List<ScheduleBlock> blocks, List<TimeLog> logs, List<FixedEvent> fixedEvents, List<ReplanRun> replanRuns, List<Phase> phases, List<AdHocLearning> adHocLearnings, Map<String, String>? dailyFeedback, JsonMap? planning
 });
 
 
@@ -359,12 +359,12 @@ class __$PlannerDataCopyWithImpl<$Res>
 
 /// Create a copy of PlannerData
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? version = null,Object? profile = null,Object? subjects = null,Object? tasks = null,Object? blocks = null,Object? logs = null,Object? fixedEvents = null,Object? replanRuns = null,Object? phases = null,Object? adHocLearnings = null,Object? dailyFeedback = freezed,Object? planning = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? version = null,Object? profile = null,Object? tags = null,Object? tasks = null,Object? blocks = null,Object? logs = null,Object? fixedEvents = null,Object? replanRuns = null,Object? phases = null,Object? adHocLearnings = null,Object? dailyFeedback = freezed,Object? planning = freezed,}) {
   return _then(_PlannerData(
 version: null == version ? _self.version : version // ignore: cast_nullable_to_non_nullable
 as int,profile: null == profile ? _self.profile : profile // ignore: cast_nullable_to_non_nullable
-as Profile,subjects: null == subjects ? _self._subjects : subjects // ignore: cast_nullable_to_non_nullable
-as List<Subject>,tasks: null == tasks ? _self._tasks : tasks // ignore: cast_nullable_to_non_nullable
+as Profile,tags: null == tags ? _self._tags : tags // ignore: cast_nullable_to_non_nullable
+as List<Tag>,tasks: null == tasks ? _self._tasks : tasks // ignore: cast_nullable_to_non_nullable
 as List<Task>,blocks: null == blocks ? _self._blocks : blocks // ignore: cast_nullable_to_non_nullable
 as List<ScheduleBlock>,logs: null == logs ? _self._logs : logs // ignore: cast_nullable_to_non_nullable
 as List<TimeLog>,fixedEvents: null == fixedEvents ? _self._fixedEvents : fixedEvents // ignore: cast_nullable_to_non_nullable
@@ -393,7 +393,7 @@ $ProfileCopyWith<$Res> get profile {
 /// @nodoc
 mixin _$Profile {
 
- String get userId;@JsonKey(name: 'planning_mode') PlanningMode? get storedPlanningMode; String get goalText; GoalType get goalType; String get goalSubtype; String get targetDate; bool get targetDateConfirmed; String get planStartDate; String get planEndDate; Map<String, int>? get weeklyMinutes; String get constraints; String get targetSchool; String get targetProgram; String get examDate; String get examEndDate; int get dailyLimitMinutes; int get granularityMinutes; int get bufferMinutes; int get subjectLimitMinutes; int get studyStartMinute; int get studyEndMinute; String get foundation;/// 容量口径；旧数据没有该字段时按扣除机动时间的原语义处理。
+ String get userId;@JsonKey(name: 'planning_mode') PlanningMode? get storedPlanningMode; String get goalText; GoalType get goalType; String get goalSubtype; String get targetDate; bool get targetDateConfirmed; String get planStartDate; String get planEndDate; Map<String, int>? get weeklyMinutes; String get constraints; String get targetSchool; String get targetProgram; String get examDate; String get examEndDate; int get dailyLimitMinutes; int get granularityMinutes; int get bufferMinutes; int get studyStartMinute; int get studyEndMinute; String get foundation;/// 容量口径；旧数据没有该字段时按扣除机动时间的原语义处理。
 @JsonKey(name: 'capacity_basis') CapacityBasis get capacityBasis;/// 经用户确认的每周净学习基线；为空表示没有采用周基线，沿用逐日模板。
 @JsonKey(name: 'weekly_baseline_minutes') int? get weeklyBaselineMinutes;/// 用户给出的大致周容量范围（净分钟），用于说明较高容量情景。
 @JsonKey(name: 'weekly_range_min_minutes') int? get weeklyRangeMinMinutes;@JsonKey(name: 'weekly_range_max_minutes') int? get weeklyRangeMaxMinutes;/// 特定自然周（键为上海时区周一日期）的容量覆盖。
@@ -411,16 +411,16 @@ $ProfileCopyWith<Profile> get copyWith => _$ProfileCopyWithImpl<Profile>(this as
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Profile&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.storedPlanningMode, storedPlanningMode) || other.storedPlanningMode == storedPlanningMode)&&(identical(other.goalText, goalText) || other.goalText == goalText)&&(identical(other.goalType, goalType) || other.goalType == goalType)&&(identical(other.goalSubtype, goalSubtype) || other.goalSubtype == goalSubtype)&&(identical(other.targetDate, targetDate) || other.targetDate == targetDate)&&(identical(other.targetDateConfirmed, targetDateConfirmed) || other.targetDateConfirmed == targetDateConfirmed)&&(identical(other.planStartDate, planStartDate) || other.planStartDate == planStartDate)&&(identical(other.planEndDate, planEndDate) || other.planEndDate == planEndDate)&&const DeepCollectionEquality().equals(other.weeklyMinutes, weeklyMinutes)&&(identical(other.constraints, constraints) || other.constraints == constraints)&&(identical(other.targetSchool, targetSchool) || other.targetSchool == targetSchool)&&(identical(other.targetProgram, targetProgram) || other.targetProgram == targetProgram)&&(identical(other.examDate, examDate) || other.examDate == examDate)&&(identical(other.examEndDate, examEndDate) || other.examEndDate == examEndDate)&&(identical(other.dailyLimitMinutes, dailyLimitMinutes) || other.dailyLimitMinutes == dailyLimitMinutes)&&(identical(other.granularityMinutes, granularityMinutes) || other.granularityMinutes == granularityMinutes)&&(identical(other.bufferMinutes, bufferMinutes) || other.bufferMinutes == bufferMinutes)&&(identical(other.subjectLimitMinutes, subjectLimitMinutes) || other.subjectLimitMinutes == subjectLimitMinutes)&&(identical(other.studyStartMinute, studyStartMinute) || other.studyStartMinute == studyStartMinute)&&(identical(other.studyEndMinute, studyEndMinute) || other.studyEndMinute == studyEndMinute)&&(identical(other.foundation, foundation) || other.foundation == foundation)&&(identical(other.capacityBasis, capacityBasis) || other.capacityBasis == capacityBasis)&&(identical(other.weeklyBaselineMinutes, weeklyBaselineMinutes) || other.weeklyBaselineMinutes == weeklyBaselineMinutes)&&(identical(other.weeklyRangeMinMinutes, weeklyRangeMinMinutes) || other.weeklyRangeMinMinutes == weeklyRangeMinMinutes)&&(identical(other.weeklyRangeMaxMinutes, weeklyRangeMaxMinutes) || other.weeklyRangeMaxMinutes == weeklyRangeMaxMinutes)&&const DeepCollectionEquality().equals(other.weekCapacityOverrides, weekCapacityOverrides)&&const DeepCollectionEquality().equals(other.dateCapacityOverrides, dateCapacityOverrides));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Profile&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.storedPlanningMode, storedPlanningMode) || other.storedPlanningMode == storedPlanningMode)&&(identical(other.goalText, goalText) || other.goalText == goalText)&&(identical(other.goalType, goalType) || other.goalType == goalType)&&(identical(other.goalSubtype, goalSubtype) || other.goalSubtype == goalSubtype)&&(identical(other.targetDate, targetDate) || other.targetDate == targetDate)&&(identical(other.targetDateConfirmed, targetDateConfirmed) || other.targetDateConfirmed == targetDateConfirmed)&&(identical(other.planStartDate, planStartDate) || other.planStartDate == planStartDate)&&(identical(other.planEndDate, planEndDate) || other.planEndDate == planEndDate)&&const DeepCollectionEquality().equals(other.weeklyMinutes, weeklyMinutes)&&(identical(other.constraints, constraints) || other.constraints == constraints)&&(identical(other.targetSchool, targetSchool) || other.targetSchool == targetSchool)&&(identical(other.targetProgram, targetProgram) || other.targetProgram == targetProgram)&&(identical(other.examDate, examDate) || other.examDate == examDate)&&(identical(other.examEndDate, examEndDate) || other.examEndDate == examEndDate)&&(identical(other.dailyLimitMinutes, dailyLimitMinutes) || other.dailyLimitMinutes == dailyLimitMinutes)&&(identical(other.granularityMinutes, granularityMinutes) || other.granularityMinutes == granularityMinutes)&&(identical(other.bufferMinutes, bufferMinutes) || other.bufferMinutes == bufferMinutes)&&(identical(other.studyStartMinute, studyStartMinute) || other.studyStartMinute == studyStartMinute)&&(identical(other.studyEndMinute, studyEndMinute) || other.studyEndMinute == studyEndMinute)&&(identical(other.foundation, foundation) || other.foundation == foundation)&&(identical(other.capacityBasis, capacityBasis) || other.capacityBasis == capacityBasis)&&(identical(other.weeklyBaselineMinutes, weeklyBaselineMinutes) || other.weeklyBaselineMinutes == weeklyBaselineMinutes)&&(identical(other.weeklyRangeMinMinutes, weeklyRangeMinMinutes) || other.weeklyRangeMinMinutes == weeklyRangeMinMinutes)&&(identical(other.weeklyRangeMaxMinutes, weeklyRangeMaxMinutes) || other.weeklyRangeMaxMinutes == weeklyRangeMaxMinutes)&&const DeepCollectionEquality().equals(other.weekCapacityOverrides, weekCapacityOverrides)&&const DeepCollectionEquality().equals(other.dateCapacityOverrides, dateCapacityOverrides));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hashAll([runtimeType,userId,storedPlanningMode,goalText,goalType,goalSubtype,targetDate,targetDateConfirmed,planStartDate,planEndDate,const DeepCollectionEquality().hash(weeklyMinutes),constraints,targetSchool,targetProgram,examDate,examEndDate,dailyLimitMinutes,granularityMinutes,bufferMinutes,subjectLimitMinutes,studyStartMinute,studyEndMinute,foundation,capacityBasis,weeklyBaselineMinutes,weeklyRangeMinMinutes,weeklyRangeMaxMinutes,const DeepCollectionEquality().hash(weekCapacityOverrides),const DeepCollectionEquality().hash(dateCapacityOverrides)]);
+int get hashCode => Object.hashAll([runtimeType,userId,storedPlanningMode,goalText,goalType,goalSubtype,targetDate,targetDateConfirmed,planStartDate,planEndDate,const DeepCollectionEquality().hash(weeklyMinutes),constraints,targetSchool,targetProgram,examDate,examEndDate,dailyLimitMinutes,granularityMinutes,bufferMinutes,studyStartMinute,studyEndMinute,foundation,capacityBasis,weeklyBaselineMinutes,weeklyRangeMinMinutes,weeklyRangeMaxMinutes,const DeepCollectionEquality().hash(weekCapacityOverrides),const DeepCollectionEquality().hash(dateCapacityOverrides)]);
 
 @override
 String toString() {
-  return 'Profile(userId: $userId, storedPlanningMode: $storedPlanningMode, goalText: $goalText, goalType: $goalType, goalSubtype: $goalSubtype, targetDate: $targetDate, targetDateConfirmed: $targetDateConfirmed, planStartDate: $planStartDate, planEndDate: $planEndDate, weeklyMinutes: $weeklyMinutes, constraints: $constraints, targetSchool: $targetSchool, targetProgram: $targetProgram, examDate: $examDate, examEndDate: $examEndDate, dailyLimitMinutes: $dailyLimitMinutes, granularityMinutes: $granularityMinutes, bufferMinutes: $bufferMinutes, subjectLimitMinutes: $subjectLimitMinutes, studyStartMinute: $studyStartMinute, studyEndMinute: $studyEndMinute, foundation: $foundation, capacityBasis: $capacityBasis, weeklyBaselineMinutes: $weeklyBaselineMinutes, weeklyRangeMinMinutes: $weeklyRangeMinMinutes, weeklyRangeMaxMinutes: $weeklyRangeMaxMinutes, weekCapacityOverrides: $weekCapacityOverrides, dateCapacityOverrides: $dateCapacityOverrides)';
+  return 'Profile(userId: $userId, storedPlanningMode: $storedPlanningMode, goalText: $goalText, goalType: $goalType, goalSubtype: $goalSubtype, targetDate: $targetDate, targetDateConfirmed: $targetDateConfirmed, planStartDate: $planStartDate, planEndDate: $planEndDate, weeklyMinutes: $weeklyMinutes, constraints: $constraints, targetSchool: $targetSchool, targetProgram: $targetProgram, examDate: $examDate, examEndDate: $examEndDate, dailyLimitMinutes: $dailyLimitMinutes, granularityMinutes: $granularityMinutes, bufferMinutes: $bufferMinutes, studyStartMinute: $studyStartMinute, studyEndMinute: $studyEndMinute, foundation: $foundation, capacityBasis: $capacityBasis, weeklyBaselineMinutes: $weeklyBaselineMinutes, weeklyRangeMinMinutes: $weeklyRangeMinMinutes, weeklyRangeMaxMinutes: $weeklyRangeMaxMinutes, weekCapacityOverrides: $weekCapacityOverrides, dateCapacityOverrides: $dateCapacityOverrides)';
 }
 
 
@@ -431,7 +431,7 @@ abstract mixin class $ProfileCopyWith<$Res>  {
   factory $ProfileCopyWith(Profile value, $Res Function(Profile) _then) = _$ProfileCopyWithImpl;
 @useResult
 $Res call({
- String userId,@JsonKey(name: 'planning_mode') PlanningMode? storedPlanningMode, String goalText, GoalType goalType, String goalSubtype, String targetDate, bool targetDateConfirmed, String planStartDate, String planEndDate, Map<String, int>? weeklyMinutes, String constraints, String targetSchool, String targetProgram, String examDate, String examEndDate, int dailyLimitMinutes, int granularityMinutes, int bufferMinutes, int subjectLimitMinutes, int studyStartMinute, int studyEndMinute, String foundation,@JsonKey(name: 'capacity_basis') CapacityBasis capacityBasis,@JsonKey(name: 'weekly_baseline_minutes') int? weeklyBaselineMinutes,@JsonKey(name: 'weekly_range_min_minutes') int? weeklyRangeMinMinutes,@JsonKey(name: 'weekly_range_max_minutes') int? weeklyRangeMaxMinutes,@JsonKey(name: 'week_capacity_overrides') Map<String, WeekCapacityOverride>? weekCapacityOverrides,@JsonKey(name: 'date_capacity_overrides') Map<String, int>? dateCapacityOverrides
+ String userId,@JsonKey(name: 'planning_mode') PlanningMode? storedPlanningMode, String goalText, GoalType goalType, String goalSubtype, String targetDate, bool targetDateConfirmed, String planStartDate, String planEndDate, Map<String, int>? weeklyMinutes, String constraints, String targetSchool, String targetProgram, String examDate, String examEndDate, int dailyLimitMinutes, int granularityMinutes, int bufferMinutes, int studyStartMinute, int studyEndMinute, String foundation,@JsonKey(name: 'capacity_basis') CapacityBasis capacityBasis,@JsonKey(name: 'weekly_baseline_minutes') int? weeklyBaselineMinutes,@JsonKey(name: 'weekly_range_min_minutes') int? weeklyRangeMinMinutes,@JsonKey(name: 'weekly_range_max_minutes') int? weeklyRangeMaxMinutes,@JsonKey(name: 'week_capacity_overrides') Map<String, WeekCapacityOverride>? weekCapacityOverrides,@JsonKey(name: 'date_capacity_overrides') Map<String, int>? dateCapacityOverrides
 });
 
 
@@ -448,7 +448,7 @@ class _$ProfileCopyWithImpl<$Res>
 
 /// Create a copy of Profile
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? userId = null,Object? storedPlanningMode = freezed,Object? goalText = null,Object? goalType = null,Object? goalSubtype = null,Object? targetDate = null,Object? targetDateConfirmed = null,Object? planStartDate = null,Object? planEndDate = null,Object? weeklyMinutes = freezed,Object? constraints = null,Object? targetSchool = null,Object? targetProgram = null,Object? examDate = null,Object? examEndDate = null,Object? dailyLimitMinutes = null,Object? granularityMinutes = null,Object? bufferMinutes = null,Object? subjectLimitMinutes = null,Object? studyStartMinute = null,Object? studyEndMinute = null,Object? foundation = null,Object? capacityBasis = null,Object? weeklyBaselineMinutes = freezed,Object? weeklyRangeMinMinutes = freezed,Object? weeklyRangeMaxMinutes = freezed,Object? weekCapacityOverrides = freezed,Object? dateCapacityOverrides = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? userId = null,Object? storedPlanningMode = freezed,Object? goalText = null,Object? goalType = null,Object? goalSubtype = null,Object? targetDate = null,Object? targetDateConfirmed = null,Object? planStartDate = null,Object? planEndDate = null,Object? weeklyMinutes = freezed,Object? constraints = null,Object? targetSchool = null,Object? targetProgram = null,Object? examDate = null,Object? examEndDate = null,Object? dailyLimitMinutes = null,Object? granularityMinutes = null,Object? bufferMinutes = null,Object? studyStartMinute = null,Object? studyEndMinute = null,Object? foundation = null,Object? capacityBasis = null,Object? weeklyBaselineMinutes = freezed,Object? weeklyRangeMinMinutes = freezed,Object? weeklyRangeMaxMinutes = freezed,Object? weekCapacityOverrides = freezed,Object? dateCapacityOverrides = freezed,}) {
   return _then(_self.copyWith(
 userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
 as String,storedPlanningMode: freezed == storedPlanningMode ? _self.storedPlanningMode : storedPlanningMode // ignore: cast_nullable_to_non_nullable
@@ -468,7 +468,6 @@ as String,examEndDate: null == examEndDate ? _self.examEndDate : examEndDate // 
 as String,dailyLimitMinutes: null == dailyLimitMinutes ? _self.dailyLimitMinutes : dailyLimitMinutes // ignore: cast_nullable_to_non_nullable
 as int,granularityMinutes: null == granularityMinutes ? _self.granularityMinutes : granularityMinutes // ignore: cast_nullable_to_non_nullable
 as int,bufferMinutes: null == bufferMinutes ? _self.bufferMinutes : bufferMinutes // ignore: cast_nullable_to_non_nullable
-as int,subjectLimitMinutes: null == subjectLimitMinutes ? _self.subjectLimitMinutes : subjectLimitMinutes // ignore: cast_nullable_to_non_nullable
 as int,studyStartMinute: null == studyStartMinute ? _self.studyStartMinute : studyStartMinute // ignore: cast_nullable_to_non_nullable
 as int,studyEndMinute: null == studyEndMinute ? _self.studyEndMinute : studyEndMinute // ignore: cast_nullable_to_non_nullable
 as int,foundation: null == foundation ? _self.foundation : foundation // ignore: cast_nullable_to_non_nullable
@@ -563,10 +562,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String userId, @JsonKey(name: 'planning_mode')  PlanningMode? storedPlanningMode,  String goalText,  GoalType goalType,  String goalSubtype,  String targetDate,  bool targetDateConfirmed,  String planStartDate,  String planEndDate,  Map<String, int>? weeklyMinutes,  String constraints,  String targetSchool,  String targetProgram,  String examDate,  String examEndDate,  int dailyLimitMinutes,  int granularityMinutes,  int bufferMinutes,  int subjectLimitMinutes,  int studyStartMinute,  int studyEndMinute,  String foundation, @JsonKey(name: 'capacity_basis')  CapacityBasis capacityBasis, @JsonKey(name: 'weekly_baseline_minutes')  int? weeklyBaselineMinutes, @JsonKey(name: 'weekly_range_min_minutes')  int? weeklyRangeMinMinutes, @JsonKey(name: 'weekly_range_max_minutes')  int? weeklyRangeMaxMinutes, @JsonKey(name: 'week_capacity_overrides')  Map<String, WeekCapacityOverride>? weekCapacityOverrides, @JsonKey(name: 'date_capacity_overrides')  Map<String, int>? dateCapacityOverrides)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String userId, @JsonKey(name: 'planning_mode')  PlanningMode? storedPlanningMode,  String goalText,  GoalType goalType,  String goalSubtype,  String targetDate,  bool targetDateConfirmed,  String planStartDate,  String planEndDate,  Map<String, int>? weeklyMinutes,  String constraints,  String targetSchool,  String targetProgram,  String examDate,  String examEndDate,  int dailyLimitMinutes,  int granularityMinutes,  int bufferMinutes,  int studyStartMinute,  int studyEndMinute,  String foundation, @JsonKey(name: 'capacity_basis')  CapacityBasis capacityBasis, @JsonKey(name: 'weekly_baseline_minutes')  int? weeklyBaselineMinutes, @JsonKey(name: 'weekly_range_min_minutes')  int? weeklyRangeMinMinutes, @JsonKey(name: 'weekly_range_max_minutes')  int? weeklyRangeMaxMinutes, @JsonKey(name: 'week_capacity_overrides')  Map<String, WeekCapacityOverride>? weekCapacityOverrides, @JsonKey(name: 'date_capacity_overrides')  Map<String, int>? dateCapacityOverrides)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Profile() when $default != null:
-return $default(_that.userId,_that.storedPlanningMode,_that.goalText,_that.goalType,_that.goalSubtype,_that.targetDate,_that.targetDateConfirmed,_that.planStartDate,_that.planEndDate,_that.weeklyMinutes,_that.constraints,_that.targetSchool,_that.targetProgram,_that.examDate,_that.examEndDate,_that.dailyLimitMinutes,_that.granularityMinutes,_that.bufferMinutes,_that.subjectLimitMinutes,_that.studyStartMinute,_that.studyEndMinute,_that.foundation,_that.capacityBasis,_that.weeklyBaselineMinutes,_that.weeklyRangeMinMinutes,_that.weeklyRangeMaxMinutes,_that.weekCapacityOverrides,_that.dateCapacityOverrides);case _:
+return $default(_that.userId,_that.storedPlanningMode,_that.goalText,_that.goalType,_that.goalSubtype,_that.targetDate,_that.targetDateConfirmed,_that.planStartDate,_that.planEndDate,_that.weeklyMinutes,_that.constraints,_that.targetSchool,_that.targetProgram,_that.examDate,_that.examEndDate,_that.dailyLimitMinutes,_that.granularityMinutes,_that.bufferMinutes,_that.studyStartMinute,_that.studyEndMinute,_that.foundation,_that.capacityBasis,_that.weeklyBaselineMinutes,_that.weeklyRangeMinMinutes,_that.weeklyRangeMaxMinutes,_that.weekCapacityOverrides,_that.dateCapacityOverrides);case _:
   return orElse();
 
 }
@@ -584,10 +583,10 @@ return $default(_that.userId,_that.storedPlanningMode,_that.goalText,_that.goalT
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String userId, @JsonKey(name: 'planning_mode')  PlanningMode? storedPlanningMode,  String goalText,  GoalType goalType,  String goalSubtype,  String targetDate,  bool targetDateConfirmed,  String planStartDate,  String planEndDate,  Map<String, int>? weeklyMinutes,  String constraints,  String targetSchool,  String targetProgram,  String examDate,  String examEndDate,  int dailyLimitMinutes,  int granularityMinutes,  int bufferMinutes,  int subjectLimitMinutes,  int studyStartMinute,  int studyEndMinute,  String foundation, @JsonKey(name: 'capacity_basis')  CapacityBasis capacityBasis, @JsonKey(name: 'weekly_baseline_minutes')  int? weeklyBaselineMinutes, @JsonKey(name: 'weekly_range_min_minutes')  int? weeklyRangeMinMinutes, @JsonKey(name: 'weekly_range_max_minutes')  int? weeklyRangeMaxMinutes, @JsonKey(name: 'week_capacity_overrides')  Map<String, WeekCapacityOverride>? weekCapacityOverrides, @JsonKey(name: 'date_capacity_overrides')  Map<String, int>? dateCapacityOverrides)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String userId, @JsonKey(name: 'planning_mode')  PlanningMode? storedPlanningMode,  String goalText,  GoalType goalType,  String goalSubtype,  String targetDate,  bool targetDateConfirmed,  String planStartDate,  String planEndDate,  Map<String, int>? weeklyMinutes,  String constraints,  String targetSchool,  String targetProgram,  String examDate,  String examEndDate,  int dailyLimitMinutes,  int granularityMinutes,  int bufferMinutes,  int studyStartMinute,  int studyEndMinute,  String foundation, @JsonKey(name: 'capacity_basis')  CapacityBasis capacityBasis, @JsonKey(name: 'weekly_baseline_minutes')  int? weeklyBaselineMinutes, @JsonKey(name: 'weekly_range_min_minutes')  int? weeklyRangeMinMinutes, @JsonKey(name: 'weekly_range_max_minutes')  int? weeklyRangeMaxMinutes, @JsonKey(name: 'week_capacity_overrides')  Map<String, WeekCapacityOverride>? weekCapacityOverrides, @JsonKey(name: 'date_capacity_overrides')  Map<String, int>? dateCapacityOverrides)  $default,) {final _that = this;
 switch (_that) {
 case _Profile():
-return $default(_that.userId,_that.storedPlanningMode,_that.goalText,_that.goalType,_that.goalSubtype,_that.targetDate,_that.targetDateConfirmed,_that.planStartDate,_that.planEndDate,_that.weeklyMinutes,_that.constraints,_that.targetSchool,_that.targetProgram,_that.examDate,_that.examEndDate,_that.dailyLimitMinutes,_that.granularityMinutes,_that.bufferMinutes,_that.subjectLimitMinutes,_that.studyStartMinute,_that.studyEndMinute,_that.foundation,_that.capacityBasis,_that.weeklyBaselineMinutes,_that.weeklyRangeMinMinutes,_that.weeklyRangeMaxMinutes,_that.weekCapacityOverrides,_that.dateCapacityOverrides);case _:
+return $default(_that.userId,_that.storedPlanningMode,_that.goalText,_that.goalType,_that.goalSubtype,_that.targetDate,_that.targetDateConfirmed,_that.planStartDate,_that.planEndDate,_that.weeklyMinutes,_that.constraints,_that.targetSchool,_that.targetProgram,_that.examDate,_that.examEndDate,_that.dailyLimitMinutes,_that.granularityMinutes,_that.bufferMinutes,_that.studyStartMinute,_that.studyEndMinute,_that.foundation,_that.capacityBasis,_that.weeklyBaselineMinutes,_that.weeklyRangeMinMinutes,_that.weeklyRangeMaxMinutes,_that.weekCapacityOverrides,_that.dateCapacityOverrides);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -604,10 +603,10 @@ return $default(_that.userId,_that.storedPlanningMode,_that.goalText,_that.goalT
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String userId, @JsonKey(name: 'planning_mode')  PlanningMode? storedPlanningMode,  String goalText,  GoalType goalType,  String goalSubtype,  String targetDate,  bool targetDateConfirmed,  String planStartDate,  String planEndDate,  Map<String, int>? weeklyMinutes,  String constraints,  String targetSchool,  String targetProgram,  String examDate,  String examEndDate,  int dailyLimitMinutes,  int granularityMinutes,  int bufferMinutes,  int subjectLimitMinutes,  int studyStartMinute,  int studyEndMinute,  String foundation, @JsonKey(name: 'capacity_basis')  CapacityBasis capacityBasis, @JsonKey(name: 'weekly_baseline_minutes')  int? weeklyBaselineMinutes, @JsonKey(name: 'weekly_range_min_minutes')  int? weeklyRangeMinMinutes, @JsonKey(name: 'weekly_range_max_minutes')  int? weeklyRangeMaxMinutes, @JsonKey(name: 'week_capacity_overrides')  Map<String, WeekCapacityOverride>? weekCapacityOverrides, @JsonKey(name: 'date_capacity_overrides')  Map<String, int>? dateCapacityOverrides)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String userId, @JsonKey(name: 'planning_mode')  PlanningMode? storedPlanningMode,  String goalText,  GoalType goalType,  String goalSubtype,  String targetDate,  bool targetDateConfirmed,  String planStartDate,  String planEndDate,  Map<String, int>? weeklyMinutes,  String constraints,  String targetSchool,  String targetProgram,  String examDate,  String examEndDate,  int dailyLimitMinutes,  int granularityMinutes,  int bufferMinutes,  int studyStartMinute,  int studyEndMinute,  String foundation, @JsonKey(name: 'capacity_basis')  CapacityBasis capacityBasis, @JsonKey(name: 'weekly_baseline_minutes')  int? weeklyBaselineMinutes, @JsonKey(name: 'weekly_range_min_minutes')  int? weeklyRangeMinMinutes, @JsonKey(name: 'weekly_range_max_minutes')  int? weeklyRangeMaxMinutes, @JsonKey(name: 'week_capacity_overrides')  Map<String, WeekCapacityOverride>? weekCapacityOverrides, @JsonKey(name: 'date_capacity_overrides')  Map<String, int>? dateCapacityOverrides)?  $default,) {final _that = this;
 switch (_that) {
 case _Profile() when $default != null:
-return $default(_that.userId,_that.storedPlanningMode,_that.goalText,_that.goalType,_that.goalSubtype,_that.targetDate,_that.targetDateConfirmed,_that.planStartDate,_that.planEndDate,_that.weeklyMinutes,_that.constraints,_that.targetSchool,_that.targetProgram,_that.examDate,_that.examEndDate,_that.dailyLimitMinutes,_that.granularityMinutes,_that.bufferMinutes,_that.subjectLimitMinutes,_that.studyStartMinute,_that.studyEndMinute,_that.foundation,_that.capacityBasis,_that.weeklyBaselineMinutes,_that.weeklyRangeMinMinutes,_that.weeklyRangeMaxMinutes,_that.weekCapacityOverrides,_that.dateCapacityOverrides);case _:
+return $default(_that.userId,_that.storedPlanningMode,_that.goalText,_that.goalType,_that.goalSubtype,_that.targetDate,_that.targetDateConfirmed,_that.planStartDate,_that.planEndDate,_that.weeklyMinutes,_that.constraints,_that.targetSchool,_that.targetProgram,_that.examDate,_that.examEndDate,_that.dailyLimitMinutes,_that.granularityMinutes,_that.bufferMinutes,_that.studyStartMinute,_that.studyEndMinute,_that.foundation,_that.capacityBasis,_that.weeklyBaselineMinutes,_that.weeklyRangeMinMinutes,_that.weeklyRangeMaxMinutes,_that.weekCapacityOverrides,_that.dateCapacityOverrides);case _:
   return null;
 
 }
@@ -619,7 +618,7 @@ return $default(_that.userId,_that.storedPlanningMode,_that.goalText,_that.goalT
 @JsonSerializable()
 
 class _Profile extends Profile {
-  const _Profile({required this.userId, @JsonKey(name: 'planning_mode') this.storedPlanningMode, this.goalText = '', this.goalType = GoalType.other, this.goalSubtype = '', this.targetDate = '', this.targetDateConfirmed = false, this.planStartDate = '', this.planEndDate = '', final  Map<String, int>? weeklyMinutes, this.constraints = '', this.targetSchool = '', this.targetProgram = '', this.examDate = '', this.examEndDate = '', required this.dailyLimitMinutes, required this.granularityMinutes, required this.bufferMinutes, required this.subjectLimitMinutes, required this.studyStartMinute, required this.studyEndMinute, required this.foundation, @JsonKey(name: 'capacity_basis') this.capacityBasis = CapacityBasis.grossBuffer, @JsonKey(name: 'weekly_baseline_minutes') this.weeklyBaselineMinutes, @JsonKey(name: 'weekly_range_min_minutes') this.weeklyRangeMinMinutes, @JsonKey(name: 'weekly_range_max_minutes') this.weeklyRangeMaxMinutes, @JsonKey(name: 'week_capacity_overrides') final  Map<String, WeekCapacityOverride>? weekCapacityOverrides, @JsonKey(name: 'date_capacity_overrides') final  Map<String, int>? dateCapacityOverrides}): _weeklyMinutes = weeklyMinutes,_weekCapacityOverrides = weekCapacityOverrides,_dateCapacityOverrides = dateCapacityOverrides,super._();
+  const _Profile({required this.userId, @JsonKey(name: 'planning_mode') this.storedPlanningMode, this.goalText = '', this.goalType = GoalType.other, this.goalSubtype = '', this.targetDate = '', this.targetDateConfirmed = false, this.planStartDate = '', this.planEndDate = '', final  Map<String, int>? weeklyMinutes, this.constraints = '', this.targetSchool = '', this.targetProgram = '', this.examDate = '', this.examEndDate = '', required this.dailyLimitMinutes, required this.granularityMinutes, required this.bufferMinutes, required this.studyStartMinute, required this.studyEndMinute, required this.foundation, @JsonKey(name: 'capacity_basis') this.capacityBasis = CapacityBasis.grossBuffer, @JsonKey(name: 'weekly_baseline_minutes') this.weeklyBaselineMinutes, @JsonKey(name: 'weekly_range_min_minutes') this.weeklyRangeMinMinutes, @JsonKey(name: 'weekly_range_max_minutes') this.weeklyRangeMaxMinutes, @JsonKey(name: 'week_capacity_overrides') final  Map<String, WeekCapacityOverride>? weekCapacityOverrides, @JsonKey(name: 'date_capacity_overrides') final  Map<String, int>? dateCapacityOverrides}): _weeklyMinutes = weeklyMinutes,_weekCapacityOverrides = weekCapacityOverrides,_dateCapacityOverrides = dateCapacityOverrides,super._();
   factory _Profile.fromJson(Map<String, dynamic> json) => _$ProfileFromJson(json);
 
 @override final  String userId;
@@ -648,7 +647,6 @@ class _Profile extends Profile {
 @override final  int dailyLimitMinutes;
 @override final  int granularityMinutes;
 @override final  int bufferMinutes;
-@override final  int subjectLimitMinutes;
 @override final  int studyStartMinute;
 @override final  int studyEndMinute;
 @override final  String foundation;
@@ -695,16 +693,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Profile&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.storedPlanningMode, storedPlanningMode) || other.storedPlanningMode == storedPlanningMode)&&(identical(other.goalText, goalText) || other.goalText == goalText)&&(identical(other.goalType, goalType) || other.goalType == goalType)&&(identical(other.goalSubtype, goalSubtype) || other.goalSubtype == goalSubtype)&&(identical(other.targetDate, targetDate) || other.targetDate == targetDate)&&(identical(other.targetDateConfirmed, targetDateConfirmed) || other.targetDateConfirmed == targetDateConfirmed)&&(identical(other.planStartDate, planStartDate) || other.planStartDate == planStartDate)&&(identical(other.planEndDate, planEndDate) || other.planEndDate == planEndDate)&&const DeepCollectionEquality().equals(other._weeklyMinutes, _weeklyMinutes)&&(identical(other.constraints, constraints) || other.constraints == constraints)&&(identical(other.targetSchool, targetSchool) || other.targetSchool == targetSchool)&&(identical(other.targetProgram, targetProgram) || other.targetProgram == targetProgram)&&(identical(other.examDate, examDate) || other.examDate == examDate)&&(identical(other.examEndDate, examEndDate) || other.examEndDate == examEndDate)&&(identical(other.dailyLimitMinutes, dailyLimitMinutes) || other.dailyLimitMinutes == dailyLimitMinutes)&&(identical(other.granularityMinutes, granularityMinutes) || other.granularityMinutes == granularityMinutes)&&(identical(other.bufferMinutes, bufferMinutes) || other.bufferMinutes == bufferMinutes)&&(identical(other.subjectLimitMinutes, subjectLimitMinutes) || other.subjectLimitMinutes == subjectLimitMinutes)&&(identical(other.studyStartMinute, studyStartMinute) || other.studyStartMinute == studyStartMinute)&&(identical(other.studyEndMinute, studyEndMinute) || other.studyEndMinute == studyEndMinute)&&(identical(other.foundation, foundation) || other.foundation == foundation)&&(identical(other.capacityBasis, capacityBasis) || other.capacityBasis == capacityBasis)&&(identical(other.weeklyBaselineMinutes, weeklyBaselineMinutes) || other.weeklyBaselineMinutes == weeklyBaselineMinutes)&&(identical(other.weeklyRangeMinMinutes, weeklyRangeMinMinutes) || other.weeklyRangeMinMinutes == weeklyRangeMinMinutes)&&(identical(other.weeklyRangeMaxMinutes, weeklyRangeMaxMinutes) || other.weeklyRangeMaxMinutes == weeklyRangeMaxMinutes)&&const DeepCollectionEquality().equals(other._weekCapacityOverrides, _weekCapacityOverrides)&&const DeepCollectionEquality().equals(other._dateCapacityOverrides, _dateCapacityOverrides));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Profile&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.storedPlanningMode, storedPlanningMode) || other.storedPlanningMode == storedPlanningMode)&&(identical(other.goalText, goalText) || other.goalText == goalText)&&(identical(other.goalType, goalType) || other.goalType == goalType)&&(identical(other.goalSubtype, goalSubtype) || other.goalSubtype == goalSubtype)&&(identical(other.targetDate, targetDate) || other.targetDate == targetDate)&&(identical(other.targetDateConfirmed, targetDateConfirmed) || other.targetDateConfirmed == targetDateConfirmed)&&(identical(other.planStartDate, planStartDate) || other.planStartDate == planStartDate)&&(identical(other.planEndDate, planEndDate) || other.planEndDate == planEndDate)&&const DeepCollectionEquality().equals(other._weeklyMinutes, _weeklyMinutes)&&(identical(other.constraints, constraints) || other.constraints == constraints)&&(identical(other.targetSchool, targetSchool) || other.targetSchool == targetSchool)&&(identical(other.targetProgram, targetProgram) || other.targetProgram == targetProgram)&&(identical(other.examDate, examDate) || other.examDate == examDate)&&(identical(other.examEndDate, examEndDate) || other.examEndDate == examEndDate)&&(identical(other.dailyLimitMinutes, dailyLimitMinutes) || other.dailyLimitMinutes == dailyLimitMinutes)&&(identical(other.granularityMinutes, granularityMinutes) || other.granularityMinutes == granularityMinutes)&&(identical(other.bufferMinutes, bufferMinutes) || other.bufferMinutes == bufferMinutes)&&(identical(other.studyStartMinute, studyStartMinute) || other.studyStartMinute == studyStartMinute)&&(identical(other.studyEndMinute, studyEndMinute) || other.studyEndMinute == studyEndMinute)&&(identical(other.foundation, foundation) || other.foundation == foundation)&&(identical(other.capacityBasis, capacityBasis) || other.capacityBasis == capacityBasis)&&(identical(other.weeklyBaselineMinutes, weeklyBaselineMinutes) || other.weeklyBaselineMinutes == weeklyBaselineMinutes)&&(identical(other.weeklyRangeMinMinutes, weeklyRangeMinMinutes) || other.weeklyRangeMinMinutes == weeklyRangeMinMinutes)&&(identical(other.weeklyRangeMaxMinutes, weeklyRangeMaxMinutes) || other.weeklyRangeMaxMinutes == weeklyRangeMaxMinutes)&&const DeepCollectionEquality().equals(other._weekCapacityOverrides, _weekCapacityOverrides)&&const DeepCollectionEquality().equals(other._dateCapacityOverrides, _dateCapacityOverrides));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hashAll([runtimeType,userId,storedPlanningMode,goalText,goalType,goalSubtype,targetDate,targetDateConfirmed,planStartDate,planEndDate,const DeepCollectionEquality().hash(_weeklyMinutes),constraints,targetSchool,targetProgram,examDate,examEndDate,dailyLimitMinutes,granularityMinutes,bufferMinutes,subjectLimitMinutes,studyStartMinute,studyEndMinute,foundation,capacityBasis,weeklyBaselineMinutes,weeklyRangeMinMinutes,weeklyRangeMaxMinutes,const DeepCollectionEquality().hash(_weekCapacityOverrides),const DeepCollectionEquality().hash(_dateCapacityOverrides)]);
+int get hashCode => Object.hashAll([runtimeType,userId,storedPlanningMode,goalText,goalType,goalSubtype,targetDate,targetDateConfirmed,planStartDate,planEndDate,const DeepCollectionEquality().hash(_weeklyMinutes),constraints,targetSchool,targetProgram,examDate,examEndDate,dailyLimitMinutes,granularityMinutes,bufferMinutes,studyStartMinute,studyEndMinute,foundation,capacityBasis,weeklyBaselineMinutes,weeklyRangeMinMinutes,weeklyRangeMaxMinutes,const DeepCollectionEquality().hash(_weekCapacityOverrides),const DeepCollectionEquality().hash(_dateCapacityOverrides)]);
 
 @override
 String toString() {
-  return 'Profile(userId: $userId, storedPlanningMode: $storedPlanningMode, goalText: $goalText, goalType: $goalType, goalSubtype: $goalSubtype, targetDate: $targetDate, targetDateConfirmed: $targetDateConfirmed, planStartDate: $planStartDate, planEndDate: $planEndDate, weeklyMinutes: $weeklyMinutes, constraints: $constraints, targetSchool: $targetSchool, targetProgram: $targetProgram, examDate: $examDate, examEndDate: $examEndDate, dailyLimitMinutes: $dailyLimitMinutes, granularityMinutes: $granularityMinutes, bufferMinutes: $bufferMinutes, subjectLimitMinutes: $subjectLimitMinutes, studyStartMinute: $studyStartMinute, studyEndMinute: $studyEndMinute, foundation: $foundation, capacityBasis: $capacityBasis, weeklyBaselineMinutes: $weeklyBaselineMinutes, weeklyRangeMinMinutes: $weeklyRangeMinMinutes, weeklyRangeMaxMinutes: $weeklyRangeMaxMinutes, weekCapacityOverrides: $weekCapacityOverrides, dateCapacityOverrides: $dateCapacityOverrides)';
+  return 'Profile(userId: $userId, storedPlanningMode: $storedPlanningMode, goalText: $goalText, goalType: $goalType, goalSubtype: $goalSubtype, targetDate: $targetDate, targetDateConfirmed: $targetDateConfirmed, planStartDate: $planStartDate, planEndDate: $planEndDate, weeklyMinutes: $weeklyMinutes, constraints: $constraints, targetSchool: $targetSchool, targetProgram: $targetProgram, examDate: $examDate, examEndDate: $examEndDate, dailyLimitMinutes: $dailyLimitMinutes, granularityMinutes: $granularityMinutes, bufferMinutes: $bufferMinutes, studyStartMinute: $studyStartMinute, studyEndMinute: $studyEndMinute, foundation: $foundation, capacityBasis: $capacityBasis, weeklyBaselineMinutes: $weeklyBaselineMinutes, weeklyRangeMinMinutes: $weeklyRangeMinMinutes, weeklyRangeMaxMinutes: $weeklyRangeMaxMinutes, weekCapacityOverrides: $weekCapacityOverrides, dateCapacityOverrides: $dateCapacityOverrides)';
 }
 
 
@@ -715,7 +713,7 @@ abstract mixin class _$ProfileCopyWith<$Res> implements $ProfileCopyWith<$Res> {
   factory _$ProfileCopyWith(_Profile value, $Res Function(_Profile) _then) = __$ProfileCopyWithImpl;
 @override @useResult
 $Res call({
- String userId,@JsonKey(name: 'planning_mode') PlanningMode? storedPlanningMode, String goalText, GoalType goalType, String goalSubtype, String targetDate, bool targetDateConfirmed, String planStartDate, String planEndDate, Map<String, int>? weeklyMinutes, String constraints, String targetSchool, String targetProgram, String examDate, String examEndDate, int dailyLimitMinutes, int granularityMinutes, int bufferMinutes, int subjectLimitMinutes, int studyStartMinute, int studyEndMinute, String foundation,@JsonKey(name: 'capacity_basis') CapacityBasis capacityBasis,@JsonKey(name: 'weekly_baseline_minutes') int? weeklyBaselineMinutes,@JsonKey(name: 'weekly_range_min_minutes') int? weeklyRangeMinMinutes,@JsonKey(name: 'weekly_range_max_minutes') int? weeklyRangeMaxMinutes,@JsonKey(name: 'week_capacity_overrides') Map<String, WeekCapacityOverride>? weekCapacityOverrides,@JsonKey(name: 'date_capacity_overrides') Map<String, int>? dateCapacityOverrides
+ String userId,@JsonKey(name: 'planning_mode') PlanningMode? storedPlanningMode, String goalText, GoalType goalType, String goalSubtype, String targetDate, bool targetDateConfirmed, String planStartDate, String planEndDate, Map<String, int>? weeklyMinutes, String constraints, String targetSchool, String targetProgram, String examDate, String examEndDate, int dailyLimitMinutes, int granularityMinutes, int bufferMinutes, int studyStartMinute, int studyEndMinute, String foundation,@JsonKey(name: 'capacity_basis') CapacityBasis capacityBasis,@JsonKey(name: 'weekly_baseline_minutes') int? weeklyBaselineMinutes,@JsonKey(name: 'weekly_range_min_minutes') int? weeklyRangeMinMinutes,@JsonKey(name: 'weekly_range_max_minutes') int? weeklyRangeMaxMinutes,@JsonKey(name: 'week_capacity_overrides') Map<String, WeekCapacityOverride>? weekCapacityOverrides,@JsonKey(name: 'date_capacity_overrides') Map<String, int>? dateCapacityOverrides
 });
 
 
@@ -732,7 +730,7 @@ class __$ProfileCopyWithImpl<$Res>
 
 /// Create a copy of Profile
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? userId = null,Object? storedPlanningMode = freezed,Object? goalText = null,Object? goalType = null,Object? goalSubtype = null,Object? targetDate = null,Object? targetDateConfirmed = null,Object? planStartDate = null,Object? planEndDate = null,Object? weeklyMinutes = freezed,Object? constraints = null,Object? targetSchool = null,Object? targetProgram = null,Object? examDate = null,Object? examEndDate = null,Object? dailyLimitMinutes = null,Object? granularityMinutes = null,Object? bufferMinutes = null,Object? subjectLimitMinutes = null,Object? studyStartMinute = null,Object? studyEndMinute = null,Object? foundation = null,Object? capacityBasis = null,Object? weeklyBaselineMinutes = freezed,Object? weeklyRangeMinMinutes = freezed,Object? weeklyRangeMaxMinutes = freezed,Object? weekCapacityOverrides = freezed,Object? dateCapacityOverrides = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? userId = null,Object? storedPlanningMode = freezed,Object? goalText = null,Object? goalType = null,Object? goalSubtype = null,Object? targetDate = null,Object? targetDateConfirmed = null,Object? planStartDate = null,Object? planEndDate = null,Object? weeklyMinutes = freezed,Object? constraints = null,Object? targetSchool = null,Object? targetProgram = null,Object? examDate = null,Object? examEndDate = null,Object? dailyLimitMinutes = null,Object? granularityMinutes = null,Object? bufferMinutes = null,Object? studyStartMinute = null,Object? studyEndMinute = null,Object? foundation = null,Object? capacityBasis = null,Object? weeklyBaselineMinutes = freezed,Object? weeklyRangeMinMinutes = freezed,Object? weeklyRangeMaxMinutes = freezed,Object? weekCapacityOverrides = freezed,Object? dateCapacityOverrides = freezed,}) {
   return _then(_Profile(
 userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
 as String,storedPlanningMode: freezed == storedPlanningMode ? _self.storedPlanningMode : storedPlanningMode // ignore: cast_nullable_to_non_nullable
@@ -752,7 +750,6 @@ as String,examEndDate: null == examEndDate ? _self.examEndDate : examEndDate // 
 as String,dailyLimitMinutes: null == dailyLimitMinutes ? _self.dailyLimitMinutes : dailyLimitMinutes // ignore: cast_nullable_to_non_nullable
 as int,granularityMinutes: null == granularityMinutes ? _self.granularityMinutes : granularityMinutes // ignore: cast_nullable_to_non_nullable
 as int,bufferMinutes: null == bufferMinutes ? _self.bufferMinutes : bufferMinutes // ignore: cast_nullable_to_non_nullable
-as int,subjectLimitMinutes: null == subjectLimitMinutes ? _self.subjectLimitMinutes : subjectLimitMinutes // ignore: cast_nullable_to_non_nullable
 as int,studyStartMinute: null == studyStartMinute ? _self.studyStartMinute : studyStartMinute // ignore: cast_nullable_to_non_nullable
 as int,studyEndMinute: null == studyEndMinute ? _self.studyEndMinute : studyEndMinute // ignore: cast_nullable_to_non_nullable
 as int,foundation: null == foundation ? _self.foundation : foundation // ignore: cast_nullable_to_non_nullable
@@ -771,42 +768,42 @@ as Map<String, int>?,
 
 
 /// @nodoc
-mixin _$Subject {
+mixin _$Tag {
 
- String get id; String get userId; String get name; String get color;@JsonKey(fromJson: _priority) int get priority;
-/// Create a copy of Subject
+ String get id;@JsonKey(name: 'user_id') String get userId; String get name; String? get color;@JsonKey(name: 'created_at') String get createdAt;@JsonKey(name: 'updated_at') String get updatedAt;
+/// Create a copy of Tag
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
-$SubjectCopyWith<Subject> get copyWith => _$SubjectCopyWithImpl<Subject>(this as Subject, _$identity);
+$TagCopyWith<Tag> get copyWith => _$TagCopyWithImpl<Tag>(this as Tag, _$identity);
 
-  /// Serializes this Subject to a JSON map.
+  /// Serializes this Tag to a JSON map.
   Map<String, dynamic> toJson();
 
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Subject&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.name, name) || other.name == name)&&(identical(other.color, color) || other.color == color)&&(identical(other.priority, priority) || other.priority == priority));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Tag&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.name, name) || other.name == name)&&(identical(other.color, color) || other.color == color)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,userId,name,color,priority);
+int get hashCode => Object.hash(runtimeType,id,userId,name,color,createdAt,updatedAt);
 
 @override
 String toString() {
-  return 'Subject(id: $id, userId: $userId, name: $name, color: $color, priority: $priority)';
+  return 'Tag(id: $id, userId: $userId, name: $name, color: $color, createdAt: $createdAt, updatedAt: $updatedAt)';
 }
 
 
 }
 
 /// @nodoc
-abstract mixin class $SubjectCopyWith<$Res>  {
-  factory $SubjectCopyWith(Subject value, $Res Function(Subject) _then) = _$SubjectCopyWithImpl;
+abstract mixin class $TagCopyWith<$Res>  {
+  factory $TagCopyWith(Tag value, $Res Function(Tag) _then) = _$TagCopyWithImpl;
 @useResult
 $Res call({
- String id, String userId, String name, String color,@JsonKey(fromJson: _priority) int priority
+ String id,@JsonKey(name: 'user_id') String userId, String name, String? color,@JsonKey(name: 'created_at') String createdAt,@JsonKey(name: 'updated_at') String updatedAt
 });
 
 
@@ -814,31 +811,32 @@ $Res call({
 
 }
 /// @nodoc
-class _$SubjectCopyWithImpl<$Res>
-    implements $SubjectCopyWith<$Res> {
-  _$SubjectCopyWithImpl(this._self, this._then);
+class _$TagCopyWithImpl<$Res>
+    implements $TagCopyWith<$Res> {
+  _$TagCopyWithImpl(this._self, this._then);
 
-  final Subject _self;
-  final $Res Function(Subject) _then;
+  final Tag _self;
+  final $Res Function(Tag) _then;
 
-/// Create a copy of Subject
+/// Create a copy of Tag
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? userId = null,Object? name = null,Object? color = null,Object? priority = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? userId = null,Object? name = null,Object? color = freezed,Object? createdAt = null,Object? updatedAt = null,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
-as String,color: null == color ? _self.color : color // ignore: cast_nullable_to_non_nullable
-as String,priority: null == priority ? _self.priority : priority // ignore: cast_nullable_to_non_nullable
-as int,
+as String,color: freezed == color ? _self.color : color // ignore: cast_nullable_to_non_nullable
+as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
+as String,
   ));
 }
 
 }
 
 
-/// Adds pattern-matching-related methods to [Subject].
-extension SubjectPatterns on Subject {
+/// Adds pattern-matching-related methods to [Tag].
+extension TagPatterns on Tag {
 /// A variant of `map` that fallback to returning `orElse`.
 ///
 /// It is equivalent to doing:
@@ -851,10 +849,10 @@ extension SubjectPatterns on Subject {
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _Subject value)?  $default,{required TResult orElse(),}){
+@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _Tag value)?  $default,{required TResult orElse(),}){
 final _that = this;
 switch (_that) {
-case _Subject() when $default != null:
+case _Tag() when $default != null:
 return $default(_that);case _:
   return orElse();
 
@@ -873,10 +871,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _Subject value)  $default,){
+@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _Tag value)  $default,){
 final _that = this;
 switch (_that) {
-case _Subject():
+case _Tag():
 return $default(_that);case _:
   throw StateError('Unexpected subclass');
 
@@ -894,10 +892,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _Subject value)?  $default,){
+@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _Tag value)?  $default,){
 final _that = this;
 switch (_that) {
-case _Subject() when $default != null:
+case _Tag() when $default != null:
 return $default(_that);case _:
   return null;
 
@@ -915,10 +913,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String userId,  String name,  String color, @JsonKey(fromJson: _priority)  int priority)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id, @JsonKey(name: 'user_id')  String userId,  String name,  String? color, @JsonKey(name: 'created_at')  String createdAt, @JsonKey(name: 'updated_at')  String updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
-case _Subject() when $default != null:
-return $default(_that.id,_that.userId,_that.name,_that.color,_that.priority);case _:
+case _Tag() when $default != null:
+return $default(_that.id,_that.userId,_that.name,_that.color,_that.createdAt,_that.updatedAt);case _:
   return orElse();
 
 }
@@ -936,10 +934,10 @@ return $default(_that.id,_that.userId,_that.name,_that.color,_that.priority);cas
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String userId,  String name,  String color, @JsonKey(fromJson: _priority)  int priority)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id, @JsonKey(name: 'user_id')  String userId,  String name,  String? color, @JsonKey(name: 'created_at')  String createdAt, @JsonKey(name: 'updated_at')  String updatedAt)  $default,) {final _that = this;
 switch (_that) {
-case _Subject():
-return $default(_that.id,_that.userId,_that.name,_that.color,_that.priority);case _:
+case _Tag():
+return $default(_that.id,_that.userId,_that.name,_that.color,_that.createdAt,_that.updatedAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -956,10 +954,10 @@ return $default(_that.id,_that.userId,_that.name,_that.color,_that.priority);cas
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String userId,  String name,  String color, @JsonKey(fromJson: _priority)  int priority)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id, @JsonKey(name: 'user_id')  String userId,  String name,  String? color, @JsonKey(name: 'created_at')  String createdAt, @JsonKey(name: 'updated_at')  String updatedAt)?  $default,) {final _that = this;
 switch (_that) {
-case _Subject() when $default != null:
-return $default(_that.id,_that.userId,_that.name,_that.color,_that.priority);case _:
+case _Tag() when $default != null:
+return $default(_that.id,_that.userId,_that.name,_that.color,_that.createdAt,_that.updatedAt);case _:
   return null;
 
 }
@@ -970,50 +968,51 @@ return $default(_that.id,_that.userId,_that.name,_that.color,_that.priority);cas
 /// @nodoc
 @JsonSerializable()
 
-class _Subject implements Subject {
-  const _Subject({required this.id, required this.userId, required this.name, required this.color, @JsonKey(fromJson: _priority) required this.priority});
-  factory _Subject.fromJson(Map<String, dynamic> json) => _$SubjectFromJson(json);
+class _Tag implements Tag {
+  const _Tag({required this.id, @JsonKey(name: 'user_id') required this.userId, required this.name, this.color, @JsonKey(name: 'created_at') this.createdAt = '', @JsonKey(name: 'updated_at') this.updatedAt = ''});
+  factory _Tag.fromJson(Map<String, dynamic> json) => _$TagFromJson(json);
 
 @override final  String id;
-@override final  String userId;
+@override@JsonKey(name: 'user_id') final  String userId;
 @override final  String name;
-@override final  String color;
-@override@JsonKey(fromJson: _priority) final  int priority;
+@override final  String? color;
+@override@JsonKey(name: 'created_at') final  String createdAt;
+@override@JsonKey(name: 'updated_at') final  String updatedAt;
 
-/// Create a copy of Subject
+/// Create a copy of Tag
 /// with the given fields replaced by the non-null parameter values.
 @override @JsonKey(includeFromJson: false, includeToJson: false)
 @pragma('vm:prefer-inline')
-_$SubjectCopyWith<_Subject> get copyWith => __$SubjectCopyWithImpl<_Subject>(this, _$identity);
+_$TagCopyWith<_Tag> get copyWith => __$TagCopyWithImpl<_Tag>(this, _$identity);
 
 @override
 Map<String, dynamic> toJson() {
-  return _$SubjectToJson(this, );
+  return _$TagToJson(this, );
 }
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Subject&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.name, name) || other.name == name)&&(identical(other.color, color) || other.color == color)&&(identical(other.priority, priority) || other.priority == priority));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Tag&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.name, name) || other.name == name)&&(identical(other.color, color) || other.color == color)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,userId,name,color,priority);
+int get hashCode => Object.hash(runtimeType,id,userId,name,color,createdAt,updatedAt);
 
 @override
 String toString() {
-  return 'Subject(id: $id, userId: $userId, name: $name, color: $color, priority: $priority)';
+  return 'Tag(id: $id, userId: $userId, name: $name, color: $color, createdAt: $createdAt, updatedAt: $updatedAt)';
 }
 
 
 }
 
 /// @nodoc
-abstract mixin class _$SubjectCopyWith<$Res> implements $SubjectCopyWith<$Res> {
-  factory _$SubjectCopyWith(_Subject value, $Res Function(_Subject) _then) = __$SubjectCopyWithImpl;
+abstract mixin class _$TagCopyWith<$Res> implements $TagCopyWith<$Res> {
+  factory _$TagCopyWith(_Tag value, $Res Function(_Tag) _then) = __$TagCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String userId, String name, String color,@JsonKey(fromJson: _priority) int priority
+ String id,@JsonKey(name: 'user_id') String userId, String name, String? color,@JsonKey(name: 'created_at') String createdAt,@JsonKey(name: 'updated_at') String updatedAt
 });
 
 
@@ -1021,23 +1020,24 @@ $Res call({
 
 }
 /// @nodoc
-class __$SubjectCopyWithImpl<$Res>
-    implements _$SubjectCopyWith<$Res> {
-  __$SubjectCopyWithImpl(this._self, this._then);
+class __$TagCopyWithImpl<$Res>
+    implements _$TagCopyWith<$Res> {
+  __$TagCopyWithImpl(this._self, this._then);
 
-  final _Subject _self;
-  final $Res Function(_Subject) _then;
+  final _Tag _self;
+  final $Res Function(_Tag) _then;
 
-/// Create a copy of Subject
+/// Create a copy of Tag
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? userId = null,Object? name = null,Object? color = null,Object? priority = null,}) {
-  return _then(_Subject(
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? userId = null,Object? name = null,Object? color = freezed,Object? createdAt = null,Object? updatedAt = null,}) {
+  return _then(_Tag(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
-as String,color: null == color ? _self.color : color // ignore: cast_nullable_to_non_nullable
-as String,priority: null == priority ? _self.priority : priority // ignore: cast_nullable_to_non_nullable
-as int,
+as String,color: freezed == color ? _self.color : color // ignore: cast_nullable_to_non_nullable
+as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
+as String,
   ));
 }
 
@@ -1048,7 +1048,7 @@ as int,
 /// @nodoc
 mixin _$Task {
 
- String get id; String get userId; String get subjectId; String get title; String? get description; int get estimatedMinutes; int get completedMinutes;@JsonKey(fromJson: _priority) int get priority; String get deadline; ItemDateKind get deadlineKind; String? get earliestDate; bool get isFixed; TaskStatus get status; String get createdAt; String get updatedAt; JsonMap? get planning;
+ String get id; String get userId;@JsonKey(name: 'tag_ids') List<String> get tagIds; String get title; String? get description; int get estimatedMinutes; int get completedMinutes;@JsonKey(fromJson: _priority) int get priority; String get deadline; ItemDateKind get deadlineKind; String? get earliestDate; bool get isFixed; TaskStatus get status; String get createdAt; String get updatedAt; JsonMap? get planning;
 /// Create a copy of Task
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1061,16 +1061,16 @@ $TaskCopyWith<Task> get copyWith => _$TaskCopyWithImpl<Task>(this as Task, _$ide
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Task&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.subjectId, subjectId) || other.subjectId == subjectId)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.estimatedMinutes, estimatedMinutes) || other.estimatedMinutes == estimatedMinutes)&&(identical(other.completedMinutes, completedMinutes) || other.completedMinutes == completedMinutes)&&(identical(other.priority, priority) || other.priority == priority)&&(identical(other.deadline, deadline) || other.deadline == deadline)&&(identical(other.deadlineKind, deadlineKind) || other.deadlineKind == deadlineKind)&&(identical(other.earliestDate, earliestDate) || other.earliestDate == earliestDate)&&(identical(other.isFixed, isFixed) || other.isFixed == isFixed)&&(identical(other.status, status) || other.status == status)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&const DeepCollectionEquality().equals(other.planning, planning));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Task&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&const DeepCollectionEquality().equals(other.tagIds, tagIds)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.estimatedMinutes, estimatedMinutes) || other.estimatedMinutes == estimatedMinutes)&&(identical(other.completedMinutes, completedMinutes) || other.completedMinutes == completedMinutes)&&(identical(other.priority, priority) || other.priority == priority)&&(identical(other.deadline, deadline) || other.deadline == deadline)&&(identical(other.deadlineKind, deadlineKind) || other.deadlineKind == deadlineKind)&&(identical(other.earliestDate, earliestDate) || other.earliestDate == earliestDate)&&(identical(other.isFixed, isFixed) || other.isFixed == isFixed)&&(identical(other.status, status) || other.status == status)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&const DeepCollectionEquality().equals(other.planning, planning));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,userId,subjectId,title,description,estimatedMinutes,completedMinutes,priority,deadline,deadlineKind,earliestDate,isFixed,status,createdAt,updatedAt,const DeepCollectionEquality().hash(planning));
+int get hashCode => Object.hash(runtimeType,id,userId,const DeepCollectionEquality().hash(tagIds),title,description,estimatedMinutes,completedMinutes,priority,deadline,deadlineKind,earliestDate,isFixed,status,createdAt,updatedAt,const DeepCollectionEquality().hash(planning));
 
 @override
 String toString() {
-  return 'Task(id: $id, userId: $userId, subjectId: $subjectId, title: $title, description: $description, estimatedMinutes: $estimatedMinutes, completedMinutes: $completedMinutes, priority: $priority, deadline: $deadline, deadlineKind: $deadlineKind, earliestDate: $earliestDate, isFixed: $isFixed, status: $status, createdAt: $createdAt, updatedAt: $updatedAt, planning: $planning)';
+  return 'Task(id: $id, userId: $userId, tagIds: $tagIds, title: $title, description: $description, estimatedMinutes: $estimatedMinutes, completedMinutes: $completedMinutes, priority: $priority, deadline: $deadline, deadlineKind: $deadlineKind, earliestDate: $earliestDate, isFixed: $isFixed, status: $status, createdAt: $createdAt, updatedAt: $updatedAt, planning: $planning)';
 }
 
 
@@ -1081,7 +1081,7 @@ abstract mixin class $TaskCopyWith<$Res>  {
   factory $TaskCopyWith(Task value, $Res Function(Task) _then) = _$TaskCopyWithImpl;
 @useResult
 $Res call({
- String id, String userId, String subjectId, String title, String? description, int estimatedMinutes, int completedMinutes,@JsonKey(fromJson: _priority) int priority, String deadline, ItemDateKind deadlineKind, String? earliestDate, bool isFixed, TaskStatus status, String createdAt, String updatedAt, JsonMap? planning
+ String id, String userId,@JsonKey(name: 'tag_ids') List<String> tagIds, String title, String? description, int estimatedMinutes, int completedMinutes,@JsonKey(fromJson: _priority) int priority, String deadline, ItemDateKind deadlineKind, String? earliestDate, bool isFixed, TaskStatus status, String createdAt, String updatedAt, JsonMap? planning
 });
 
 
@@ -1098,12 +1098,12 @@ class _$TaskCopyWithImpl<$Res>
 
 /// Create a copy of Task
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? userId = null,Object? subjectId = null,Object? title = null,Object? description = freezed,Object? estimatedMinutes = null,Object? completedMinutes = null,Object? priority = null,Object? deadline = null,Object? deadlineKind = null,Object? earliestDate = freezed,Object? isFixed = null,Object? status = null,Object? createdAt = null,Object? updatedAt = null,Object? planning = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? userId = null,Object? tagIds = null,Object? title = null,Object? description = freezed,Object? estimatedMinutes = null,Object? completedMinutes = null,Object? priority = null,Object? deadline = null,Object? deadlineKind = null,Object? earliestDate = freezed,Object? isFixed = null,Object? status = null,Object? createdAt = null,Object? updatedAt = null,Object? planning = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
-as String,subjectId: null == subjectId ? _self.subjectId : subjectId // ignore: cast_nullable_to_non_nullable
-as String,title: null == title ? _self.title : title // ignore: cast_nullable_to_non_nullable
+as String,tagIds: null == tagIds ? _self.tagIds : tagIds // ignore: cast_nullable_to_non_nullable
+as List<String>,title: null == title ? _self.title : title // ignore: cast_nullable_to_non_nullable
 as String,description: freezed == description ? _self.description : description // ignore: cast_nullable_to_non_nullable
 as String?,estimatedMinutes: null == estimatedMinutes ? _self.estimatedMinutes : estimatedMinutes // ignore: cast_nullable_to_non_nullable
 as int,completedMinutes: null == completedMinutes ? _self.completedMinutes : completedMinutes // ignore: cast_nullable_to_non_nullable
@@ -1201,10 +1201,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String userId,  String subjectId,  String title,  String? description,  int estimatedMinutes,  int completedMinutes, @JsonKey(fromJson: _priority)  int priority,  String deadline,  ItemDateKind deadlineKind,  String? earliestDate,  bool isFixed,  TaskStatus status,  String createdAt,  String updatedAt,  JsonMap? planning)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String userId, @JsonKey(name: 'tag_ids')  List<String> tagIds,  String title,  String? description,  int estimatedMinutes,  int completedMinutes, @JsonKey(fromJson: _priority)  int priority,  String deadline,  ItemDateKind deadlineKind,  String? earliestDate,  bool isFixed,  TaskStatus status,  String createdAt,  String updatedAt,  JsonMap? planning)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Task() when $default != null:
-return $default(_that.id,_that.userId,_that.subjectId,_that.title,_that.description,_that.estimatedMinutes,_that.completedMinutes,_that.priority,_that.deadline,_that.deadlineKind,_that.earliestDate,_that.isFixed,_that.status,_that.createdAt,_that.updatedAt,_that.planning);case _:
+return $default(_that.id,_that.userId,_that.tagIds,_that.title,_that.description,_that.estimatedMinutes,_that.completedMinutes,_that.priority,_that.deadline,_that.deadlineKind,_that.earliestDate,_that.isFixed,_that.status,_that.createdAt,_that.updatedAt,_that.planning);case _:
   return orElse();
 
 }
@@ -1222,10 +1222,10 @@ return $default(_that.id,_that.userId,_that.subjectId,_that.title,_that.descript
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String userId,  String subjectId,  String title,  String? description,  int estimatedMinutes,  int completedMinutes, @JsonKey(fromJson: _priority)  int priority,  String deadline,  ItemDateKind deadlineKind,  String? earliestDate,  bool isFixed,  TaskStatus status,  String createdAt,  String updatedAt,  JsonMap? planning)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String userId, @JsonKey(name: 'tag_ids')  List<String> tagIds,  String title,  String? description,  int estimatedMinutes,  int completedMinutes, @JsonKey(fromJson: _priority)  int priority,  String deadline,  ItemDateKind deadlineKind,  String? earliestDate,  bool isFixed,  TaskStatus status,  String createdAt,  String updatedAt,  JsonMap? planning)  $default,) {final _that = this;
 switch (_that) {
 case _Task():
-return $default(_that.id,_that.userId,_that.subjectId,_that.title,_that.description,_that.estimatedMinutes,_that.completedMinutes,_that.priority,_that.deadline,_that.deadlineKind,_that.earliestDate,_that.isFixed,_that.status,_that.createdAt,_that.updatedAt,_that.planning);case _:
+return $default(_that.id,_that.userId,_that.tagIds,_that.title,_that.description,_that.estimatedMinutes,_that.completedMinutes,_that.priority,_that.deadline,_that.deadlineKind,_that.earliestDate,_that.isFixed,_that.status,_that.createdAt,_that.updatedAt,_that.planning);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -1242,10 +1242,10 @@ return $default(_that.id,_that.userId,_that.subjectId,_that.title,_that.descript
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String userId,  String subjectId,  String title,  String? description,  int estimatedMinutes,  int completedMinutes, @JsonKey(fromJson: _priority)  int priority,  String deadline,  ItemDateKind deadlineKind,  String? earliestDate,  bool isFixed,  TaskStatus status,  String createdAt,  String updatedAt,  JsonMap? planning)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String userId, @JsonKey(name: 'tag_ids')  List<String> tagIds,  String title,  String? description,  int estimatedMinutes,  int completedMinutes, @JsonKey(fromJson: _priority)  int priority,  String deadline,  ItemDateKind deadlineKind,  String? earliestDate,  bool isFixed,  TaskStatus status,  String createdAt,  String updatedAt,  JsonMap? planning)?  $default,) {final _that = this;
 switch (_that) {
 case _Task() when $default != null:
-return $default(_that.id,_that.userId,_that.subjectId,_that.title,_that.description,_that.estimatedMinutes,_that.completedMinutes,_that.priority,_that.deadline,_that.deadlineKind,_that.earliestDate,_that.isFixed,_that.status,_that.createdAt,_that.updatedAt,_that.planning);case _:
+return $default(_that.id,_that.userId,_that.tagIds,_that.title,_that.description,_that.estimatedMinutes,_that.completedMinutes,_that.priority,_that.deadline,_that.deadlineKind,_that.earliestDate,_that.isFixed,_that.status,_that.createdAt,_that.updatedAt,_that.planning);case _:
   return null;
 
 }
@@ -1257,12 +1257,18 @@ return $default(_that.id,_that.userId,_that.subjectId,_that.title,_that.descript
 @JsonSerializable()
 
 class _Task implements Task {
-  const _Task({required this.id, required this.userId, required this.subjectId, required this.title, this.description, required this.estimatedMinutes, required this.completedMinutes, @JsonKey(fromJson: _priority) required this.priority, required this.deadline, this.deadlineKind = ItemDateKind.deadline, this.earliestDate, required this.isFixed, required this.status, required this.createdAt, required this.updatedAt, final  JsonMap? planning}): _planning = planning;
+  const _Task({required this.id, required this.userId, @JsonKey(name: 'tag_ids') final  List<String> tagIds = const [], required this.title, this.description, required this.estimatedMinutes, required this.completedMinutes, @JsonKey(fromJson: _priority) required this.priority, required this.deadline, this.deadlineKind = ItemDateKind.deadline, this.earliestDate, required this.isFixed, required this.status, required this.createdAt, required this.updatedAt, final  JsonMap? planning}): _tagIds = tagIds,_planning = planning;
   factory _Task.fromJson(Map<String, dynamic> json) => _$TaskFromJson(json);
 
 @override final  String id;
 @override final  String userId;
-@override final  String subjectId;
+ final  List<String> _tagIds;
+@override@JsonKey(name: 'tag_ids') List<String> get tagIds {
+  if (_tagIds is EqualUnmodifiableListView) return _tagIds;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_tagIds);
+}
+
 @override final  String title;
 @override final  String? description;
 @override final  int estimatedMinutes;
@@ -1298,16 +1304,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Task&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.subjectId, subjectId) || other.subjectId == subjectId)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.estimatedMinutes, estimatedMinutes) || other.estimatedMinutes == estimatedMinutes)&&(identical(other.completedMinutes, completedMinutes) || other.completedMinutes == completedMinutes)&&(identical(other.priority, priority) || other.priority == priority)&&(identical(other.deadline, deadline) || other.deadline == deadline)&&(identical(other.deadlineKind, deadlineKind) || other.deadlineKind == deadlineKind)&&(identical(other.earliestDate, earliestDate) || other.earliestDate == earliestDate)&&(identical(other.isFixed, isFixed) || other.isFixed == isFixed)&&(identical(other.status, status) || other.status == status)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&const DeepCollectionEquality().equals(other._planning, _planning));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Task&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&const DeepCollectionEquality().equals(other._tagIds, _tagIds)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.estimatedMinutes, estimatedMinutes) || other.estimatedMinutes == estimatedMinutes)&&(identical(other.completedMinutes, completedMinutes) || other.completedMinutes == completedMinutes)&&(identical(other.priority, priority) || other.priority == priority)&&(identical(other.deadline, deadline) || other.deadline == deadline)&&(identical(other.deadlineKind, deadlineKind) || other.deadlineKind == deadlineKind)&&(identical(other.earliestDate, earliestDate) || other.earliestDate == earliestDate)&&(identical(other.isFixed, isFixed) || other.isFixed == isFixed)&&(identical(other.status, status) || other.status == status)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&const DeepCollectionEquality().equals(other._planning, _planning));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,userId,subjectId,title,description,estimatedMinutes,completedMinutes,priority,deadline,deadlineKind,earliestDate,isFixed,status,createdAt,updatedAt,const DeepCollectionEquality().hash(_planning));
+int get hashCode => Object.hash(runtimeType,id,userId,const DeepCollectionEquality().hash(_tagIds),title,description,estimatedMinutes,completedMinutes,priority,deadline,deadlineKind,earliestDate,isFixed,status,createdAt,updatedAt,const DeepCollectionEquality().hash(_planning));
 
 @override
 String toString() {
-  return 'Task(id: $id, userId: $userId, subjectId: $subjectId, title: $title, description: $description, estimatedMinutes: $estimatedMinutes, completedMinutes: $completedMinutes, priority: $priority, deadline: $deadline, deadlineKind: $deadlineKind, earliestDate: $earliestDate, isFixed: $isFixed, status: $status, createdAt: $createdAt, updatedAt: $updatedAt, planning: $planning)';
+  return 'Task(id: $id, userId: $userId, tagIds: $tagIds, title: $title, description: $description, estimatedMinutes: $estimatedMinutes, completedMinutes: $completedMinutes, priority: $priority, deadline: $deadline, deadlineKind: $deadlineKind, earliestDate: $earliestDate, isFixed: $isFixed, status: $status, createdAt: $createdAt, updatedAt: $updatedAt, planning: $planning)';
 }
 
 
@@ -1318,7 +1324,7 @@ abstract mixin class _$TaskCopyWith<$Res> implements $TaskCopyWith<$Res> {
   factory _$TaskCopyWith(_Task value, $Res Function(_Task) _then) = __$TaskCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String userId, String subjectId, String title, String? description, int estimatedMinutes, int completedMinutes,@JsonKey(fromJson: _priority) int priority, String deadline, ItemDateKind deadlineKind, String? earliestDate, bool isFixed, TaskStatus status, String createdAt, String updatedAt, JsonMap? planning
+ String id, String userId,@JsonKey(name: 'tag_ids') List<String> tagIds, String title, String? description, int estimatedMinutes, int completedMinutes,@JsonKey(fromJson: _priority) int priority, String deadline, ItemDateKind deadlineKind, String? earliestDate, bool isFixed, TaskStatus status, String createdAt, String updatedAt, JsonMap? planning
 });
 
 
@@ -1335,12 +1341,12 @@ class __$TaskCopyWithImpl<$Res>
 
 /// Create a copy of Task
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? userId = null,Object? subjectId = null,Object? title = null,Object? description = freezed,Object? estimatedMinutes = null,Object? completedMinutes = null,Object? priority = null,Object? deadline = null,Object? deadlineKind = null,Object? earliestDate = freezed,Object? isFixed = null,Object? status = null,Object? createdAt = null,Object? updatedAt = null,Object? planning = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? userId = null,Object? tagIds = null,Object? title = null,Object? description = freezed,Object? estimatedMinutes = null,Object? completedMinutes = null,Object? priority = null,Object? deadline = null,Object? deadlineKind = null,Object? earliestDate = freezed,Object? isFixed = null,Object? status = null,Object? createdAt = null,Object? updatedAt = null,Object? planning = freezed,}) {
   return _then(_Task(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
-as String,subjectId: null == subjectId ? _self.subjectId : subjectId // ignore: cast_nullable_to_non_nullable
-as String,title: null == title ? _self.title : title // ignore: cast_nullable_to_non_nullable
+as String,tagIds: null == tagIds ? _self._tagIds : tagIds // ignore: cast_nullable_to_non_nullable
+as List<String>,title: null == title ? _self.title : title // ignore: cast_nullable_to_non_nullable
 as String,description: freezed == description ? _self.description : description // ignore: cast_nullable_to_non_nullable
 as String?,estimatedMinutes: null == estimatedMinutes ? _self.estimatedMinutes : estimatedMinutes // ignore: cast_nullable_to_non_nullable
 as int,completedMinutes: null == completedMinutes ? _self.completedMinutes : completedMinutes // ignore: cast_nullable_to_non_nullable
@@ -2266,8 +2272,7 @@ as Map<String, int>?,
 /// @nodoc
 mixin _$AdHocLearning {
 
- String get id; String get userId; String get title;/// 可选分类/课程归属；临时学习不强制正式课程。
- String? get subjectId; String get createdAt; String get updatedAt;/// 已转为正式事项或关联到已有事项后归档，但历史记录仍保留引用。
+ String get id; String get userId; String get title; String get createdAt; String get updatedAt;/// 已转为正式事项或关联到已有事项后归档，但历史记录仍保留引用。
  bool get archived;@JsonKey(name: 'converted_task_id') String? get convertedTaskId;
 /// Create a copy of AdHocLearning
 /// with the given fields replaced by the non-null parameter values.
@@ -2281,16 +2286,16 @@ $AdHocLearningCopyWith<AdHocLearning> get copyWith => _$AdHocLearningCopyWithImp
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is AdHocLearning&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.title, title) || other.title == title)&&(identical(other.subjectId, subjectId) || other.subjectId == subjectId)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.archived, archived) || other.archived == archived)&&(identical(other.convertedTaskId, convertedTaskId) || other.convertedTaskId == convertedTaskId));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is AdHocLearning&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.title, title) || other.title == title)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.archived, archived) || other.archived == archived)&&(identical(other.convertedTaskId, convertedTaskId) || other.convertedTaskId == convertedTaskId));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,userId,title,subjectId,createdAt,updatedAt,archived,convertedTaskId);
+int get hashCode => Object.hash(runtimeType,id,userId,title,createdAt,updatedAt,archived,convertedTaskId);
 
 @override
 String toString() {
-  return 'AdHocLearning(id: $id, userId: $userId, title: $title, subjectId: $subjectId, createdAt: $createdAt, updatedAt: $updatedAt, archived: $archived, convertedTaskId: $convertedTaskId)';
+  return 'AdHocLearning(id: $id, userId: $userId, title: $title, createdAt: $createdAt, updatedAt: $updatedAt, archived: $archived, convertedTaskId: $convertedTaskId)';
 }
 
 
@@ -2301,7 +2306,7 @@ abstract mixin class $AdHocLearningCopyWith<$Res>  {
   factory $AdHocLearningCopyWith(AdHocLearning value, $Res Function(AdHocLearning) _then) = _$AdHocLearningCopyWithImpl;
 @useResult
 $Res call({
- String id, String userId, String title, String? subjectId, String createdAt, String updatedAt, bool archived,@JsonKey(name: 'converted_task_id') String? convertedTaskId
+ String id, String userId, String title, String createdAt, String updatedAt, bool archived,@JsonKey(name: 'converted_task_id') String? convertedTaskId
 });
 
 
@@ -2318,13 +2323,12 @@ class _$AdHocLearningCopyWithImpl<$Res>
 
 /// Create a copy of AdHocLearning
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? userId = null,Object? title = null,Object? subjectId = freezed,Object? createdAt = null,Object? updatedAt = null,Object? archived = null,Object? convertedTaskId = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? userId = null,Object? title = null,Object? createdAt = null,Object? updatedAt = null,Object? archived = null,Object? convertedTaskId = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
 as String,title: null == title ? _self.title : title // ignore: cast_nullable_to_non_nullable
-as String,subjectId: freezed == subjectId ? _self.subjectId : subjectId // ignore: cast_nullable_to_non_nullable
-as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as String,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as String,archived: null == archived ? _self.archived : archived // ignore: cast_nullable_to_non_nullable
 as bool,convertedTaskId: freezed == convertedTaskId ? _self.convertedTaskId : convertedTaskId // ignore: cast_nullable_to_non_nullable
@@ -2413,10 +2417,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String userId,  String title,  String? subjectId,  String createdAt,  String updatedAt,  bool archived, @JsonKey(name: 'converted_task_id')  String? convertedTaskId)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String userId,  String title,  String createdAt,  String updatedAt,  bool archived, @JsonKey(name: 'converted_task_id')  String? convertedTaskId)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _AdHocLearning() when $default != null:
-return $default(_that.id,_that.userId,_that.title,_that.subjectId,_that.createdAt,_that.updatedAt,_that.archived,_that.convertedTaskId);case _:
+return $default(_that.id,_that.userId,_that.title,_that.createdAt,_that.updatedAt,_that.archived,_that.convertedTaskId);case _:
   return orElse();
 
 }
@@ -2434,10 +2438,10 @@ return $default(_that.id,_that.userId,_that.title,_that.subjectId,_that.createdA
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String userId,  String title,  String? subjectId,  String createdAt,  String updatedAt,  bool archived, @JsonKey(name: 'converted_task_id')  String? convertedTaskId)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String userId,  String title,  String createdAt,  String updatedAt,  bool archived, @JsonKey(name: 'converted_task_id')  String? convertedTaskId)  $default,) {final _that = this;
 switch (_that) {
 case _AdHocLearning():
-return $default(_that.id,_that.userId,_that.title,_that.subjectId,_that.createdAt,_that.updatedAt,_that.archived,_that.convertedTaskId);case _:
+return $default(_that.id,_that.userId,_that.title,_that.createdAt,_that.updatedAt,_that.archived,_that.convertedTaskId);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -2454,10 +2458,10 @@ return $default(_that.id,_that.userId,_that.title,_that.subjectId,_that.createdA
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String userId,  String title,  String? subjectId,  String createdAt,  String updatedAt,  bool archived, @JsonKey(name: 'converted_task_id')  String? convertedTaskId)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String userId,  String title,  String createdAt,  String updatedAt,  bool archived, @JsonKey(name: 'converted_task_id')  String? convertedTaskId)?  $default,) {final _that = this;
 switch (_that) {
 case _AdHocLearning() when $default != null:
-return $default(_that.id,_that.userId,_that.title,_that.subjectId,_that.createdAt,_that.updatedAt,_that.archived,_that.convertedTaskId);case _:
+return $default(_that.id,_that.userId,_that.title,_that.createdAt,_that.updatedAt,_that.archived,_that.convertedTaskId);case _:
   return null;
 
 }
@@ -2469,14 +2473,12 @@ return $default(_that.id,_that.userId,_that.title,_that.subjectId,_that.createdA
 @JsonSerializable()
 
 class _AdHocLearning implements AdHocLearning {
-  const _AdHocLearning({required this.id, required this.userId, required this.title, this.subjectId, required this.createdAt, required this.updatedAt, this.archived = false, @JsonKey(name: 'converted_task_id') this.convertedTaskId});
+  const _AdHocLearning({required this.id, required this.userId, required this.title, required this.createdAt, required this.updatedAt, this.archived = false, @JsonKey(name: 'converted_task_id') this.convertedTaskId});
   factory _AdHocLearning.fromJson(Map<String, dynamic> json) => _$AdHocLearningFromJson(json);
 
 @override final  String id;
 @override final  String userId;
 @override final  String title;
-/// 可选分类/课程归属；临时学习不强制正式课程。
-@override final  String? subjectId;
 @override final  String createdAt;
 @override final  String updatedAt;
 /// 已转为正式事项或关联到已有事项后归档，但历史记录仍保留引用。
@@ -2496,16 +2498,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _AdHocLearning&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.title, title) || other.title == title)&&(identical(other.subjectId, subjectId) || other.subjectId == subjectId)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.archived, archived) || other.archived == archived)&&(identical(other.convertedTaskId, convertedTaskId) || other.convertedTaskId == convertedTaskId));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _AdHocLearning&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.title, title) || other.title == title)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.archived, archived) || other.archived == archived)&&(identical(other.convertedTaskId, convertedTaskId) || other.convertedTaskId == convertedTaskId));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,userId,title,subjectId,createdAt,updatedAt,archived,convertedTaskId);
+int get hashCode => Object.hash(runtimeType,id,userId,title,createdAt,updatedAt,archived,convertedTaskId);
 
 @override
 String toString() {
-  return 'AdHocLearning(id: $id, userId: $userId, title: $title, subjectId: $subjectId, createdAt: $createdAt, updatedAt: $updatedAt, archived: $archived, convertedTaskId: $convertedTaskId)';
+  return 'AdHocLearning(id: $id, userId: $userId, title: $title, createdAt: $createdAt, updatedAt: $updatedAt, archived: $archived, convertedTaskId: $convertedTaskId)';
 }
 
 
@@ -2516,7 +2518,7 @@ abstract mixin class _$AdHocLearningCopyWith<$Res> implements $AdHocLearningCopy
   factory _$AdHocLearningCopyWith(_AdHocLearning value, $Res Function(_AdHocLearning) _then) = __$AdHocLearningCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String userId, String title, String? subjectId, String createdAt, String updatedAt, bool archived,@JsonKey(name: 'converted_task_id') String? convertedTaskId
+ String id, String userId, String title, String createdAt, String updatedAt, bool archived,@JsonKey(name: 'converted_task_id') String? convertedTaskId
 });
 
 
@@ -2533,13 +2535,12 @@ class __$AdHocLearningCopyWithImpl<$Res>
 
 /// Create a copy of AdHocLearning
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? userId = null,Object? title = null,Object? subjectId = freezed,Object? createdAt = null,Object? updatedAt = null,Object? archived = null,Object? convertedTaskId = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? userId = null,Object? title = null,Object? createdAt = null,Object? updatedAt = null,Object? archived = null,Object? convertedTaskId = freezed,}) {
   return _then(_AdHocLearning(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
 as String,title: null == title ? _self.title : title // ignore: cast_nullable_to_non_nullable
-as String,subjectId: freezed == subjectId ? _self.subjectId : subjectId // ignore: cast_nullable_to_non_nullable
-as String?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as String,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as String,archived: null == archived ? _self.archived : archived // ignore: cast_nullable_to_non_nullable
 as bool,convertedTaskId: freezed == convertedTaskId ? _self.convertedTaskId : convertedTaskId // ignore: cast_nullable_to_non_nullable

@@ -25,14 +25,14 @@ final plannerSnapshotProvider = Provider<AsyncValue<PlannerData?>>((ref) {
 
 class TodayItem {
   const TodayItem({
-    required this.course,
     required this.title,
+    required this.tags,
     required this.plannedMinutes,
     required this.actualMinutes,
     required this.taskId,
   });
-  final String course;
   final String title;
+  final List<String> tags;
   final int plannedMinutes;
   final int actualMinutes;
   final String taskId;
@@ -59,16 +59,17 @@ List<TodayItem> todayItems(PlannerData data, String date) {
       ifAbsent: () => log.minutes,
     );
   }
-  final courses = {
-    for (final subject in data.subjects) subject.id: subject.name,
-  };
+  final tagsById = {for (final tag in data.tags) tag.id: tag.name};
   return [
     for (final task in data.tasks)
       if (planned.containsKey(task.id) || actual.containsKey(task.id))
         TodayItem(
           taskId: task.id,
-          course: courses[task.subjectId] ?? '课程',
           title: task.title,
+          tags: [
+            for (final id in task.tagIds)
+              if (tagsById[id] case final name?) name,
+          ],
           plannedMinutes: planned[task.id] ?? 0,
           actualMinutes: actual[task.id] ?? 0,
         ),

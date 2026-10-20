@@ -169,22 +169,19 @@ Map<String, int> scheduledMinutesByTask(PlannerData data, String date) =>
 int scheduledMinutesForTaskDay(PlannerData data, String taskId, String date) {
   final planned = taskDayPlannedMinutes(data, taskId, date);
   if (planned <= 0) return 0;
-  return math.min(
-    planned,
-    scheduledMinutesByTask(data, date)[taskId] ?? 0,
-  );
+  return math.min(planned, scheduledMinutesByTask(data, date)[taskId] ?? 0);
 }
 
 /// Minutes of active extra study recorded for one task and day.
-int extraMinutesForTaskDay(PlannerData data, String taskId, String date) =>
-    data.logs
-        .where(
-          (log) =>
-              log.taskId == taskId &&
-              log.date == date &&
-              log.relation == TimeLogRelation.extra,
-        )
-        .fold<int>(0, (sum, log) => sum + log.minutes);
+int extraMinutesForTaskDay(PlannerData data, String taskId, String date) => data
+    .logs
+    .where(
+      (log) =>
+          log.taskId == taskId &&
+          log.date == date &&
+          log.relation == TimeLogRelation.extra,
+    )
+    .fold<int>(0, (sum, log) => sum + log.minutes);
 
 /// Minutes of temporary (task-less) learning recorded on one day.
 int adHocMinutesOnDate(PlannerData data, String date) => data.logs
@@ -192,14 +189,10 @@ int adHocMinutesOnDate(PlannerData data, String date) => data.logs
     .fold<int>(0, (sum, log) => sum + log.minutes);
 
 /// Minutes recorded for one temporary learning entity on one day.
-int adHocMinutesForEntity(
-  PlannerData data,
-  String adHocId,
-  String date,
-) => data.logs
+int adHocMinutesForEntity(PlannerData data, String adHocId, String date) => data
+    .logs
     .where(
-      (log) =>
-          log.adHocId == adHocId && log.date == date && log.minutes > 0,
+      (log) => log.adHocId == adHocId && log.date == date && log.minutes > 0,
     )
     .fold<int>(0, (sum, log) => sum + log.minutes);
 
@@ -381,7 +374,7 @@ class AdHocUpsert {
 /// one so starting the same ad-hoc content twice never duplicates entities.
 ///
 /// Only the name is required; no budget, deadline, priority or schedule is
-/// fabricated. A provided [subjectId] must be an existing course.
+/// fabricated. [subjectId] is accepted only for old callers and is ignored.
 AdHocUpsert upsertAdHocLearning(
   PlannerData data, {
   required String title,
@@ -392,38 +385,16 @@ AdHocUpsert upsertAdHocLearning(
   final trimmed = title.trim();
   if (trimmed.isEmpty) throw StateError('请填写临时学习名称');
   if (trimmed.length > 150) throw StateError('临时学习名称不能超过 150 个字符');
-  final normalizedSubject = (subjectId ?? '').trim();
-  if (normalizedSubject.isNotEmpty &&
-      !data.subjects.any((subject) => subject.id == normalizedSubject)) {
-    throw StateError('所选课程不存在，请刷新后再试');
-  }
   final existing = data.adHocLearnings
       .where((learning) => !learning.archived && learning.title == trimmed)
       .firstOrNull;
   if (existing != null) {
-    if (normalizedSubject.isNotEmpty && existing.subjectId == null) {
-      final updated = existing.copyWith(
-        subjectId: normalizedSubject,
-        updatedAt: updatedAt,
-      );
-      return AdHocUpsert(
-        data.copyWith(
-          adHocLearnings: [
-            for (final learning in data.adHocLearnings)
-              learning.id == updated.id ? updated : learning,
-          ],
-        ),
-        updated,
-        created: false,
-      );
-    }
     return AdHocUpsert(data, existing, created: false);
   }
   final learning = AdHocLearning(
     id: id,
     userId: data.profile.userId,
     title: trimmed,
-    subjectId: normalizedSubject.isEmpty ? null : normalizedSubject,
     createdAt: updatedAt,
     updatedAt: updatedAt,
   );
@@ -467,12 +438,7 @@ AdHocConvertResult convertAdHocToTask(
     throw StateError('该临时学习已归档');
   }
   final stamp = updatedAt ?? nowIso();
-  final applied = applyTaskDraft(
-    data,
-    draft,
-    taskId: taskId,
-    updatedAt: stamp,
-  );
+  final applied = applyTaskDraft(data, draft, taskId: taskId, updatedAt: stamp);
   return AdHocConvertResult(
     _adoptAdHocOwner(applied, learning, taskId, stamp),
     taskId,
@@ -518,9 +484,7 @@ PlannerData _adoptAdHocOwner(
 ) => data.copyWith(
   logs: [
     for (final log in data.logs)
-      log.adHocId == learning.id
-          ? log.copyWith(taskId: taskId)
-          : log,
+      log.adHocId == learning.id ? log.copyWith(taskId: taskId) : log,
   ],
   adHocLearnings: [
     for (final item in data.adHocLearnings)
@@ -846,9 +810,7 @@ PlannerData deleteTask(PlannerData data, String taskId) {
   if (dependents.isNotEmpty) {
     final names = dependents.take(3).map((title) => '「$title」').join('、');
     final suffix = dependents.length > 3 ? ' 等 ${dependents.length} 个事项' : '';
-    throw StateError(
-      '「${task.title}」是$names$suffix的前置事项，请先解除前置依赖后再删除',
-    );
+    throw StateError('「${task.title}」是$names$suffix的前置事项，请先解除前置依赖后再删除');
   }
   final planning = data.planning;
   JsonMap? nextPlanning = planning;

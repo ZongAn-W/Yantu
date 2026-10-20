@@ -66,7 +66,7 @@ int jsonBytes(Object? value) => utf8.encode(jsonEncode(value)).length;
 
 Map<String, Object?> describeSample(String name, PlannerData data) => {
   'name': name,
-  'subjects': data.subjects.length,
+  'tags': data.tags.length,
   'tasks': data.tasks.length,
   'blocks': data.blocks.length,
   'logs': data.logs.length,

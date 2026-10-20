@@ -42,7 +42,6 @@ PlannerData purgeAdHocData(PlannerData data) {
   return data.copyWith(logs: logs, adHocLearnings: const []);
 }
 
-
 void validatePlanner(PlannerData data) {
   if (data.version != 1) throw const FormatException('本地数据版本不兼容');
   void ids(Iterable<String> values) {
@@ -59,7 +58,7 @@ void validatePlanner(PlannerData data) {
     }
   }
 
-  ids(data.subjects.map((row) => row.id));
+  ids(data.tags.map((row) => row.id));
   ids(data.tasks.map((row) => row.id));
   ids(data.blocks.map((row) => row.id));
   ids(data.logs.map((row) => row.id));
@@ -67,7 +66,7 @@ void validatePlanner(PlannerData data) {
   ids(data.replanRuns.map((row) => row.id));
   ids(data.adHocLearnings.map((row) => row.id));
   final owner = data.profile.userId,
-      subjects = data.subjects.map((row) => row.id).toSet(),
+      tags = data.tags.map((row) => row.id).toSet(),
       tasks = data.tasks.map((row) => row.id).toSet(),
       adHocLearnings = {for (final row in data.adHocLearnings) row.id: row},
       blocks = {for (final row in data.blocks) row.id: row};
@@ -75,7 +74,7 @@ void validatePlanner(PlannerData data) {
     throw const FormatException('学习策略版本不兼容');
   }
   if (owner.isEmpty) throw const FormatException('计划缺少账号标识');
-  for (final row in data.subjects) {
+  for (final row in data.tags) {
     if (row.userId != owner) throw const FormatException('计划账号不一致');
   }
   for (final row in data.tasks) {
@@ -111,10 +110,10 @@ void validatePlanner(PlannerData data) {
       }
     }
     if (row.userId != owner ||
-        !subjects.contains(row.subjectId) ||
+        row.tagIds.any((tagId) => !tags.contains(tagId)) ||
         row.estimatedMinutes <= 0 ||
         row.completedMinutes < 0) {
-      throw const FormatException('事项内容或课程引用无效');
+      throw const FormatException('事项内容或标签引用无效');
     }
     date(row.deadline);
     final dependencies = row.planning?['dependencies'];
@@ -170,9 +169,6 @@ void validatePlanner(PlannerData data) {
   for (final row in data.adHocLearnings) {
     if (row.userId != owner || row.title.trim().isEmpty) {
       throw const FormatException('临时学习内容或账号标识无效');
-    }
-    if (row.subjectId != null && !subjects.contains(row.subjectId)) {
-      throw const FormatException('临时学习引用的课程无效');
     }
     if (row.convertedTaskId != null && !tasks.contains(row.convertedTaskId)) {
       throw const FormatException('临时学习关联的正式事项无效');
@@ -295,14 +291,19 @@ PlannerData forAccount(PlannerData data, String userId) {
                         'id',
                         'task_id',
                         'block_id',
-                        'subject_id',
+                        'tag_id',
                         'run_id',
                         'ad_hoc_id',
                         'converted_task_id',
                       ].contains(key) &&
                       item is String
                 ? mapped(item)
-                : ['postponed', 'advanced', 'item_ids'].contains(key) &&
+                : [
+                        'postponed',
+                        'advanced',
+                        'item_ids',
+                        'tag_ids',
+                      ].contains(key) &&
                       item is List
                 ? item.map((id) => mapped(id as String)).toList()
                 : retag(item),

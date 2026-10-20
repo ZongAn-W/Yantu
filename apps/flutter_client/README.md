@@ -2,7 +2,7 @@
 
 这是“不白学 · 学习执行台”唯一维护的客户端，使用 Node/Fastify API，覆盖 Web、Windows、Android 和 iOS。学习目标可以是考试备考、课程学习、技能提升、自主学习或自定义目标。
 
-**状态**：登录、学习目标访谈、课程与事项确认、日期与容量确认、AI 草案、今日（含事项目录）、日历（日/周/月 + 概览条）、调整、设置与数据管理全部可用。React/Tauri 源码和配置已移除，详情见根目录 [清理记录](../../REACT_REMOVAL.md)。
+**状态**：登录、学习目标访谈、事项与可选标签、多端同步、周期与容量确认、今日事项目录、日历、调整、设置和数据管理可用。事项可关联多个标签；标签不参与排程容量与总量统计。React/Tauri 源码和配置已移除，详情见根目录 [清理记录](../../REACT_REMOVAL.md)。
 
 ## 1. 环境与版本
 
@@ -368,13 +368,12 @@ await coordinator.recordDayMinutes(taskId, '2026-10-17', 90);
 - 本机存在未同步修改（pending）时禁止发起；AI 未配置、超时或方案不合法时直接报错，不会回退到本地算法。
 - 客户端实现见 `lib/features/adjust/data/plan_adjust_api.dart` 与 `lib/features/adjust/presentation/plan_adjust_dialog.dart`；契约见根目录 `PLAN_ADJUST_AI_DESIGN.md`。
 
-## 8.2 三类学习与临时学习（本次升级）
+## 8.2 事项、标签与计时
 
-- `TimeLog.relation` 记录计时发生时的执行关系：`scheduled`（今日原定）、`extra`（已有事项加学/超额）、`ad_hoc`（全新临时学习）、`legacy_unknown`（旧数据缺失）；与 `LogSource.timer/manual` 相互独立。原定学习按开始时的剩余额度写入 `quotaMinutes`，超出额度自动拆为 `extra` 记录（同一 `sessionId`，秒数不重复）；跨上海零点按日期拆分并重新判断新日期的执行关系。
-- `TimeLog.taskId` 可为空；临时学习使用 `ad_hoc_id` 指向 `PlannerData.adHocLearnings`（名称即可开始，可归档、可记录转换后的正式事项）。同名临时学习在未归档时可复用，不重复建实体。
-- 今日页的“开始学习”入口提供三类选择：今日安排、已有事项加学（支持搜索与课程/状态筛选，已完成事项以复习语义计时）、临时学习（填写名称即可，可选分类）。运行中只有一个计时会话，切换时先可靠保存原会话；退出登录、冲突选择、离线重试与失败恢复沿用既有保护。
-- 容量分解 `dayCapacityBreakdown` 区分 `capacity/actual/reserved/available/over`：实际投入每段只算一次，已执行部分不会重复扣减；原定达成只按原定事项封顶，加学与临时学习计入实际投入但不冒充原定完成。示例：净容量 120、数学原定 60 已学 30、摄影临时 20 → 实际 50、预留 30、新增可安排 40。
-- 临时学习可转为正式事项或关联已有事项：保留原日志与会话标识、真实起止和分钟数，只更新归属；临时实体归档并记录 `converted_task_id`，`relation` 保持 `ad_hoc` 以解释历史；重复确认、同步和重试不重复累计。
+- `TimeLog.relation` 记录计时发生时的执行关系：`scheduled`（今日原定）、`extra`（已有事项加学/超额）或 `legacy_unknown`（旧数据缺失）；与 `LogSource.timer/manual` 相互独立。原定学习按开始时的剩余额度写入 `quotaMinutes`，超出额度自动拆为 `extra` 记录；跨上海零点按日期拆分并重新判断新日期的执行关系。
+- `PlannerData.tags` 保存可选标签定义，`Task.tagIds` 保存多对多关联。事项可以没有标签，也可以同时拥有多个标签；标签筛选采用 OR 规则，标签不参与容量、排程或总量统计。历史 JSON 中的 `subjects`/`subject_id` 只在读取边界转换为标签。
+- 今日计划与事项目录均以事项为基本对象。事项可无标签或关联多个标签；事项目录筛选采用任一标签匹配。标签统计不重复计算事项或分钟。运行中只有一个计时会话；退出登录、冲突选择、离线重试与失败恢复沿用既有保护。
+- 容量分解 `dayCapacityBreakdown` 区分 `capacity/actual/reserved/available/over`：实际投入每段只算一次，已执行部分不会重复扣减；原定达成只按原定事项封顶，加学计入实际投入但不冒充原定完成。
 
 容量解析核心位于 `lib/features/planner/domain/capacity.dart`，与 `apps/api/src/capacity.ts` 共用 `packages/planner-engine/fixtures/capacity-cases.json` 的跨端用例；页面、排程、校验与统计必须调用同一解析结果，不各自计算。
 
@@ -386,13 +385,13 @@ await coordinator.recordDayMinutes(taskId, '2026-10-17', 90);
 
 ```text
 lib/features/
-  shell/app_shell.dart                 侧栏（≥900px）/ 底部导航、同步条、账号对话框
+  shell/app_shell.dart                 侧栏（≥900px）/ 底部导航、同步条（账号入口不再放在全局框架）
   dashboard/presentation/              今日：计划/已学/剩余、完成环、逐事项行、全部事项目录
   tasks/presentation/                  事项目录（合并进今日页下半部分）
   calendar/presentation/              日历（只读）：日/周/月计划与实学、月历容量与状态、顶部概览条
-  onboarding/presentation/             学习目标访谈 + 课程/事项确认 + 日期与容量确认
+  onboarding/presentation/             学习目标访谈 + 事项/可选标签确认 + 日期与容量确认
   adjust/presentation/                 调整：画像/进度/近期时间 + AI 一键调整预览与确认
-  settings/presentation/               设置：学习目标与规划、每日可用时间与排程边界、优先级、数据、同步；容量/周期只保存设置，重排到调整页
+  settings/presentation/               设置：学习目标与规划、每日可用时间、数据与同步、账号（登录身份/退出登录/注销）；容量/周期只保存设置，重排到调整页
   planner/domain/                      格式化、每日统计、事项编辑、进度指标、容量、最小计划
   planner/application/                 会话命令面、快照、学习目标设置控制器、续排
   planner/presentation/                共用对话框、续排对话框与页面状态外壳
@@ -400,7 +399,7 @@ lib/features/
 
 路由沿用 `/calendar`、`/adjust`、`/settings` 与 `/`；`/progress` 重定向到 `/calendar`（进度已并入日历栏目），`/tasks` 重定向到 `/`（事项已并入今日），`/onboarding` 保留；认证与备考资料守卫在 `app/router/app_router.dart`。
 
-有意的行为差异：本机不自动导入 Web 的整套预设课程与事项，新账号的课程/事项由学习目标访谈生成；本机初始化不预置固定事件，也不写入任何考试、院校或专业信息。
+新账号可直接创建事项，不必先创建标签。AI 规划也直接生成事项，标签为可选建议；历史课程会在 API 数据库迁移及旧 JSON 导入时转换为同名标签。
 
 ## 10. 测试与验收记录
 

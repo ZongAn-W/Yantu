@@ -15,7 +15,8 @@ import { PlanDraftSchema, ProfileSchema, ProfileUpdateSchema, SettleSchema } fro
 import { createPlanDraft } from "./ai.js";
 import { applyPlanAdjustment, PlanAdjustmentError, type PlanAdjustmentJobPreview, type PlanAdjustmentPreview } from "./plan-adjust.js";
 import { buildAdjustmentContext, generatePlanAdjustment, type PlanAdjustment } from "./plan-adjust-ai.js";
-import { confirmDraft, dateAdd, dateToday, generatePlan, getProfile, itemToJson, listCourses, listDailyPlans, listItems, saveProfile, settleDay, snapshot, undoRun, type ItemRow } from "./planner.js";
+import { confirmDraft, dateAdd, dateToday, generatePlan, getProfile, itemToJson, listDailyPlans, listItems, listTags, saveProfile, settleDay, snapshot, undoRun, type ItemRow } from "./planner.js";
+import { resolveTagIds } from "./tags.js";
 import { z } from "zod";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
@@ -84,7 +85,7 @@ app.post("/api/ai/plan-adjustments", adjustmentRateLimit, async (request, reply)
     if (state.revision !== expectedRevision)
       return reply.code(409).send({ error: "云端计划已更新，请先同步后再调整" });
     const document = state.data;
-    if (!document || (!document.tasks.length && !document.subjects.length))
+    if (!document || !document.tasks.length)
       return reply.code(409).send({ error: "当前还没有可调整的计划，请先完成学习目标与计划设置" });
     const today = dateToday();
     const context = buildAdjustmentContext(document, today);
@@ -165,11 +166,94 @@ app.post("/api/ai/plan-adjustments/:id/confirm", adjustmentRateLimit, async (req
   }
 });
 
-app.get("/api/courses", async (request, reply) => { const user = await requireUser(request, reply); return user ? { courses: await listCourses(user.id) } : undefined; });
+app.get("/api/tags", async (request, reply) => { const user = await requireUser(request, reply); return user ? { tags: await listTags(user.id) } : undefined; });
+app.post("/api/tags", async (request, reply) => {
+  const user = await requireUser(request, reply); if (!user) return;
+  const parsed = z.object({ name: z.string().trim().min(1).max(200), color: z.string().max(40).nullable().optional() }).safeParse(bodyObject(request.body));
+  if (!parsed.success) return reply.code(400).send({ error: "标签格式不正确" });
+  try {
+    const result = await transaction(async client => {
+      const ids = await resolveTagIds(client, user.id, [parsed.data.name]);
+      if (parsed.data.color !== undefined)
+        await client.query("update tags set color=$3,updated_at=now() where user_id=$1 and id=$2", [user.id, ids[0], parsed.data.color]);
+      return client.query("select id,name,color,created_at,updated_at from tags where user_id=$1 and id=$2", [user.id, ids[0]]);
+    });
+    return reply.code(201).send({ tag: result.rows[0] });
+  } catch (error) {
+    if ((error as { code?: string }).code === "23505") return reply.code(409).send({ error: "已存在同名标签" });
+    throw error;
+  }
+});
+app.patch("/api/tags/:id", async (request, reply) => {
+  const user = await requireUser(request, reply); if (!user) return;
+  const parsed = z.object({ name: z.string().trim().min(1).max(200).optional(), color: z.string().max(40).nullable().optional() }).safeParse(bodyObject(request.body));
+  if (!parsed.success || (!parsed.data.name && parsed.data.color === undefined)) return reply.code(400).send({ error: "标签格式不正确" });
+  const params = request.params as { id: string };
+  if (!z.string().uuid().safeParse(params.id).success) return reply.code(404).send({ error: "找不到标签" });
+  try {
+    const result = await query("update tags set name=coalesce($1,name),color=case when $2 then $3 else color end,updated_at=now() where id=$4 and user_id=$5 returning id,name,color,created_at,updated_at",
+      [parsed.data.name, parsed.data.color !== undefined, parsed.data.color ?? null, params.id, user.id]);
+    return result.rows[0] ? { tag: result.rows[0] } : reply.code(404).send({ error: "找不到标签" });
+  } catch (error) {
+    if ((error as { code?: string }).code === "23505") return reply.code(409).send({ error: "已存在同名标签" });
+    throw error;
+  }
+});
+app.delete("/api/tags/:id", async (request, reply) => {
+  const user = await requireUser(request, reply); if (!user) return;
+  const params = request.params as { id: string };
+  if (!z.string().uuid().safeParse(params.id).success) return reply.code(404).send({ error: "找不到标签" });
+  const result = await query("delete from tags where id=$1 and user_id=$2", [params.id, user.id]);
+  return result.rowCount ? { deleted: true, associations_removed: true } : reply.code(404).send({ error: "找不到标签" });
+});
 app.get("/api/items", async (request, reply) => { const user = await requireUser(request, reply); return user ? { items: await listItems(user.id) } : undefined; });
-app.post("/api/items", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const parsed = z.object({ course_id: z.string().uuid(), title: z.string().min(1).max(200), description: z.string().max(4000).default(""), completion_criteria: z.string().max(1000).default(""), estimated_minutes: z.number().int().min(30).max(100000), earliest_date: z.string().optional(), deadline: z.string(), priority: z.number().int().min(1).max(3).default(2) }).safeParse(bodyObject(request.body)); if (!parsed.success) return reply.code(400).send({ error: "事项格式不正确" }); const result = await query<ItemRow>("insert into items(user_id,course_id,title,description,completion_criteria,estimated_minutes,earliest_date,deadline,priority,confirmed) select $1,id,$3,$4,$5,$6,$7,$8,$9,false from courses where id=$2 and user_id=$1 returning id,course_id,title,description,completion_criteria,estimated_minutes,earliest_date::text,deadline::text,priority,status", [user.id, parsed.data.course_id, parsed.data.title, parsed.data.description, parsed.data.completion_criteria, parsed.data.estimated_minutes, parsed.data.earliest_date ?? null, parsed.data.deadline, parsed.data.priority]); if (!result.rows[0]) return reply.code(404).send({ error: "找不到课程" }); return reply.code(201).send({ item: itemToJson(result.rows[0]) }); });
+app.post("/api/items", async (request, reply) => {
+  const user = await requireUser(request, reply); if (!user) return;
+  const parsed = z.object({ tag_ids: z.array(z.string().uuid()).max(100).default([]), title: z.string().min(1).max(200), description: z.string().max(4000).default(""), completion_criteria: z.string().max(1000).default(""), estimated_minutes: z.number().int().min(30).max(100000), earliest_date: z.string().optional(), deadline: z.string(), priority: z.number().int().min(1).max(3).default(2) }).safeParse(bodyObject(request.body));
+  if (!parsed.success) return reply.code(400).send({ error: "事项格式不正确" });
+  try {
+    const result = await transaction(async client => {
+      const tagIds = [...new Set(parsed.data.tag_ids)];
+      if (tagIds.length) {
+        const owned = await client.query("select id from tags where user_id=$1 and id=any($2::uuid[])", [user.id, tagIds]);
+        if (owned.rowCount !== tagIds.length) throw Object.assign(new Error("标签不存在或不属于当前账号"), { statusCode: 404 });
+      }
+      const inserted = await client.query<ItemRow>("insert into items(user_id,title,description,completion_criteria,estimated_minutes,earliest_date,deadline,priority,confirmed) values($1,$2,$3,$4,$5,$6,$7,$8,false) returning id,title,description,completion_criteria,estimated_minutes,earliest_date::text,deadline::text,priority,status",
+        [user.id, parsed.data.title, parsed.data.description, parsed.data.completion_criteria, parsed.data.estimated_minutes, parsed.data.earliest_date ?? null, parsed.data.deadline, parsed.data.priority]);
+      for (const tagId of tagIds) await client.query("insert into task_tags(user_id,task_id,tag_id) values($1,$2,$3)", [user.id, inserted.rows[0].id, tagId]);
+      return inserted.rows[0];
+    });
+    return reply.code(201).send({ item: itemToJson(result) });
+  } catch (error) {
+    if ((error as { statusCode?: number }).statusCode === 404) return reply.code(404).send({ error: errorMessage(error) });
+    throw error;
+  }
+});
 app.get("/api/planner/snapshot", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const data = await snapshot(user.id); return data ? { data } : reply.code(404).send({ error: "请先完成学习目标设置和计划确认" }); });
-app.patch("/api/items/:id", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const parsed = z.object({ title: z.string().min(1).max(200).optional(), description: z.string().max(4000).optional(), completion_criteria: z.string().max(1000).optional(), priority: z.number().int().min(1).max(3).optional() }).safeParse(bodyObject(request.body)); if (!parsed.success) return reply.code(400).send({ error: "事项格式不正确" }); const params = request.params as { id: string }; const result = await query<ItemRow>("update items set title=coalesce($1,title),description=coalesce($2,description),completion_criteria=coalesce($3,completion_criteria),priority=coalesce($4,priority),updated_at=now() where id=$5 and user_id=$6 and confirmed=false returning id,course_id,title,description,completion_criteria,estimated_minutes,earliest_date::text,deadline::text,priority,status", [parsed.data.title, parsed.data.description, parsed.data.completion_criteria, parsed.data.priority, params.id, user.id]); if (!result.rows[0]) return reply.code(409).send({ error: "已确认事项不能直接修改，请先生成新的事项草案并确认" }); return { item: itemToJson(result.rows[0]) }; });
+app.patch("/api/items/:id", async (request, reply) => {
+  const user = await requireUser(request, reply); if (!user) return;
+  const parsed = z.object({ tag_ids: z.array(z.string().uuid()).max(100).optional(), title: z.string().min(1).max(200).optional(), description: z.string().max(4000).optional(), completion_criteria: z.string().max(1000).optional(), priority: z.number().int().min(1).max(3).optional() }).safeParse(bodyObject(request.body));
+  if (!parsed.success) return reply.code(400).send({ error: "事项格式不正确" });
+  const params = request.params as { id: string };
+  const result = await transaction(async client => {
+    if (parsed.data.tag_ids !== undefined) {
+      const tagIds = [...new Set(parsed.data.tag_ids)];
+      if (tagIds.length) {
+        const owned = await client.query("select id from tags where user_id=$1 and id=any($2::uuid[])", [user.id, tagIds]);
+        if (owned.rowCount !== tagIds.length) throw Object.assign(new Error("标签不存在或不属于当前账号"), { statusCode: 404 });
+      }
+      const task = await client.query("select 1 from items where id=$1 and user_id=$2 and confirmed=false", [params.id, user.id]);
+      if (!task.rowCount) return null;
+      await client.query("delete from task_tags where user_id=$1 and task_id=$2", [user.id, params.id]);
+      for (const tagId of tagIds) await client.query("insert into task_tags(user_id,task_id,tag_id) values($1,$2,$3)", [user.id, params.id, tagId]);
+    }
+    const updated = await client.query<ItemRow>("update items set title=coalesce($1,title),description=coalesce($2,description),completion_criteria=coalesce($3,completion_criteria),priority=coalesce($4,priority),updated_at=now() where id=$5 and user_id=$6 and confirmed=false returning id,title,description,completion_criteria,estimated_minutes,earliest_date::text,deadline::text,priority,status",
+      [parsed.data.title, parsed.data.description, parsed.data.completion_criteria, parsed.data.priority, params.id, user.id]);
+    return updated.rows[0] ?? null;
+  });
+  if (!result) return reply.code(409).send({ error: "已确认事项不能直接修改，请先生成新的事项草案并确认" });
+  return { item: itemToJson(result) };
+});
 app.delete("/api/items/:id", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const params = request.params as { id: string }; const result = await query("delete from items where id=$1 and user_id=$2", [params.id, user.id]); return result.rowCount ? { deleted: true } : reply.code(404).send({ error: "找不到事项" }); });
 
 app.get("/api/plans", async (request, reply) => { const user = await requireUser(request, reply); if (!user) return; const q = request.query as { from?: string; to?: string }; const from = q.from ?? dateToday(); const profile = await getProfile(user.id); const to = q.to ?? profile?.plan_end_date ?? profile?.target_date ?? dateAdd(from, 27); return { plans: await listDailyPlans(user.id, from, to) }; });

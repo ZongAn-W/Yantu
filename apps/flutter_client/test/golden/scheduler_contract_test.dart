@@ -33,12 +33,12 @@ void main() {
     return PlannerData.fromJson({
       'version': 1,
       'profile': profile,
-      'subjects': <Object?>[],
+      'tags': <Object?>[],
       'tasks': [
         for (final task in row['tasks'] as List? ?? const [])
           {
             'user_id': 'fixture-user',
-            'subject_id': 'course',
+            'tag_ids': <String>[],
             'title': (task as Map)['id'],
             'estimated_minutes': 30,
             'completed_minutes': 0,

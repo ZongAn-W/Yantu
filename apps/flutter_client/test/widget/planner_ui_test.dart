@@ -18,7 +18,6 @@ import 'package:sjtu_study_planner_client/features/planner/application/study_tim
 import 'package:sjtu_study_planner_client/features/planner/domain/planner_format.dart';
 import 'package:sjtu_study_planner_client/features/planner/domain/study_day.dart'
     as day_ops;
-import 'package:sjtu_study_planner_client/features/shell/app_shell.dart';
 import 'package:sjtu_study_planner_client/router/app_router.dart';
 import 'package:sjtu_study_planner_client/shared/models/planner_models.dart';
 
@@ -424,12 +423,12 @@ void main() {
     router.go('/tasks');
     await tester.pumpAndSettle(const Duration(seconds: 3));
 
-    final addButton = find.byKey(const Key('course-add-calculus'));
+    final addButton = find.byKey(const Key('new-task-button'));
     await tester.ensureVisible(addButton);
     await tester.tap(addButton);
     // The dialog animates in; a bounded settle avoids depending on its exact frames.
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('新建事项'), findsOneWidget);
+    expect(find.text('新建事项'), findsWidgets);
     expect(find.byKey(const Key('task-save-button')), findsOneWidget);
 
     // An empty title is refused.
@@ -465,77 +464,68 @@ void main() {
     );
   });
 
-  testWidgets('the new-course dialog creates an empty folder and syncs it', (
+  testWidgets('tag management creates and syncs an optional tag', (
     tester,
   ) async {
     final server = FakeSyncServer();
     final container = await signIn(tester, respond: server.respond);
     final coordinator = container.read(plannerSyncProvider);
-    final subjectsBefore = coordinator.data!.subjects.length;
+    final tagsBefore = coordinator.data!.tags.length;
     container.read(appRouterProvider).go('/tasks');
     await tester.pumpAndSettle();
 
-    final newCourse = find.byKey(const Key('new-course-button'));
-    await tester.ensureVisible(newCourse);
-    await tester.pumpAndSettle();
-    await tester.tap(newCourse);
+    await tester.tap(find.byKey(const Key('manage-tags-button')));
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('新建课程'), findsWidgets);
+    expect(find.text('标签管理'), findsOneWidget);
     await tester.enterText(
-      find.byKey(const Key('course-name-field')),
-      '概率论与数理统计',
+      find.byKey(const Key('new-managed-tag-field')),
+      '薄弱项',
     );
-    await tester.tap(find.byKey(const Key('course-save-button')));
+    await tester.tap(find.byTooltip('创建标签'));
     await waitUntil(
       tester,
-      () => coordinator.data!.subjects.length == subjectsBefore + 1,
-      reason: '创建课程后计划没有新增课程',
+      () => coordinator.data!.tags.length == tagsBefore + 1,
+      reason: '创建标签后计划没有新增标签',
     );
+    await tester.tap(find.text('完成'));
     await drainSync(tester, coordinator);
-    final created = coordinator.data!.subjects.last;
-    expect(created.name, '概率论与数理统计');
-    expect(
-      coordinator.data!.tasks.where((task) => task.subjectId == created.id),
-      isEmpty,
-    );
-    expect(server.pushCount, greaterThan(0), reason: '新增课程应上传到服务端');
-    expect(
-      server.document.subjects.any((subject) => subject.name == '概率论与数理统计'),
-      isTrue,
-    );
+    final created = coordinator.data!.tags.last;
+    expect(created.name, '薄弱项');
+    expect(server.pushCount, greaterThan(0), reason: '新增标签应上传到服务端');
+    expect(server.document.tags.any((tag) => tag.name == '薄弱项'), isTrue);
   });
 
   testWidgets(
-    'the task directory is name-only with independent desktop columns',
+    'the directory is flat and multi-tag filtering uses OR without duplicating tasks',
     (tester) async {
       tester.view.physicalSize = const Size(1440, 1000);
       tester.view.devicePixelRatio = 1;
       addTearDown(tester.view.reset);
       final base = todayFixture();
       final source = base.tasks.single;
-      final english = base.subjects.first.copyWith(
+      final english = base.tags.first.copyWith(
         id: 'english',
         name: '英语',
         color: '#1f7a5a',
       );
-      final dataStructures = base.subjects.first.copyWith(
+      final dataStructures = base.tags.first.copyWith(
         id: 'data-structure',
         name: '数据结构',
         color: '#c2761f',
       );
       final server = FakeSyncServer(
         plan: base.copyWith(
-          subjects: [base.subjects.first, english, dataStructures],
+          tags: [base.tags.first, english, dataStructures],
           tasks: [
             source,
             source.copyWith(
               id: 'task-english',
-              subjectId: english.id,
+              tagIds: [english.id],
               title: '真题精读',
             ),
             source.copyWith(
               id: 'task-ds',
-              subjectId: dataStructures.id,
+              tagIds: [dataStructures.id],
               title: '树与二叉树',
             ),
           ],
@@ -545,16 +535,28 @@ void main() {
       container.read(appRouterProvider).go('/tasks');
       await tester.pumpAndSettle();
 
-      expect(find.byKey(const Key('tasks-two-columns')), findsOneWidget);
+      expect(find.byKey(const Key('tasks-two-columns')), findsNothing);
       expect(find.byKey(const Key('tasks-single-column')), findsNothing);
       expect(find.text('真题精读'), findsOneWidget);
+      expect(find.text('树与二叉树'), findsOneWidget);
       expect(find.text(source.description!), findsNothing);
       expect(tester.takeException(), isNull);
 
+      await tester.tap(
+        find.byKey(Key('task-filter-tag-${base.tags.first.id}')),
+      );
+      await tester.tap(find.byKey(const Key('task-filter-tag-english')));
+      await tester.pumpAndSettle();
+      expect(find.text(source.title), findsWidgets);
+      expect(find.text('真题精读'), findsOneWidget);
+      expect(find.text('树与二叉树'), findsNothing);
+      expect(find.byKey(Key('task-menu-${source.id}')), findsOneWidget);
+      await tester.tap(find.byKey(const Key('clear-tag-filter-button')));
+      await tester.pumpAndSettle();
+      expect(find.text('树与二叉树'), findsOneWidget);
+
       tester.view.physicalSize = const Size(390, 844);
       await tester.pumpAndSettle();
-      expect(find.byKey(const Key('tasks-single-column')), findsOneWidget);
-      expect(find.byKey(const Key('tasks-two-columns')), findsNothing);
       expect(tester.takeException(), isNull, reason: '手机宽度下目录不能溢出');
     },
   );
@@ -706,7 +708,7 @@ void main() {
   });
 
   testWidgets(
-    'a failed timer checkpoint keeps the account dialog open with an error',
+    'a failed timer checkpoint keeps the settings sign-out with an error',
     (tester) async {
       tester.view.physicalSize = const Size(1280, 900);
       tester.view.devicePixelRatio = 1;
@@ -728,34 +730,56 @@ void main() {
       expect(find.text('暂停计时'), findsOneWidget);
 
       store.fail = true;
-      await tester.tap(find.byTooltip('账号与同步'));
+      container.read(appRouterProvider).go('/settings');
       await tester.pumpAndSettle();
-      expect(find.byType(AccountDialog), findsOneWidget);
+      expect(find.text('账号管理'), findsOneWidget);
 
-      await tester.tap(find.widgetWithText(FilledButton, '退出登录'));
+      final signOut = find.byKey(const ValueKey('settings-sign-out'));
+      expect(signOut, findsOneWidget);
+      await tester.tap(signOut);
       await tester.pumpAndSettle();
       expect(
-        find.byType(AccountDialog),
+        find.textContaining('无法保存本机计时记录'),
         findsOneWidget,
         reason: '计时保存失败时不能伪装成已成功退出',
       );
-      expect(find.textContaining('无法保存本机计时记录'), findsOneWidget);
       expect(container.read(authControllerProvider).user, isNotNull);
       expect(
         container.read(authControllerProvider).loading,
         isFalse,
         reason: '失败后按钮应恢复可用以便重试',
       );
+      expect(
+        tester
+            .widget<OutlinedButton>(
+              find.descendant(
+                of: signOut,
+                matching: find.byType(OutlinedButton),
+              ),
+            )
+            .onPressed,
+        isNotNull,
+        reason: '失败后退出登录按钮必须重新可用',
+      );
 
       store.fail = false;
-      await tester.tap(find.widgetWithText(FilledButton, '退出登录'));
+      await tester.tap(signOut);
       await tester.pumpAndSettle();
-      expect(find.byType(AccountDialog), findsNothing);
       expect(container.read(authControllerProvider).user, isNull);
+      expect(
+        container
+            .read(appRouterProvider)
+            .routeInformationProvider
+            .value
+            .uri
+            .path,
+        '/login',
+        reason: '退出成功后路由回到登录页',
+      );
     },
   );
 
-  testWidgets('the account dialog and sign-out controls fit a phone layout', (
+  testWidgets('the settings account controls fit a phone layout', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(390, 844);
@@ -763,17 +787,34 @@ void main() {
     addTearDown(tester.view.reset);
     await signIn(tester, respond: plannerResponder(revision: 1, today: true));
 
-    await tester.tap(find.byTooltip('账号与同步'));
+    await tester.tap(find.widgetWithText(NavigationDestination, '设置'));
     await tester.pumpAndSettle();
-    expect(find.byType(AccountDialog), findsOneWidget);
-    expect(tester.takeException(), isNull, reason: '手机宽度下账号对话框不能溢出');
-    final signOut = find.widgetWithText(FilledButton, '退出登录');
-    expect(signOut, findsOneWidget);
-    expect(tester.widget<FilledButton>(signOut).onPressed, isNotNull);
+    expect(find.text('账号管理'), findsOneWidget);
+    expect(tester.takeException(), isNull, reason: '手机宽度下设置页不能溢出');
 
-    await tester.tap(find.widgetWithText(TextButton, '关闭'));
-    await tester.pumpAndSettle();
-    expect(find.byType(AccountDialog), findsNothing);
+    // The global account avatar/dialog is gone: sync is the only AppBar action.
+    expect(find.byTooltip('账号与同步'), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byType(AppBar),
+        matching: find.byType(CircleAvatar),
+      ),
+      findsNothing,
+    );
+
+    final signOut = find.byKey(const ValueKey('settings-sign-out'));
+    expect(signOut, findsOneWidget);
+    expect(
+      tester
+          .widget<OutlinedButton>(
+            find.descendant(of: signOut, matching: find.byType(OutlinedButton)),
+          )
+          .onPressed,
+      isNotNull,
+    );
+    final deleteAccount = find.byKey(const ValueKey('settings-delete-account'));
+    expect(deleteAccount, findsOneWidget);
+    expect(tester.widget<OutlinedButton>(deleteAccount).onPressed, isNotNull);
     expect(tester.takeException(), isNull);
   });
 

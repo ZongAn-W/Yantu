@@ -10,7 +10,7 @@ class TaskDraft {
   const TaskDraft({
     required this.title,
     required this.description,
-    required this.subjectId,
+    this.tagIds = const [],
     required this.estimatedMinutes,
     required this.priority,
     required this.deadline,
@@ -22,7 +22,7 @@ class TaskDraft {
 
   final String title;
   final String description;
-  final String subjectId;
+  final List<String> tagIds;
   final int estimatedMinutes;
   final int priority;
   final String deadline;
@@ -36,7 +36,7 @@ class TaskDraft {
   TaskDraft copyWith({
     String? title,
     String? description,
-    String? subjectId,
+    List<String>? tagIds,
     int? estimatedMinutes,
     int? priority,
     String? deadline,
@@ -47,7 +47,7 @@ class TaskDraft {
   }) => TaskDraft(
     title: title ?? this.title,
     description: description ?? this.description,
-    subjectId: subjectId ?? this.subjectId,
+    tagIds: tagIds ?? this.tagIds,
     estimatedMinutes: estimatedMinutes ?? this.estimatedMinutes,
     priority: priority ?? this.priority,
     deadline: deadline ?? this.deadline,
@@ -60,7 +60,7 @@ class TaskDraft {
   static TaskDraft blank(PlannerData data, String today) => TaskDraft(
     title: '',
     description: '',
-    subjectId: data.subjects.isEmpty ? 'calculus' : data.subjects.first.id,
+    tagIds: const [],
     estimatedMinutes: 120,
     priority: 3,
     deadline: today,
@@ -72,7 +72,7 @@ class TaskDraft {
   static TaskDraft from(Task task) => TaskDraft(
     title: task.title,
     description: task.description ?? '',
-    subjectId: task.subjectId,
+    tagIds: task.tagIds,
     estimatedMinutes: task.estimatedMinutes,
     priority: task.priority,
     deadline: task.deadline,
@@ -85,8 +85,7 @@ class TaskDraft {
 
 /// Field-level validation shared by the form and the domain command.
 String? validateTaskDraft(TaskDraft draft, {int completedMinutes = 0}) {
-  if (draft.title.trim().isEmpty) return '请填写事项名称和课程';
-  if (draft.subjectId.trim().isEmpty) return '请填写事项名称和课程';
+  if (draft.title.trim().isEmpty) return '请填写事项名称';
   if (draft.deadline.compareTo(draft.earliestDate) < 0) {
     return '截止日期不能早于开始日期';
   }
@@ -97,8 +96,7 @@ String? validateTaskDraft(TaskDraft draft, {int completedMinutes = 0}) {
   return null;
 }
 
-/// Creates or updates a task. A brand new course name becomes a subject, matching
-/// the Web editor where the course field is free text with suggestions.
+/// Creates or updates one task. Tags are optional labels and never affect scheduling.
 PlannerData applyTaskDraft(
   PlannerData data,
   TaskDraft draft, {
@@ -106,7 +104,6 @@ PlannerData applyTaskDraft(
   required String updatedAt,
 }) {
   final title = draft.title.trim();
-  final subjectId = draft.subjectId.trim();
   final error = validateTaskDraft(
     draft,
     completedMinutes:
@@ -117,29 +114,19 @@ PlannerData applyTaskDraft(
         0,
   );
   if (error != null) throw StateError(error);
-  final known = data.subjects.any((subject) => subject.id == subjectId);
-  final subjects = known
-      ? data.subjects
-      : [
-          ...data.subjects,
-          Subject(
-            id: subjectId,
-            userId: data.profile.userId,
-            name: subjectId,
-            color: '#275e91',
-            priority: 2,
-          ),
-        ];
+  final validTagIds = draft.tagIds
+      .toSet()
+      .intersection(data.tags.map((tag) => tag.id).toSet())
+      .toList(growable: false);
   final existing = data.tasks.where((task) => task.id == taskId).firstOrNull;
   if (existing == null) {
     return data.copyWith(
-      subjects: subjects,
       tasks: [
         ...data.tasks,
         Task(
           id: taskId,
           userId: data.profile.userId,
-          subjectId: subjectId,
+          tagIds: validTagIds,
           title: title,
           description: draft.description.isEmpty ? null : draft.description,
           estimatedMinutes: draft.estimatedMinutes,
@@ -157,12 +144,11 @@ PlannerData applyTaskDraft(
     );
   }
   return data.copyWith(
-    subjects: subjects,
     tasks: [
       for (final task in data.tasks)
         task.id == taskId
             ? task.copyWith(
-                subjectId: subjectId,
+                tagIds: validTagIds,
                 title: title,
                 description: draft.description.isEmpty
                     ? null
@@ -326,12 +312,3 @@ ScheduleBlock _block({
   createdAt: timestamp,
   updatedAt: timestamp,
 );
-
-/// Resolves the raw subject id the editor should send for a typed course name.
-String resolveSubjectId(PlannerData data, String typed) {
-  final trimmed = typed.trim();
-  final match = data.subjects
-      .where((subject) => subject.name == trimmed)
-      .firstOrNull;
-  return match?.id ?? trimmed;
-}

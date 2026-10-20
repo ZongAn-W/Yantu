@@ -21,9 +21,9 @@ describe("planning metadata contracts and writer compatibility", () => {
   it("preserves structured workload and strategy through draft and sync parsing", () => {
     const planning = ItemPlanningSchema.parse({ workload, activity: { kind: "finite", starts_on: "2026-10-17",
       ends_on: "2027-12-21" } });
-    const item = ItemDraftSchema.parse({ id: "item", course_id: "course", title: "papers", estimated_minutes: 3780,
+    const item = ItemDraftSchema.parse({ id: "item", tag_names: ["高数"], title: "papers", estimated_minutes: 3780,
       deadline: "2027-12-21", planning });
-    const draft = PlanDraftSchema.parse({ courses: [{ id: "course", name: "course" }], items: [item], analysis_summary: "scope", planning: strategy() });
+    const draft = PlanDraftSchema.parse({ items: [item], analysis_summary: "scope", planning: strategy() });
     expect(draft.items[0].planning?.workload?.components[0]).toMatchObject({ quantity: 21, minutes_per_unit: 180 });
     expect(draft.planning?.detail_days).toBe(14);
     const data = fixture();
@@ -32,6 +32,13 @@ describe("planning metadata contracts and writer compatibility", () => {
     data.tasks[0].estimated_minutes = 3780;
     data.blocks[0].activity_instance_id = "item:2026-10-12:1";
     expect(PlannerDocumentSchema.parse(data).tasks[0].planning).toEqual(planning);
+  });
+  it("maps old course draft references to optional tag names at the input boundary", () => {
+    const draft = PlanDraftSchema.parse({ courses: [{ id: "old-id", name: "读书" }], items: [{ id: "item", course_id: "old-id",
+      title: "Read", estimated_minutes: 60, deadline: "2027-12-21" }], analysis_summary: "legacy", assumptions: [], warnings: [] });
+    expect(draft).not.toHaveProperty("courses");
+    expect(draft.items[0].tag_names).toEqual(["读书"]);
+    expect(draft.items[0]).not.toHaveProperty("course_id");
   });
   it("rejects dangling route references, missing dependencies and cycles", () => {
     const data = fixture();

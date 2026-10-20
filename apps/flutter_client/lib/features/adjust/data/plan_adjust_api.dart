@@ -114,7 +114,7 @@ class PlanAdjustUpdatedTask {
   const PlanAdjustUpdatedTask({
     required this.taskId,
     required this.title,
-    required this.subject,
+    required this.tagNames,
     required this.previousMinutes,
     required this.minutes,
     required this.reason,
@@ -123,7 +123,7 @@ class PlanAdjustUpdatedTask {
   factory PlanAdjustUpdatedTask.fromJson(JsonMap json) => PlanAdjustUpdatedTask(
     taskId: _asString(json, 'workload.updated_tasks[].task_id'),
     title: _asString(json, 'workload.updated_tasks[].title'),
-    subject: _asString(json, 'workload.updated_tasks[].subject'),
+    tagNames: _tagNames(json),
     previousMinutes: _asInt(json, 'workload.updated_tasks[].previous_minutes'),
     minutes: _asInt(json, 'workload.updated_tasks[].minutes'),
     reason: _asString(json, 'workload.updated_tasks[].reason'),
@@ -131,7 +131,7 @@ class PlanAdjustUpdatedTask {
 
   final String taskId;
   final String title;
-  final String subject;
+  final List<String> tagNames;
   final int previousMinutes;
   final int minutes;
   final String reason;
@@ -141,7 +141,7 @@ class PlanAdjustUpdatedTask {
 class PlanAdjustNewTask {
   const PlanAdjustNewTask({
     required this.title,
-    required this.subject,
+    required this.tagNames,
     required this.minutes,
     required this.deadlineKind,
     required this.deadline,
@@ -150,7 +150,7 @@ class PlanAdjustNewTask {
 
   factory PlanAdjustNewTask.fromJson(JsonMap json) => PlanAdjustNewTask(
     title: _asString(json, 'workload.new_tasks[].title'),
-    subject: _asString(json, 'workload.new_tasks[].subject'),
+    tagNames: _tagNames(json),
     minutes: _asInt(json, 'workload.new_tasks[].minutes'),
     deadlineKind: _asDateKind(json, 'workload.new_tasks[].deadline_kind'),
     deadline: _asNullableString(json, 'workload.new_tasks[].deadline'),
@@ -158,33 +158,11 @@ class PlanAdjustNewTask {
   );
 
   final String title;
-  final String subject;
+  final List<String> tagNames;
   final int minutes;
   final ItemDateKind deadlineKind;
   final String? deadline;
   final String reason;
-}
-
-/// 按课程汇总的工作量变化。
-class PlanAdjustSubjectTotal {
-  const PlanAdjustSubjectTotal({
-    required this.subjectId,
-    required this.name,
-    required this.previousMinutes,
-    required this.minutes,
-  });
-
-  factory PlanAdjustSubjectTotal.fromJson(JsonMap json) => PlanAdjustSubjectTotal(
-    subjectId: _asString(json, 'workload.subjects[].subject_id'),
-    name: _asString(json, 'workload.subjects[].name'),
-    previousMinutes: _asInt(json, 'workload.subjects[].previous_minutes'),
-    minutes: _asInt(json, 'workload.subjects[].minutes'),
-  );
-
-  final String subjectId;
-  final String name;
-  final int previousMinutes;
-  final int minutes;
 }
 
 /// 事项总工作量与新增事项的变化。
@@ -192,7 +170,6 @@ class PlanAdjustWorkload {
   const PlanAdjustWorkload({
     required this.updatedTasks,
     required this.newTasks,
-    required this.subjects,
   });
 
   factory PlanAdjustWorkload.fromJson(JsonMap json) => PlanAdjustWorkload(
@@ -204,15 +181,19 @@ class PlanAdjustWorkload {
       for (final row in _asMapList(json, 'workload.new_tasks'))
         PlanAdjustNewTask.fromJson(row),
     ],
-    subjects: [
-      for (final row in _asMapList(json, 'workload.subjects'))
-        PlanAdjustSubjectTotal.fromJson(row),
-    ],
   );
 
   final List<PlanAdjustUpdatedTask> updatedTasks;
   final List<PlanAdjustNewTask> newTasks;
-  final List<PlanAdjustSubjectTotal> subjects;
+}
+
+List<String> _tagNames(JsonMap json) {
+  final names = json['tag_names'];
+  if (names is List) return names.whereType<String>().toList(growable: false);
+  final legacy = json['subject'];
+  return legacy is String && legacy.trim().isNotEmpty
+      ? [legacy.trim()]
+      : const [];
 }
 
 /// 重新排程的影响：受保护的旧安排、被释放的安排、新排入的安排与仍未安排量。
@@ -296,12 +277,8 @@ class PlanAdjustPreview {
     intensity: PlanAdjustIntensity.fromJson(
       _asMap(json['intensity'], 'intensity'),
     ),
-    workload: PlanAdjustWorkload.fromJson(
-      _asMap(json['workload'], 'workload'),
-    ),
-    schedule: PlanAdjustSchedule.fromJson(
-      _asMap(json['schedule'], 'schedule'),
-    ),
+    workload: PlanAdjustWorkload.fromJson(_asMap(json['workload'], 'workload')),
+    schedule: PlanAdjustSchedule.fromJson(_asMap(json['schedule'], 'schedule')),
     deadlineRisks: [
       for (final row in _asMapList(json, 'deadline_risks'))
         PlanAdjustDeadlineRisk.fromJson(row),

@@ -12,8 +12,7 @@ function fixture(): OnboardingSession {
   return { ...newSession(), stage: "schedule", constraints_confirmed: true, start_date: "2026-10-17", end_date: "2026-11-13",
     profile: ProfileSchema.parse({ goal_type: "skill", goal_text: "用Python处理CSV", weekly_minutes: week,
       plan_start_date: "2026-10-17", plan_end_date: "2026-11-13" }),
-    courses: [{ id: "python", name: "Python", description: "", priority: 2 }],
-    items: [{ id: "project", course_id: "python", title: "CSV数据清理成果", description: "清理样例数据", completion_criteria: "脚本运行通过",
+    items: [{ id: "project", tag_names: ["Python"], title: "CSV数据清理成果", description: "清理样例数据", completion_criteria: "脚本运行通过",
       estimated_minutes: 120, earliest_date: "2026-10-17", deadline: "2026-11-13", deadline_kind: "plan_end", priority: 2,
       planning: { workload: { components: [{ id: "build", label: "实现", quantity: 2, unit: "功能", minutes_per_unit: 60 }],
         source: "初始估算", confidence: "low", calibration: "比较三次实践后的内容速度" }, activity: { kind: "finite" }, dependencies: [] } }],
@@ -24,11 +23,10 @@ function existingFixture() {
   const source = fixture(), current = buildPlanningDocument(source).document;
   const task = current.tasks[0];
   const session = structuredClone(source);
-  session.courses = [{ ...source.courses[0], id: task.subject_id }];
-  session.items = [{ ...source.items[0], id: task.id, course_id: task.subject_id,
+  session.items = [{ ...source.items[0], id: task.id, tag_names: task.tag_ids.map(id => current.tags.find(tag => tag.id === id)!.name),
     description: task.description ?? "", completion_criteria: "" }];
   session.planning!.route[0].item_ids = [task.id];
-  session.current_plan = { courses: current.subjects, items: current.tasks };
+  session.current_plan = { tags: current.tags, items: current.tasks };
   return { session, current };
 }
 beforeEach(() => { vi.useFakeTimers(); vi.setSystemTime(new Date("2026-10-17T04:00:00Z")); settings.aiApiKey = ""; });
@@ -56,7 +54,7 @@ describe("learning budget and strategy quality", () => {
     const block = trial.blocks[0];
     trial.blocks = [{ ...block, duration_minutes: 600, date: "2026-10-18" }];
     expect(checkScheduledPlan(trial, "2026-10-17", "2026-10-17").map(issue => issue.code))
-      .toEqual(expect.arrayContaining(["SCHEDULE_BOUNDARY", "REST_DAY", "DAILY_CAPACITY", "COURSE_CAPACITY"]));
+      .toEqual(expect.arrayContaining(["SCHEDULE_BOUNDARY", "REST_DAY", "DAILY_CAPACITY"]));
   });
 
   it("does not let generated content confirmation stand in for a user's execution feedback", () => {
@@ -247,8 +245,7 @@ describe("learning budget and strategy quality", () => {
   it("checks the actual reused identity when generated draft ids change", () => {
     const { session, current } = existingFixture();
     current.tasks[0].deadline_kind = "deadline";
-    session.courses[0].id = "replacement-course-id";
-    session.items[0] = { ...session.items[0], id: "replacement-draft-id", course_id: session.courses[0].id,
+    session.items[0] = { ...session.items[0], id: "replacement-draft-id",
       deadline_kind: "deadline", deadline: "2026-12-31" };
     session.planning!.route[0].item_ids = [session.items[0].id];
     const result = evaluatePlanning(session, current);
@@ -266,8 +263,7 @@ function fullFixture(days: number, profileExtra: Record<string, unknown> = {}) {
   return { ...newSession(), stage: "schedule" as const, constraints_confirmed: true, start_date: start, end_date: end,
     profile: ProfileSchema.parse({ goal_type: "skill", goal_text: "全周期学习", weekly_minutes: fullWeek,
       plan_start_date: start, plan_end_date: end, ...profileExtra }),
-    courses: [{ id: "course", name: "课程", description: "", priority: 2 }],
-    items: [{ id: "long", course_id: "course", title: "长期内容", description: "", completion_criteria: "",
+    items: [{ id: "long", tag_names: [], title: "长期内容", description: "", completion_criteria: "",
       estimated_minutes: Math.min(100000, days * 120), earliest_date: start, deadline: end,
       deadline_kind: "plan_end" as const, priority: 2 }],
     planning: newPlanning() };

@@ -17,12 +17,8 @@ class CalendarOverview extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    var estimated = 0;
-    var completed = 0;
-    for (final progress in metrics.subjectProgress) {
-      estimated += progress.estimated;
-      completed += progress.completed;
-    }
+    final estimated = metrics.overallMinutes;
+    final completed = metrics.completedMinutes;
     final contentRate = estimated == 0 ? null : completed / estimated;
     final forecast = metrics.forecast;
     final horizon = metrics.targetDate.isNotEmpty
@@ -41,16 +37,14 @@ class CalendarOverview extends StatelessWidget {
         label: '本期剩余',
         value: duration(metrics.remainingMinutes),
         subKey: const ValueKey('calendar-overview-forecast'),
-        sub: forecast == null
-            ? '记录学习后可估算完成日期'
-            : '预计完成 $forecast · $horizon',
+        sub: forecast == null ? '记录学习后可估算完成日期' : '预计完成 $forecast · $horizon',
       ),
       _OverviewStat(
-        label: '课程内容完成',
+        label: '事项完成',
         value: contentRate == null ? '—' : '${(contentRate * 100).round()}%',
         subKey: const ValueKey('calendar-overview-content'),
         sub: estimated == 0
-            ? '还没有课程事项'
+            ? '还没有事项'
             : '已完成 ${duration(completed)} / 计划 ${duration(estimated)}',
       ),
     ];
@@ -114,7 +108,10 @@ class _OverviewStat extends StatelessWidget {
     crossAxisAlignment: CrossAxisAlignment.start,
     mainAxisSize: MainAxisSize.min,
     children: [
-      Text(label, style: const TextStyle(color: PlannerColors.muted, fontSize: 11)),
+      Text(
+        label,
+        style: const TextStyle(color: PlannerColors.muted, fontSize: 11),
+      ),
       const SizedBox(height: 2),
       Text(value, style: tabularFigures.copyWith(fontSize: 19)),
       const SizedBox(height: 2),

@@ -133,7 +133,7 @@ void main() {
 
       expect(find.text('不白学助手'), findsOneWidget);
       expect(find.text('第 6 问'), findsOneWidget);
-      expect(find.text('根据当前回答生成科目'), findsOneWidget);
+      expect(find.text('根据当前回答生成事项'), findsOneWidget);
       expect(find.text('信息已记录'), findsNothing);
       expect(find.text('继续完善信息'), findsNothing);
     });
@@ -298,7 +298,7 @@ void main() {
           },
         );
 
-        await tester.tap(find.text('根据当前回答生成科目'));
+        await tester.tap(find.text('根据当前回答生成事项'));
         await tester.pump();
         await tester.pump(const Duration(milliseconds: 100));
         expect(find.text(_typingText), findsOneWidget);
@@ -306,7 +306,7 @@ void main() {
         expect(
           tester
               .widget<OutlinedButton>(
-                find.widgetWithText(OutlinedButton, '根据当前回答生成科目'),
+                find.widgetWithText(OutlinedButton, '根据当前回答生成事项'),
               )
               .onPressed,
           isNull,
@@ -316,7 +316,7 @@ void main() {
         await tester.pumpAndSettle();
         expect(find.text(_typingText), findsNothing);
         expect(find.text('生成失败，请重试'), findsOneWidget);
-        expect(find.text('根据当前回答生成科目'), findsOneWidget);
+        expect(find.text('根据当前回答生成事项'), findsOneWidget);
       },
     );
 
@@ -337,7 +337,7 @@ void main() {
         },
       );
 
-      await tester.tap(find.text('根据当前回答生成科目'));
+      await tester.tap(find.text('根据当前回答生成事项'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
       expect(find.text(_typingText), findsOneWidget);
@@ -349,12 +349,12 @@ void main() {
     });
   });
 
-  group('生成科目入口', () {
+  group('生成事项入口', () {
     testWidgets('generation is hidden before five answers', (tester) async {
       await _mount(tester, onboardingFixture(answers: 4));
 
       expect(find.text('第 5 问'), findsOneWidget);
-      expect(find.text('根据当前回答生成科目'), findsNothing);
+      expect(find.text('根据当前回答生成事项'), findsNothing);
     });
 
     testWidgets('five answers keep the interview going with generation', (
@@ -364,7 +364,7 @@ void main() {
 
       expect(find.text('第 6 问'), findsOneWidget);
       expect(find.textContaining('已答 5 问'), findsOneWidget);
-      expect(find.text('根据当前回答生成科目'), findsOneWidget);
+      expect(find.text('根据当前回答生成事项'), findsOneWidget);
       expect(find.text('发送'), findsOneWidget);
     });
 
@@ -378,7 +378,7 @@ void main() {
         respond: (request) async {
           if (request.method == 'POST') {
             return jsonResponse({
-              'session': onboardingFixture(stage: 'courses', answers: 5),
+              'session': onboardingFixture(stage: 'items', answers: 5),
             });
           }
           return jsonResponse({'session': session});
@@ -386,14 +386,14 @@ void main() {
       );
 
       await tester.enterText(_answerInput, '这条回答还没有提交');
-      await tester.tap(find.text('根据当前回答生成科目'));
+      await tester.tap(find.text('根据当前回答生成事项'));
       await tester.pumpAndSettle();
 
       final action = _lastAction(adapter)!;
-      expect(action['type'], 'generate_courses');
+      expect(action['type'], 'generate_items');
       expect(action.containsKey('answer'), isFalse);
       expect(find.text('请先填写回答'), findsNothing);
-      expect(find.text('确认你的课程'), findsOneWidget);
+      expect(find.text('确认学习事项'), findsOneWidget);
     });
 
     testWidgets('fifty answers reach the limit and keep only generation', (
@@ -403,7 +403,7 @@ void main() {
 
       expect(find.text('访谈已达到上限'), findsOneWidget);
       expect(find.text('已达到 50 题上限'), findsOneWidget);
-      expect(find.text('根据当前回答生成科目'), findsOneWidget);
+      expect(find.text('根据当前回答生成事项'), findsOneWidget);
       expect(find.text('发送'), findsNothing);
       expect(_answerInput, findsNothing);
       expect(find.byTooltip('语音输入'), findsNothing);

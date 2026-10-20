@@ -343,7 +343,7 @@ class _InterviewChatViewState extends State<InterviewChatView> {
     if (reachedLimit) {
       messages
         ..add(_systemText('已达到 $maxInterviewAnswers 题上限'))
-        ..add(_systemText('请根据当前回答生成科目，或重新访谈后再继续补充。'));
+        ..add(_systemText('请根据当前回答生成学习事项，或重新访谈后再继续补充。'));
     } else {
       messages.add(
         _receivedBubble(
@@ -451,7 +451,7 @@ class _InterviewChatViewState extends State<InterviewChatView> {
                 child: OutlinedButton.icon(
                   onPressed: widget.busy ? null : _generate,
                   icon: const Icon(Icons.checklist_rtl, size: 18),
-                  label: const Text('根据当前回答生成科目'),
+                  label: const Text('根据当前回答生成事项'),
                 ),
               ),
             ),
@@ -461,7 +461,7 @@ class _InterviewChatViewState extends State<InterviewChatView> {
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 8),
               child: Text(
-                '已达到 $maxInterviewAnswers 题上限，请先生成科目或重新访谈。',
+                '已达到 $maxInterviewAnswers 题上限，请先生成事项或重新访谈。',
                 textAlign: TextAlign.center,
                 style: TextStyle(color: PlannerColors.muted),
               ),

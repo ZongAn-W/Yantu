@@ -589,7 +589,7 @@ as int,
 /// @nodoc
 mixin _$ItemDraft {
 
- String get id; String get courseId; String get title; String get description; String get completionCriteria; int get estimatedMinutes; String? get earliestDate; String get deadline; ItemDateKind get deadlineKind; int get priority; JsonMap? get planning;
+ String get id;@JsonKey(name: 'tag_names') List<String> get tagNames; String get title; String get description; String get completionCriteria; int get estimatedMinutes; String? get earliestDate; String get deadline; ItemDateKind get deadlineKind; int get priority; JsonMap? get planning;
 /// Create a copy of ItemDraft
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -602,16 +602,16 @@ $ItemDraftCopyWith<ItemDraft> get copyWith => _$ItemDraftCopyWithImpl<ItemDraft>
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is ItemDraft&&(identical(other.id, id) || other.id == id)&&(identical(other.courseId, courseId) || other.courseId == courseId)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.completionCriteria, completionCriteria) || other.completionCriteria == completionCriteria)&&(identical(other.estimatedMinutes, estimatedMinutes) || other.estimatedMinutes == estimatedMinutes)&&(identical(other.earliestDate, earliestDate) || other.earliestDate == earliestDate)&&(identical(other.deadline, deadline) || other.deadline == deadline)&&(identical(other.deadlineKind, deadlineKind) || other.deadlineKind == deadlineKind)&&(identical(other.priority, priority) || other.priority == priority)&&const DeepCollectionEquality().equals(other.planning, planning));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ItemDraft&&(identical(other.id, id) || other.id == id)&&const DeepCollectionEquality().equals(other.tagNames, tagNames)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.completionCriteria, completionCriteria) || other.completionCriteria == completionCriteria)&&(identical(other.estimatedMinutes, estimatedMinutes) || other.estimatedMinutes == estimatedMinutes)&&(identical(other.earliestDate, earliestDate) || other.earliestDate == earliestDate)&&(identical(other.deadline, deadline) || other.deadline == deadline)&&(identical(other.deadlineKind, deadlineKind) || other.deadlineKind == deadlineKind)&&(identical(other.priority, priority) || other.priority == priority)&&const DeepCollectionEquality().equals(other.planning, planning));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,courseId,title,description,completionCriteria,estimatedMinutes,earliestDate,deadline,deadlineKind,priority,const DeepCollectionEquality().hash(planning));
+int get hashCode => Object.hash(runtimeType,id,const DeepCollectionEquality().hash(tagNames),title,description,completionCriteria,estimatedMinutes,earliestDate,deadline,deadlineKind,priority,const DeepCollectionEquality().hash(planning));
 
 @override
 String toString() {
-  return 'ItemDraft(id: $id, courseId: $courseId, title: $title, description: $description, completionCriteria: $completionCriteria, estimatedMinutes: $estimatedMinutes, earliestDate: $earliestDate, deadline: $deadline, deadlineKind: $deadlineKind, priority: $priority, planning: $planning)';
+  return 'ItemDraft(id: $id, tagNames: $tagNames, title: $title, description: $description, completionCriteria: $completionCriteria, estimatedMinutes: $estimatedMinutes, earliestDate: $earliestDate, deadline: $deadline, deadlineKind: $deadlineKind, priority: $priority, planning: $planning)';
 }
 
 
@@ -622,7 +622,7 @@ abstract mixin class $ItemDraftCopyWith<$Res>  {
   factory $ItemDraftCopyWith(ItemDraft value, $Res Function(ItemDraft) _then) = _$ItemDraftCopyWithImpl;
 @useResult
 $Res call({
- String id, String courseId, String title, String description, String completionCriteria, int estimatedMinutes, String? earliestDate, String deadline, ItemDateKind deadlineKind, int priority, JsonMap? planning
+ String id,@JsonKey(name: 'tag_names') List<String> tagNames, String title, String description, String completionCriteria, int estimatedMinutes, String? earliestDate, String deadline, ItemDateKind deadlineKind, int priority, JsonMap? planning
 });
 
 
@@ -639,11 +639,11 @@ class _$ItemDraftCopyWithImpl<$Res>
 
 /// Create a copy of ItemDraft
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? courseId = null,Object? title = null,Object? description = null,Object? completionCriteria = null,Object? estimatedMinutes = null,Object? earliestDate = freezed,Object? deadline = null,Object? deadlineKind = null,Object? priority = null,Object? planning = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? tagNames = null,Object? title = null,Object? description = null,Object? completionCriteria = null,Object? estimatedMinutes = null,Object? earliestDate = freezed,Object? deadline = null,Object? deadlineKind = null,Object? priority = null,Object? planning = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
-as String,courseId: null == courseId ? _self.courseId : courseId // ignore: cast_nullable_to_non_nullable
-as String,title: null == title ? _self.title : title // ignore: cast_nullable_to_non_nullable
+as String,tagNames: null == tagNames ? _self.tagNames : tagNames // ignore: cast_nullable_to_non_nullable
+as List<String>,title: null == title ? _self.title : title // ignore: cast_nullable_to_non_nullable
 as String,description: null == description ? _self.description : description // ignore: cast_nullable_to_non_nullable
 as String,completionCriteria: null == completionCriteria ? _self.completionCriteria : completionCriteria // ignore: cast_nullable_to_non_nullable
 as String,estimatedMinutes: null == estimatedMinutes ? _self.estimatedMinutes : estimatedMinutes // ignore: cast_nullable_to_non_nullable
@@ -737,10 +737,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String courseId,  String title,  String description,  String completionCriteria,  int estimatedMinutes,  String? earliestDate,  String deadline,  ItemDateKind deadlineKind,  int priority,  JsonMap? planning)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id, @JsonKey(name: 'tag_names')  List<String> tagNames,  String title,  String description,  String completionCriteria,  int estimatedMinutes,  String? earliestDate,  String deadline,  ItemDateKind deadlineKind,  int priority,  JsonMap? planning)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _ItemDraft() when $default != null:
-return $default(_that.id,_that.courseId,_that.title,_that.description,_that.completionCriteria,_that.estimatedMinutes,_that.earliestDate,_that.deadline,_that.deadlineKind,_that.priority,_that.planning);case _:
+return $default(_that.id,_that.tagNames,_that.title,_that.description,_that.completionCriteria,_that.estimatedMinutes,_that.earliestDate,_that.deadline,_that.deadlineKind,_that.priority,_that.planning);case _:
   return orElse();
 
 }
@@ -758,10 +758,10 @@ return $default(_that.id,_that.courseId,_that.title,_that.description,_that.comp
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String courseId,  String title,  String description,  String completionCriteria,  int estimatedMinutes,  String? earliestDate,  String deadline,  ItemDateKind deadlineKind,  int priority,  JsonMap? planning)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id, @JsonKey(name: 'tag_names')  List<String> tagNames,  String title,  String description,  String completionCriteria,  int estimatedMinutes,  String? earliestDate,  String deadline,  ItemDateKind deadlineKind,  int priority,  JsonMap? planning)  $default,) {final _that = this;
 switch (_that) {
 case _ItemDraft():
-return $default(_that.id,_that.courseId,_that.title,_that.description,_that.completionCriteria,_that.estimatedMinutes,_that.earliestDate,_that.deadline,_that.deadlineKind,_that.priority,_that.planning);case _:
+return $default(_that.id,_that.tagNames,_that.title,_that.description,_that.completionCriteria,_that.estimatedMinutes,_that.earliestDate,_that.deadline,_that.deadlineKind,_that.priority,_that.planning);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -778,10 +778,10 @@ return $default(_that.id,_that.courseId,_that.title,_that.description,_that.comp
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String courseId,  String title,  String description,  String completionCriteria,  int estimatedMinutes,  String? earliestDate,  String deadline,  ItemDateKind deadlineKind,  int priority,  JsonMap? planning)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id, @JsonKey(name: 'tag_names')  List<String> tagNames,  String title,  String description,  String completionCriteria,  int estimatedMinutes,  String? earliestDate,  String deadline,  ItemDateKind deadlineKind,  int priority,  JsonMap? planning)?  $default,) {final _that = this;
 switch (_that) {
 case _ItemDraft() when $default != null:
-return $default(_that.id,_that.courseId,_that.title,_that.description,_that.completionCriteria,_that.estimatedMinutes,_that.earliestDate,_that.deadline,_that.deadlineKind,_that.priority,_that.planning);case _:
+return $default(_that.id,_that.tagNames,_that.title,_that.description,_that.completionCriteria,_that.estimatedMinutes,_that.earliestDate,_that.deadline,_that.deadlineKind,_that.priority,_that.planning);case _:
   return null;
 
 }
@@ -793,11 +793,17 @@ return $default(_that.id,_that.courseId,_that.title,_that.description,_that.comp
 @JsonSerializable()
 
 class _ItemDraft implements ItemDraft {
-  const _ItemDraft({required this.id, required this.courseId, required this.title, this.description = '', this.completionCriteria = '', required this.estimatedMinutes, this.earliestDate, required this.deadline, this.deadlineKind = ItemDateKind.deadline, this.priority = 2, final  JsonMap? planning}): _planning = planning;
+  const _ItemDraft({required this.id, @JsonKey(name: 'tag_names') final  List<String> tagNames = const [], required this.title, this.description = '', this.completionCriteria = '', required this.estimatedMinutes, this.earliestDate, required this.deadline, this.deadlineKind = ItemDateKind.deadline, this.priority = 2, final  JsonMap? planning}): _tagNames = tagNames,_planning = planning;
   factory _ItemDraft.fromJson(Map<String, dynamic> json) => _$ItemDraftFromJson(json);
 
 @override final  String id;
-@override final  String courseId;
+ final  List<String> _tagNames;
+@override@JsonKey(name: 'tag_names') List<String> get tagNames {
+  if (_tagNames is EqualUnmodifiableListView) return _tagNames;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_tagNames);
+}
+
 @override final  String title;
 @override@JsonKey() final  String description;
 @override@JsonKey() final  String completionCriteria;
@@ -829,16 +835,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ItemDraft&&(identical(other.id, id) || other.id == id)&&(identical(other.courseId, courseId) || other.courseId == courseId)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.completionCriteria, completionCriteria) || other.completionCriteria == completionCriteria)&&(identical(other.estimatedMinutes, estimatedMinutes) || other.estimatedMinutes == estimatedMinutes)&&(identical(other.earliestDate, earliestDate) || other.earliestDate == earliestDate)&&(identical(other.deadline, deadline) || other.deadline == deadline)&&(identical(other.deadlineKind, deadlineKind) || other.deadlineKind == deadlineKind)&&(identical(other.priority, priority) || other.priority == priority)&&const DeepCollectionEquality().equals(other._planning, _planning));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ItemDraft&&(identical(other.id, id) || other.id == id)&&const DeepCollectionEquality().equals(other._tagNames, _tagNames)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.completionCriteria, completionCriteria) || other.completionCriteria == completionCriteria)&&(identical(other.estimatedMinutes, estimatedMinutes) || other.estimatedMinutes == estimatedMinutes)&&(identical(other.earliestDate, earliestDate) || other.earliestDate == earliestDate)&&(identical(other.deadline, deadline) || other.deadline == deadline)&&(identical(other.deadlineKind, deadlineKind) || other.deadlineKind == deadlineKind)&&(identical(other.priority, priority) || other.priority == priority)&&const DeepCollectionEquality().equals(other._planning, _planning));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,courseId,title,description,completionCriteria,estimatedMinutes,earliestDate,deadline,deadlineKind,priority,const DeepCollectionEquality().hash(_planning));
+int get hashCode => Object.hash(runtimeType,id,const DeepCollectionEquality().hash(_tagNames),title,description,completionCriteria,estimatedMinutes,earliestDate,deadline,deadlineKind,priority,const DeepCollectionEquality().hash(_planning));
 
 @override
 String toString() {
-  return 'ItemDraft(id: $id, courseId: $courseId, title: $title, description: $description, completionCriteria: $completionCriteria, estimatedMinutes: $estimatedMinutes, earliestDate: $earliestDate, deadline: $deadline, deadlineKind: $deadlineKind, priority: $priority, planning: $planning)';
+  return 'ItemDraft(id: $id, tagNames: $tagNames, title: $title, description: $description, completionCriteria: $completionCriteria, estimatedMinutes: $estimatedMinutes, earliestDate: $earliestDate, deadline: $deadline, deadlineKind: $deadlineKind, priority: $priority, planning: $planning)';
 }
 
 
@@ -849,7 +855,7 @@ abstract mixin class _$ItemDraftCopyWith<$Res> implements $ItemDraftCopyWith<$Re
   factory _$ItemDraftCopyWith(_ItemDraft value, $Res Function(_ItemDraft) _then) = __$ItemDraftCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String courseId, String title, String description, String completionCriteria, int estimatedMinutes, String? earliestDate, String deadline, ItemDateKind deadlineKind, int priority, JsonMap? planning
+ String id,@JsonKey(name: 'tag_names') List<String> tagNames, String title, String description, String completionCriteria, int estimatedMinutes, String? earliestDate, String deadline, ItemDateKind deadlineKind, int priority, JsonMap? planning
 });
 
 
@@ -866,11 +872,11 @@ class __$ItemDraftCopyWithImpl<$Res>
 
 /// Create a copy of ItemDraft
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? courseId = null,Object? title = null,Object? description = null,Object? completionCriteria = null,Object? estimatedMinutes = null,Object? earliestDate = freezed,Object? deadline = null,Object? deadlineKind = null,Object? priority = null,Object? planning = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? tagNames = null,Object? title = null,Object? description = null,Object? completionCriteria = null,Object? estimatedMinutes = null,Object? earliestDate = freezed,Object? deadline = null,Object? deadlineKind = null,Object? priority = null,Object? planning = freezed,}) {
   return _then(_ItemDraft(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
-as String,courseId: null == courseId ? _self.courseId : courseId // ignore: cast_nullable_to_non_nullable
-as String,title: null == title ? _self.title : title // ignore: cast_nullable_to_non_nullable
+as String,tagNames: null == tagNames ? _self._tagNames : tagNames // ignore: cast_nullable_to_non_nullable
+as List<String>,title: null == title ? _self.title : title // ignore: cast_nullable_to_non_nullable
 as String,description: null == description ? _self.description : description // ignore: cast_nullable_to_non_nullable
 as String,completionCriteria: null == completionCriteria ? _self.completionCriteria : completionCriteria // ignore: cast_nullable_to_non_nullable
 as String,estimatedMinutes: null == estimatedMinutes ? _self.estimatedMinutes : estimatedMinutes // ignore: cast_nullable_to_non_nullable
@@ -890,7 +896,7 @@ as JsonMap?,
 /// @nodoc
 mixin _$PlanDraft {
 
- List<CourseDraft> get courses; List<ItemDraft> get items; String get analysisSummary; List<String> get assumptions; List<String> get warnings; JsonMap? get planning;
+ List<ItemDraft> get items; String get analysisSummary; List<String> get assumptions; List<String> get warnings; JsonMap? get planning;
 /// Create a copy of PlanDraft
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -903,16 +909,16 @@ $PlanDraftCopyWith<PlanDraft> get copyWith => _$PlanDraftCopyWithImpl<PlanDraft>
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlanDraft&&const DeepCollectionEquality().equals(other.courses, courses)&&const DeepCollectionEquality().equals(other.items, items)&&(identical(other.analysisSummary, analysisSummary) || other.analysisSummary == analysisSummary)&&const DeepCollectionEquality().equals(other.assumptions, assumptions)&&const DeepCollectionEquality().equals(other.warnings, warnings)&&const DeepCollectionEquality().equals(other.planning, planning));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is PlanDraft&&const DeepCollectionEquality().equals(other.items, items)&&(identical(other.analysisSummary, analysisSummary) || other.analysisSummary == analysisSummary)&&const DeepCollectionEquality().equals(other.assumptions, assumptions)&&const DeepCollectionEquality().equals(other.warnings, warnings)&&const DeepCollectionEquality().equals(other.planning, planning));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(courses),const DeepCollectionEquality().hash(items),analysisSummary,const DeepCollectionEquality().hash(assumptions),const DeepCollectionEquality().hash(warnings),const DeepCollectionEquality().hash(planning));
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(items),analysisSummary,const DeepCollectionEquality().hash(assumptions),const DeepCollectionEquality().hash(warnings),const DeepCollectionEquality().hash(planning));
 
 @override
 String toString() {
-  return 'PlanDraft(courses: $courses, items: $items, analysisSummary: $analysisSummary, assumptions: $assumptions, warnings: $warnings, planning: $planning)';
+  return 'PlanDraft(items: $items, analysisSummary: $analysisSummary, assumptions: $assumptions, warnings: $warnings, planning: $planning)';
 }
 
 
@@ -923,7 +929,7 @@ abstract mixin class $PlanDraftCopyWith<$Res>  {
   factory $PlanDraftCopyWith(PlanDraft value, $Res Function(PlanDraft) _then) = _$PlanDraftCopyWithImpl;
 @useResult
 $Res call({
- List<CourseDraft> courses, List<ItemDraft> items, String analysisSummary, List<String> assumptions, List<String> warnings, JsonMap? planning
+ List<ItemDraft> items, String analysisSummary, List<String> assumptions, List<String> warnings, JsonMap? planning
 });
 
 
@@ -940,10 +946,9 @@ class _$PlanDraftCopyWithImpl<$Res>
 
 /// Create a copy of PlanDraft
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? courses = null,Object? items = null,Object? analysisSummary = null,Object? assumptions = null,Object? warnings = null,Object? planning = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? items = null,Object? analysisSummary = null,Object? assumptions = null,Object? warnings = null,Object? planning = freezed,}) {
   return _then(_self.copyWith(
-courses: null == courses ? _self.courses : courses // ignore: cast_nullable_to_non_nullable
-as List<CourseDraft>,items: null == items ? _self.items : items // ignore: cast_nullable_to_non_nullable
+items: null == items ? _self.items : items // ignore: cast_nullable_to_non_nullable
 as List<ItemDraft>,analysisSummary: null == analysisSummary ? _self.analysisSummary : analysisSummary // ignore: cast_nullable_to_non_nullable
 as String,assumptions: null == assumptions ? _self.assumptions : assumptions // ignore: cast_nullable_to_non_nullable
 as List<String>,warnings: null == warnings ? _self.warnings : warnings // ignore: cast_nullable_to_non_nullable
@@ -1033,10 +1038,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( List<CourseDraft> courses,  List<ItemDraft> items,  String analysisSummary,  List<String> assumptions,  List<String> warnings,  JsonMap? planning)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( List<ItemDraft> items,  String analysisSummary,  List<String> assumptions,  List<String> warnings,  JsonMap? planning)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _PlanDraft() when $default != null:
-return $default(_that.courses,_that.items,_that.analysisSummary,_that.assumptions,_that.warnings,_that.planning);case _:
+return $default(_that.items,_that.analysisSummary,_that.assumptions,_that.warnings,_that.planning);case _:
   return orElse();
 
 }
@@ -1054,10 +1059,10 @@ return $default(_that.courses,_that.items,_that.analysisSummary,_that.assumption
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( List<CourseDraft> courses,  List<ItemDraft> items,  String analysisSummary,  List<String> assumptions,  List<String> warnings,  JsonMap? planning)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( List<ItemDraft> items,  String analysisSummary,  List<String> assumptions,  List<String> warnings,  JsonMap? planning)  $default,) {final _that = this;
 switch (_that) {
 case _PlanDraft():
-return $default(_that.courses,_that.items,_that.analysisSummary,_that.assumptions,_that.warnings,_that.planning);case _:
+return $default(_that.items,_that.analysisSummary,_that.assumptions,_that.warnings,_that.planning);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -1074,10 +1079,10 @@ return $default(_that.courses,_that.items,_that.analysisSummary,_that.assumption
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( List<CourseDraft> courses,  List<ItemDraft> items,  String analysisSummary,  List<String> assumptions,  List<String> warnings,  JsonMap? planning)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( List<ItemDraft> items,  String analysisSummary,  List<String> assumptions,  List<String> warnings,  JsonMap? planning)?  $default,) {final _that = this;
 switch (_that) {
 case _PlanDraft() when $default != null:
-return $default(_that.courses,_that.items,_that.analysisSummary,_that.assumptions,_that.warnings,_that.planning);case _:
+return $default(_that.items,_that.analysisSummary,_that.assumptions,_that.warnings,_that.planning);case _:
   return null;
 
 }
@@ -1089,15 +1094,8 @@ return $default(_that.courses,_that.items,_that.analysisSummary,_that.assumption
 @JsonSerializable()
 
 class _PlanDraft implements PlanDraft {
-  const _PlanDraft({required final  List<CourseDraft> courses, required final  List<ItemDraft> items, required this.analysisSummary, final  List<String> assumptions = const [], final  List<String> warnings = const [], final  JsonMap? planning}): _courses = courses,_items = items,_assumptions = assumptions,_warnings = warnings,_planning = planning;
+  const _PlanDraft({required final  List<ItemDraft> items, required this.analysisSummary, final  List<String> assumptions = const [], final  List<String> warnings = const [], final  JsonMap? planning}): _items = items,_assumptions = assumptions,_warnings = warnings,_planning = planning;
   factory _PlanDraft.fromJson(Map<String, dynamic> json) => _$PlanDraftFromJson(json);
-
- final  List<CourseDraft> _courses;
-@override List<CourseDraft> get courses {
-  if (_courses is EqualUnmodifiableListView) return _courses;
-  // ignore: implicit_dynamic_type
-  return EqualUnmodifiableListView(_courses);
-}
 
  final  List<ItemDraft> _items;
 @override List<ItemDraft> get items {
@@ -1144,16 +1142,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlanDraft&&const DeepCollectionEquality().equals(other._courses, _courses)&&const DeepCollectionEquality().equals(other._items, _items)&&(identical(other.analysisSummary, analysisSummary) || other.analysisSummary == analysisSummary)&&const DeepCollectionEquality().equals(other._assumptions, _assumptions)&&const DeepCollectionEquality().equals(other._warnings, _warnings)&&const DeepCollectionEquality().equals(other._planning, _planning));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _PlanDraft&&const DeepCollectionEquality().equals(other._items, _items)&&(identical(other.analysisSummary, analysisSummary) || other.analysisSummary == analysisSummary)&&const DeepCollectionEquality().equals(other._assumptions, _assumptions)&&const DeepCollectionEquality().equals(other._warnings, _warnings)&&const DeepCollectionEquality().equals(other._planning, _planning));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_courses),const DeepCollectionEquality().hash(_items),analysisSummary,const DeepCollectionEquality().hash(_assumptions),const DeepCollectionEquality().hash(_warnings),const DeepCollectionEquality().hash(_planning));
+int get hashCode => Object.hash(runtimeType,const DeepCollectionEquality().hash(_items),analysisSummary,const DeepCollectionEquality().hash(_assumptions),const DeepCollectionEquality().hash(_warnings),const DeepCollectionEquality().hash(_planning));
 
 @override
 String toString() {
-  return 'PlanDraft(courses: $courses, items: $items, analysisSummary: $analysisSummary, assumptions: $assumptions, warnings: $warnings, planning: $planning)';
+  return 'PlanDraft(items: $items, analysisSummary: $analysisSummary, assumptions: $assumptions, warnings: $warnings, planning: $planning)';
 }
 
 
@@ -1164,7 +1162,7 @@ abstract mixin class _$PlanDraftCopyWith<$Res> implements $PlanDraftCopyWith<$Re
   factory _$PlanDraftCopyWith(_PlanDraft value, $Res Function(_PlanDraft) _then) = __$PlanDraftCopyWithImpl;
 @override @useResult
 $Res call({
- List<CourseDraft> courses, List<ItemDraft> items, String analysisSummary, List<String> assumptions, List<String> warnings, JsonMap? planning
+ List<ItemDraft> items, String analysisSummary, List<String> assumptions, List<String> warnings, JsonMap? planning
 });
 
 
@@ -1181,10 +1179,9 @@ class __$PlanDraftCopyWithImpl<$Res>
 
 /// Create a copy of PlanDraft
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? courses = null,Object? items = null,Object? analysisSummary = null,Object? assumptions = null,Object? warnings = null,Object? planning = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? items = null,Object? analysisSummary = null,Object? assumptions = null,Object? warnings = null,Object? planning = freezed,}) {
   return _then(_PlanDraft(
-courses: null == courses ? _self._courses : courses // ignore: cast_nullable_to_non_nullable
-as List<CourseDraft>,items: null == items ? _self._items : items // ignore: cast_nullable_to_non_nullable
+items: null == items ? _self._items : items // ignore: cast_nullable_to_non_nullable
 as List<ItemDraft>,analysisSummary: null == analysisSummary ? _self.analysisSummary : analysisSummary // ignore: cast_nullable_to_non_nullable
 as String,assumptions: null == assumptions ? _self._assumptions : assumptions // ignore: cast_nullable_to_non_nullable
 as List<String>,warnings: null == warnings ? _self._warnings : warnings // ignore: cast_nullable_to_non_nullable

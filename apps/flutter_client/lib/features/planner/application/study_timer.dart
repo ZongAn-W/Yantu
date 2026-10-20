@@ -450,7 +450,6 @@ class StudyTimer extends ChangeNotifier {
         var learning = data.adHocLearnings
             .where((item) => !item.archived && item.title == trimmed)
             .firstOrNull;
-        final normalizedSubject = (subjectId ?? '').trim();
         if (learning == null) {
           final id = _nextId();
           late AdHocLearning created;
@@ -458,7 +457,6 @@ class StudyTimer extends ChangeNotifier {
             final result = day_ops.upsertAdHocLearning(
               current,
               title: trimmed,
-              subjectId: normalizedSubject.isEmpty ? null : normalizedSubject,
               id: id,
               updatedAt: _now().toUtc().toIso8601String(),
             );
@@ -466,17 +464,6 @@ class StudyTimer extends ChangeNotifier {
             return result.data;
           });
           learning = created;
-        } else if (normalizedSubject.isNotEmpty && learning.subjectId == null) {
-          await coordinator.edit((current) {
-            final result = day_ops.upsertAdHocLearning(
-              current,
-              title: trimmed,
-              subjectId: normalizedSubject,
-              id: learning!.id,
-              updatedAt: _now().toUtc().toIso8601String(),
-            );
-            return result.data;
-          });
         }
         if (_disposed) return;
         if (activeAdHocId == learning.id) return;

@@ -83,10 +83,8 @@ class ProfileSettingsDraft {
     required this.dailyLimitMinutes,
     required this.granularityMinutes,
     required this.bufferMinutes,
-    required this.subjectLimitMinutes,
     required this.studyStartMinute,
     required this.studyEndMinute,
-    required this.priorities,
     this.capacityBasis = CapacityBasis.grossBuffer,
     this.weeklyBaselineMinutes,
     this.weeklyRangeMinMinutes,
@@ -110,10 +108,8 @@ class ProfileSettingsDraft {
   final int dailyLimitMinutes;
   final int granularityMinutes;
   final int bufferMinutes;
-  final int subjectLimitMinutes;
   final int studyStartMinute;
   final int studyEndMinute;
-  final Map<String, int> priorities;
 
   /// 容量口径与灵活时间覆盖；旧数据保持 [CapacityBasis.grossBuffer] 旧语义。
   final CapacityBasis capacityBasis;
@@ -144,10 +140,8 @@ class ProfileSettingsDraft {
         dailyLimitMinutes: profile.dailyLimitMinutes,
         granularityMinutes: profile.granularityMinutes,
         bufferMinutes: profile.bufferMinutes,
-        subjectLimitMinutes: profile.subjectLimitMinutes,
         studyStartMinute: profile.studyStartMinute,
         studyEndMinute: profile.studyEndMinute,
-        priorities: const {},
         capacityBasis: profile.capacityBasis,
         weeklyBaselineMinutes: profile.weeklyBaselineMinutes,
         weeklyRangeMinMinutes: profile.weeklyRangeMinMinutes,
@@ -172,10 +166,8 @@ class ProfileSettingsDraft {
     int? dailyLimitMinutes,
     int? granularityMinutes,
     int? bufferMinutes,
-    int? subjectLimitMinutes,
     int? studyStartMinute,
     int? studyEndMinute,
-    Map<String, int>? priorities,
     CapacityBasis? capacityBasis,
     int? weeklyBaselineMinutes,
     int? weeklyRangeMinMinutes,
@@ -198,21 +190,14 @@ class ProfileSettingsDraft {
     dailyLimitMinutes: dailyLimitMinutes ?? this.dailyLimitMinutes,
     granularityMinutes: granularityMinutes ?? this.granularityMinutes,
     bufferMinutes: bufferMinutes ?? this.bufferMinutes,
-    subjectLimitMinutes: subjectLimitMinutes ?? this.subjectLimitMinutes,
     studyStartMinute: studyStartMinute ?? this.studyStartMinute,
     studyEndMinute: studyEndMinute ?? this.studyEndMinute,
-    priorities: priorities ?? this.priorities,
     capacityBasis: capacityBasis ?? this.capacityBasis,
-    weeklyBaselineMinutes:
-        weeklyBaselineMinutes ?? this.weeklyBaselineMinutes,
-    weeklyRangeMinMinutes:
-        weeklyRangeMinMinutes ?? this.weeklyRangeMinMinutes,
-    weeklyRangeMaxMinutes:
-        weeklyRangeMaxMinutes ?? this.weeklyRangeMaxMinutes,
-    weekCapacityOverrides:
-        weekCapacityOverrides ?? this.weekCapacityOverrides,
-    dateCapacityOverrides:
-        dateCapacityOverrides ?? this.dateCapacityOverrides,
+    weeklyBaselineMinutes: weeklyBaselineMinutes ?? this.weeklyBaselineMinutes,
+    weeklyRangeMinMinutes: weeklyRangeMinMinutes ?? this.weeklyRangeMinMinutes,
+    weeklyRangeMaxMinutes: weeklyRangeMaxMinutes ?? this.weeklyRangeMaxMinutes,
+    weekCapacityOverrides: weekCapacityOverrides ?? this.weekCapacityOverrides,
+    dateCapacityOverrides: dateCapacityOverrides ?? this.dateCapacityOverrides,
   );
 
   /// 每日上限取一周最大值，仅用于展示；排程按每天的单独预算计算。
@@ -246,9 +231,6 @@ String? validateSettingsDraft(ProfileSettingsDraft draft) {
 
   if (draft.bufferMinutes < 30 || draft.bufferMinutes > 180) {
     return '每日机动时间需要在 30 至 180 分钟之间';
-  }
-  if (draft.subjectLimitMinutes < 60 || draft.subjectLimitMinutes > 480) {
-    return '单科每日上限需要在 60 至 480 分钟之间';
   }
   if (draft.granularityMinutes != 30 && draft.granularityMinutes != 60) {
     return '时间粒度只能是 30 或 60 分钟';
@@ -326,8 +308,7 @@ int _netDailyLimit(
 ) {
   if (baseline == null || baseline <= 0) return weeklyPeak;
   final weights = {
-    for (var day = 0; day < 7; day++)
-      day: weeklyMinutes['$day'] ?? 0,
+    for (var day = 0; day < 7; day++) day: weeklyMinutes['$day'] ?? 0,
   };
   final distributed = capacity.distributeWeeklyTotal(baseline, weights);
   var peak = weeklyPeak;
@@ -375,7 +356,6 @@ PlannerData applySettings(PlannerData data, ProfileSettingsDraft draft) {
           : draft.weeklyPeakMinutes,
       granularityMinutes: draft.granularityMinutes,
       bufferMinutes: draft.bufferMinutes,
-      subjectLimitMinutes: draft.subjectLimitMinutes,
       studyStartMinute: draft.studyStartMinute,
       studyEndMinute: draft.studyEndMinute,
       capacityBasis: draft.capacityBasis,
@@ -385,12 +365,6 @@ PlannerData applySettings(PlannerData data, ProfileSettingsDraft draft) {
       weekCapacityOverrides: draft.weekCapacityOverrides,
       dateCapacityOverrides: draft.dateCapacityOverrides,
     ),
-    subjects: [
-      for (final subject in data.subjects)
-        subject.copyWith(
-          priority: draft.priorities[subject.id] ?? subject.priority,
-        ),
-    ],
   );
 }
 
@@ -408,7 +382,6 @@ bool settingsAffectSchedule(PlannerData data, ProfileSettingsDraft draft) {
     if ((week['$day'] ?? 0) != (draft.weeklyMinutes['$day'] ?? 0)) return true;
   }
   if (draft.bufferMinutes != current.bufferMinutes) return true;
-  if (draft.subjectLimitMinutes != current.subjectLimitMinutes) return true;
   if (draft.granularityMinutes != current.granularityMinutes) return true;
   if (current.planningMode == PlanningMode.timed &&
       (draft.studyStartMinute != current.studyStartMinute ||

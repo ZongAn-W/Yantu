@@ -34,7 +34,6 @@ function buildData(row: Record<string, any>): PlannerData {
   } as Profile;
   const tasks: Task[] = (row.tasks ?? []).map((task: Record<string, any>) => ({
     user_id: "fixture-user",
-    subject_id: "course",
     title: task.id as string,
     estimated_minutes: 30,
     completed_minutes: 0,
@@ -82,7 +81,7 @@ function buildData(row: Record<string, any>): PlannerData {
   return {
     version: 1,
     profile,
-    subjects: [],
+    tags: [],
     tasks,
     blocks,
     logs,

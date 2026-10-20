@@ -1,7 +1,7 @@
 import '../../../shared/models/planner_models.dart';
 import 'planner_format.dart';
 
-/// A brand new local plan for one account: no courses, no items and no exam events.
+/// A brand new local plan for one account: no tags, items or exam events.
 ///
 /// It only provides an editable default planning cycle so every page has a valid
 /// model before the server has one; no school, exam date or official exam is
@@ -26,12 +26,11 @@ PlannerData initialPlannerData({
       dailyLimitMinutes: 480,
       granularityMinutes: 30,
       bufferMinutes: 30,
-      subjectLimitMinutes: 240,
       studyStartMinute: 480,
       studyEndMinute: 1320,
       foundation: '',
     ),
-    subjects: const [],
+    tags: const [],
     tasks: const [],
     blocks: const [],
     logs: const [],

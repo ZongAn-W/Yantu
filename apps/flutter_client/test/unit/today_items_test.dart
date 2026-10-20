@@ -27,7 +27,7 @@ void main() {
     expect(items, hasLength(1));
     expect(items.single.plannedMinutes, 60);
     expect(items.single.actualMinutes, 35);
-    expect(items.single.course, data.subjects.single.name);
+    expect(items.single.tags, [data.tags.single.name]);
     expect(
       todayItems(data.copyWith(blocks: []), '2026-10-16').single.actualMinutes,
       35,

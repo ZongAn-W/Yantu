@@ -4,22 +4,19 @@ import '../../../shared/models/planner_models.dart';
 import 'planner_format.dart';
 import 'study_day.dart';
 
-/// One row of the weekly planned/actual comparison chart.
-class SubjectWeekStat {
-  const SubjectWeekStat({
-    required this.subject,
+/// Weekly totals across all tasks. Tags are omitted from totals because one
+/// task can belong to several tags.
+class WeekProgress {
+  const WeekProgress({
     required this.planned,
     required this.actual,
-    required this.totalActual,
     this.scheduled = 0,
     this.extra = 0,
     this.adHoc = 0,
   });
 
-  final Subject subject;
   final int planned;
   final int actual;
-  final int totalActual;
 
   /// Original-plan execution achieved this week (capped per task/day).
   final int scheduled;
@@ -56,25 +53,6 @@ class HeatCell {
   final int adHoc;
 }
 
-/// Remaining work per subject, used by the progress overview.
-class SubjectProgress {
-  const SubjectProgress({
-    required this.subject,
-    required this.estimated,
-    required this.completed,
-    required this.remaining,
-    required this.actual,
-  });
-
-  final Subject subject;
-  final int estimated;
-  final int completed;
-  final int remaining;
-  final int actual;
-
-  double get ratio => estimated == 0 ? 0 : completed / estimated;
-}
-
 /// Everything the progress page needs, computed once from the current plan.
 class ProgressMetrics {
   const ProgressMetrics({
@@ -93,14 +71,14 @@ class ProgressMetrics {
     required this.forecast,
     required this.paceMinutes,
     required this.lagging,
-    required this.weekStats,
+    required this.weekProgress,
     required this.maxWeekly,
     required this.heatCells,
     required this.heatLead,
     required this.interruptedDays,
     required this.burnDays,
     required this.burnValues,
-    required this.subjectProgress,
+    required this.completedMinutes,
   });
 
   final String date;
@@ -108,16 +86,17 @@ class ProgressMetrics {
   final int totalActual;
 
   /// Total actual minutes split by learning relation. Each valid minute appears
-  /// exactly once; content completion stays expressed by [subjectProgress].
+  /// exactly once; content completion stays expressed by the overall task totals.
   final int scheduledActual;
   final int extraActual;
   final int adHocActual;
 
   /// Task-attributed actual minutes used for the goal pace forecast. Temporary
-  /// learning has no task, so it never speeds up a course goal on its own.
+  /// learning has no task, so it never speeds up a task goal on its own.
   final int goalActual;
   final int remainingMinutes;
   final int overallMinutes;
+  final int completedMinutes;
 
   /// 用户目标日期，可能为空；与本次规划周期分别表达。
   final String targetDate;
@@ -130,14 +109,13 @@ class ProgressMetrics {
   final String? forecast;
   final double paceMinutes;
   final bool lagging;
-  final List<SubjectWeekStat> weekStats;
+  final WeekProgress weekProgress;
   final int maxWeekly;
   final List<HeatCell> heatCells;
   final int heatLead;
   final int interruptedDays;
   final List<String> burnDays;
   final List<int> burnValues;
-  final List<SubjectProgress> subjectProgress;
 }
 
 ProgressMetrics progressMetrics(
@@ -147,7 +125,6 @@ ProgressMetrics progressMetrics(
 }) {
   final week = [for (var index = 6; index >= 0; index--) addDate(date, -index)];
   final weekSet = week.toSet();
-  final taskById = {for (final task in data.tasks) task.id: task};
   final activeTasks = data.tasks
       .where((task) => task.status != TaskStatus.archived)
       .toList();
@@ -183,6 +160,10 @@ ProgressMetrics progressMetrics(
     (sum, task) =>
         sum + math.max(0, task.estimatedMinutes - task.completedMinutes),
   );
+  final completedMinutes = activeTasks.fold<int>(
+    0,
+    (sum, task) => sum + task.completedMinutes,
+  );
 
   final pastLogs = [
     for (final log in goalLogs)
@@ -216,54 +197,30 @@ ProgressMetrics progressMetrics(
     (sum, task) => sum + task.estimatedMinutes,
   );
 
-  final weekStats = <SubjectWeekStat>[];
-  final adHocById = {
-    for (final entity in data.adHocLearnings) entity.id: entity,
-  };
-  final scheduledBySubject = <String, int>{};
+  var weekPlanned = 0;
+  var weekActual = 0;
+  var weekExtra = 0;
+  var weekAdHoc = 0;
+  var weekScheduled = 0;
   for (final day in week) {
     final summary = dayExecutionSummary(data, day);
-    for (final entry in summary.scheduledByTask.entries) {
-      final subjectId = taskById[entry.key]?.subjectId;
-      if (subjectId == null) continue;
-      scheduledBySubject[subjectId] =
-          (scheduledBySubject[subjectId] ?? 0) + entry.value;
-    }
+    weekPlanned += summary.planned;
+    weekScheduled += summary.scheduled;
   }
-  for (final subject in data.subjects) {
-    var planned = 0, actual = 0, total = 0, extra = 0, adHoc = 0;
-    for (final block in data.blocks) {
-      if (!weekSet.contains(block.date)) continue;
-      if (taskById[block.taskId]?.subjectId != subject.id) continue;
-      planned += block.durationMinutes;
-    }
-    for (final log in data.logs) {
-      final subjectId = log.taskId != null
-          ? taskById[log.taskId]?.subjectId
-          : (log.adHocId == null ? null : adHocById[log.adHocId!]?.subjectId);
-      if (subjectId != subject.id) continue;
-      total += log.minutes;
-      if (!weekSet.contains(log.date)) continue;
-      actual += log.minutes;
-      if (log.relation == TimeLogRelation.extra) extra += log.minutes;
-      if (log.relation == TimeLogRelation.adHoc) adHoc += log.minutes;
-    }
-    weekStats.add(
-      SubjectWeekStat(
-        subject: subject,
-        planned: planned,
-        actual: actual,
-        totalActual: total,
-        scheduled: scheduledBySubject[subject.id] ?? 0,
-        extra: extra,
-        adHoc: adHoc,
-      ),
-    );
+  for (final log in data.logs) {
+    if (!weekSet.contains(log.date)) continue;
+    weekActual += log.minutes;
+    if (log.relation == TimeLogRelation.extra) weekExtra += log.minutes;
+    if (log.relation == TimeLogRelation.adHoc) weekAdHoc += log.minutes;
   }
-  var maxWeekly = 60;
-  for (final stat in weekStats) {
-    maxWeekly = math.max(maxWeekly, math.max(stat.planned, stat.actual));
-  }
+  final weekProgress = WeekProgress(
+    planned: weekPlanned,
+    actual: weekActual,
+    scheduled: weekScheduled,
+    extra: weekExtra,
+    adHoc: weekAdHoc,
+  );
+  final maxWeekly = math.max(60, math.max(weekPlanned, weekActual));
 
   final monthStartDate = monthStart(month);
   final monthLength = daysInMonth(month);
@@ -313,41 +270,6 @@ ProgressMetrics progressMetrics(
       ),
   ];
 
-  final subjectProgress = <SubjectProgress>[];
-  for (final subject in data.subjects) {
-    final tasks = activeTasks
-        .where((task) => task.subjectId == subject.id)
-        .toList();
-    final estimated = tasks.fold<int>(
-      0,
-      (sum, task) => sum + task.estimatedMinutes,
-    );
-    final completed = tasks.fold<int>(
-      0,
-      (sum, task) => sum + task.completedMinutes,
-    );
-    final actual = data.tasks
-            .where((task) => task.subjectId == subject.id)
-            .fold<int>(0, (sum, task) => sum + taskTotalMinutes(data, task.id)) +
-        data.logs
-            .where((log) {
-              if (log.taskId != null) return false;
-              final adHocId = log.adHocId;
-              return adHocId != null &&
-                  adHocById[adHocId]?.subjectId == subject.id;
-            })
-            .fold<int>(0, (sum, log) => sum + log.minutes);
-    subjectProgress.add(
-      SubjectProgress(
-        subject: subject,
-        estimated: estimated,
-        completed: completed,
-        remaining: math.max(0, estimated - completed),
-        actual: actual,
-      ),
-    );
-  }
-
   return ProgressMetrics(
     date: date,
     week: week,
@@ -358,19 +280,19 @@ ProgressMetrics progressMetrics(
     goalActual: goalActual,
     remainingMinutes: remainingMinutes,
     overallMinutes: overall,
+    completedMinutes: completedMinutes,
     targetDate: data.profile.resolvedTargetDate,
     targetConfirmed: data.profile.targetDateConfirmed,
     cycleEnd: data.profile.resolvedPlanEnd(date),
     forecast: forecast,
     paceMinutes: pace.isFinite ? pace : 0,
     lagging: lagging,
-    weekStats: weekStats,
+    weekProgress: weekProgress,
     maxWeekly: maxWeekly,
     heatCells: heatCells,
     heatLead: mondayIndex(monthStartDate),
     interruptedDays: interrupted,
     burnDays: burnDays,
     burnValues: burnValues,
-    subjectProgress: subjectProgress,
   );
 }

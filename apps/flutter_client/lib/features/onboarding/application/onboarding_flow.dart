@@ -24,7 +24,7 @@ class OnboardingFlowState {
   final OnboardingSession? session;
   final bool loading;
 
-  /// 正在等待 AI 回答下一题或生成科目；用于访谈页的“AI 正在思考中…”提示。
+  /// 正在等待 AI 回答下一题或生成事项；用于访谈页的等待提示。
   final bool waitingForAi;
   final String? error;
   final bool planChanged;
@@ -66,11 +66,6 @@ class OnboardingFlow extends AutoDisposeNotifier<OnboardingFlowState> {
     }
   }
 
-  void editCourses(List<CourseDraft> courses) {
-    if (state.loading) return;
-    state = OnboardingFlowState(session: state.session!.edit(courses: courses));
-  }
-
   void editItems(List<ItemDraft> items) {
     if (state.loading) return;
     state = OnboardingFlowState(session: state.session!.edit(items: items));
@@ -84,9 +79,8 @@ class OnboardingFlow extends AutoDisposeNotifier<OnboardingFlowState> {
     final api = OnboardingApi(ref.read(apiClientProvider));
     final waitsForAi = const [
       'answer',
-      'generate_courses',
+      'generate_items',
       'set_constraints',
-      'revise_courses',
       'revise_items',
       'preview_schedule',
     ].contains(action['type']);

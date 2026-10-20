@@ -17,8 +17,7 @@ Profile _netProfile({
   userId: 'u1',
   planStartDate: start,
   planEndDate: end,
-  weeklyMinutes:
-      weekly ?? {for (var day = 0; day < 7; day++) '$day': 60},
+  weeklyMinutes: weekly ?? {for (var day = 0; day < 7; day++) '$day': 60},
   capacityBasis: CapacityBasis.net,
   weeklyBaselineMinutes: baseline,
   weekCapacityOverrides: weeks,
@@ -26,7 +25,6 @@ Profile _netProfile({
   dailyLimitMinutes: 480,
   granularityMinutes: 30,
   bufferMinutes: 30,
-  subjectLimitMinutes: 240,
   studyStartMinute: 0,
   studyEndMinute: 1440,
   foundation: '',
@@ -40,7 +38,6 @@ Profile _legacyProfile({required String start, required String end}) => Profile(
   dailyLimitMinutes: 60,
   granularityMinutes: 30,
   bufferMinutes: 30,
-  subjectLimitMinutes: 240,
   studyStartMinute: 0,
   studyEndMinute: 1440,
   foundation: '',
@@ -49,7 +46,6 @@ Profile _legacyProfile({required String start, required String end}) => Profile(
 Task _task(String id, int estimatedMinutes, String deadline) => Task(
   id: id,
   userId: 'u1',
-  subjectId: 's1',
   title: '事项 $id',
   estimatedMinutes: estimatedMinutes,
   completedMinutes: 0,
@@ -70,7 +66,7 @@ PlannerData _plan({
 }) => PlannerData(
   version: 1,
   profile: profile,
-  subjects: const [],
+  tags: const [],
   tasks: tasks,
   blocks: blocks,
   logs: logs,
@@ -256,11 +252,7 @@ void main() {
       const start = '2026-10-12';
       final end = addDate(start, 2);
       final data = _plan(
-        profile: _netProfile(
-          start: start,
-          end: end,
-          dates: {start: 0},
-        ),
+        profile: _netProfile(start: start, end: end, dates: {start: 0}),
         tasks: [_task('t', 120, end)],
         planning: _fullPlanning(3, end),
       );
@@ -286,9 +278,7 @@ void main() {
         profile: _netProfile(
           start: monday,
           end: sunday,
-          weeks: {
-            monday: const WeekCapacityOverride(totalMinutes: 210),
-          },
+          weeks: {monday: const WeekCapacityOverride(totalMinutes: 210)},
         ),
         tasks: [_task('t', 210, sunday)],
         planning: _fullPlanning(7, sunday),
@@ -304,7 +294,8 @@ void main() {
       expect(weekMinutes, 210);
       expect(
         result.data.blocks.any(
-          (block) => block.date.compareTo(monday) >= 0 &&
+          (block) =>
+              block.date.compareTo(monday) >= 0 &&
               block.date.compareTo(sunday) <= 0,
         ),
         isTrue,
@@ -332,66 +323,66 @@ void main() {
       relation: relation,
     );
 
-    test('keeps extra/ad_hoc/timer logs and rewrites only the manual total', () {
-      final block = ScheduleBlock(
-        id: 'block-1',
-        userId: 'u1',
-        taskId: 't',
-        date: '2026-10-12',
-        startMinute: 0,
-        durationMinutes: 60,
-        actualMinutes: 0,
-        isFixed: false,
-        status: BlockStatus.planned,
-        createdAt: _stamp,
-        updatedAt: _stamp,
-      );
-      final data = _plan(
-        profile: _netProfile(
-          start: '2026-10-12',
-          end: '2026-10-18',
-        ),
-        tasks: [_task('t', 600, '2026-10-18')],
-        blocks: [block],
-        logs: [
-          log('extra-log', 20, relation: TimeLogRelation.extra),
-          log(
-            'timer-scheduled',
-            5,
-            relation: TimeLogRelation.scheduled,
-            source: LogSource.timer,
+    test(
+      'keeps extra/ad_hoc/timer logs and rewrites only the manual total',
+      () {
+        final block = ScheduleBlock(
+          id: 'block-1',
+          userId: 'u1',
+          taskId: 't',
+          date: '2026-10-12',
+          startMinute: 0,
+          durationMinutes: 60,
+          actualMinutes: 0,
+          isFixed: false,
+          status: BlockStatus.planned,
+          createdAt: _stamp,
+          updatedAt: _stamp,
+        );
+        final data = _plan(
+          profile: _netProfile(start: '2026-10-12', end: '2026-10-18'),
+          tasks: [_task('t', 600, '2026-10-18')],
+          blocks: [block],
+          logs: [
+            log('extra-log', 20, relation: TimeLogRelation.extra),
+            log(
+              'timer-scheduled',
+              5,
+              relation: TimeLogRelation.scheduled,
+              source: LogSource.timer,
+            ),
+            log('legacy-manual', 10, blockId: 'block-1'),
+          ],
+        );
+        var nextId = 0;
+        final result = recordTaskDayMinutes(
+          data,
+          't',
+          '2026-10-12',
+          60,
+          runtime: SchedulerRuntime(
+            now: DateTime.parse('2026-10-12T00:00:00.000Z'),
+            nextId: () => 'rebuilt-${++nextId}',
           ),
-          log('legacy-manual', 10, blockId: 'block-1'),
-        ],
-      );
-      var nextId = 0;
-      final result = recordTaskDayMinutes(
-        data,
-        't',
-        '2026-10-12',
-        60,
-        runtime: SchedulerRuntime(
-          now: DateTime.parse('2026-10-12T00:00:00.000Z'),
-          nextId: () => 'rebuilt-${++nextId}',
-        ),
-      );
-      final ids = result.logs.map((log) => log.id).toSet();
-      expect(ids, contains('extra-log'));
-      expect(ids, contains('timer-scheduled'));
-      expect(ids, isNot(contains('legacy-manual')));
-      final rebuilt = result.logs.where(
-        (log) => log.source == LogSource.manual && log.id != 'extra-log',
-      );
-      expect(rebuilt.fold<int>(0, (sum, log) => sum + log.minutes), 60);
-      expect(
-        result.logs.fold<int>(0, (sum, log) => sum + log.minutes),
-        85,
-        reason: '总用时包含加学与计时记录，但当天合计只重建 manual 部分',
-      );
-      expect(result.tasks.single.completedMinutes, 85);
-      // 原定达成只由 scheduled/legacy 覆盖，加学不冒充原定执行。
-      expect(result.blocks.single.actualMinutes, 60);
-    });
+        );
+        final ids = result.logs.map((log) => log.id).toSet();
+        expect(ids, contains('extra-log'));
+        expect(ids, contains('timer-scheduled'));
+        expect(ids, isNot(contains('legacy-manual')));
+        final rebuilt = result.logs.where(
+          (log) => log.source == LogSource.manual && log.id != 'extra-log',
+        );
+        expect(rebuilt.fold<int>(0, (sum, log) => sum + log.minutes), 60);
+        expect(
+          result.logs.fold<int>(0, (sum, log) => sum + log.minutes),
+          85,
+          reason: '总用时包含加学与计时记录，但当天合计只重建 manual 部分',
+        );
+        expect(result.tasks.single.completedMinutes, 85);
+        // 原定达成只由 scheduled/legacy 覆盖，加学不冒充原定执行。
+        expect(result.blocks.single.actualMinutes, 60);
+      },
+    );
   });
 
   group('capacity change impact preview', () {
@@ -410,10 +401,7 @@ void main() {
       );
       expect(adjustment.unscheduledMinutes, greaterThan(0));
       expect(adjustment.realDeadlineImpacts, isNotEmpty);
-      expect(
-        adjustment.realDeadlineImpacts.join(),
-        contains('真实截止日期'),
-      );
+      expect(adjustment.realDeadlineImpacts.join(), contains('真实截止日期'));
     });
   });
 }

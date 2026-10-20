@@ -9,28 +9,11 @@ import '../domain/calendar_day_data.dart';
 import '../domain/calendar_view.dart';
 import '../domain/calendar_week_data.dart';
 
-/// Course colour for the week charts.
-///
-/// Known courses keep the existing day-view colours, declared course colours
-/// win, and an unknown course receives a deterministic colour from the same
-/// palette/seed rule the day views use. Both week charts and both legends call
-/// this one function, so a course can never have two colours in one week.
-Color calendarWeekCourseColor(String subjectId, String? declaredColor) {
-  final declared = declaredColor?.trim() ?? '';
-  if (RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(declared) ||
-      subjectColors.containsKey(subjectId)) {
-    return subjectColor(subjectId, declaredColor);
-  }
-  return _stableCourseColor(subjectId.isEmpty ? 'unknown' : subjectId);
-}
+/// Item colors follow the item identity. Tags never affect chart grouping or
+/// color, since a task can carry more than one tag.
+Color _itemColor(CalendarDayItem item) => _stableItemColor(item.id);
 
-Color _itemColor(CalendarDayItem item) =>
-    calendarWeekCourseColor(item.subjectId, item.declaredColor);
-
-Color _layerColor(CalendarWeekLayer layer) =>
-    calendarWeekCourseColor(layer.subjectId, layer.declaredColor);
-
-Color _stableCourseColor(String seed) {
+Color _stableItemColor(String seed) {
   // String.hashCode is not a persistent contract on every Flutter target, so
   // keep the explicit 31-based hash the day views already use.
   var hash = 0;
@@ -47,6 +30,13 @@ Color _stableCourseColor(String seed) {
   ];
   return palette[hash % palette.length];
 }
+
+Color _layerColor(CalendarWeekLayer layer) => switch (layer.kind) {
+  CalendarEffortKind.scheduled => PlannerColors.blue,
+  CalendarEffortKind.extra => PlannerColors.orange,
+  CalendarEffortKind.unscheduled => PlannerColors.green,
+  CalendarEffortKind.legacyUnknown => PlannerColors.muted,
+};
 
 /// One read-only week graphic with compact legends and day details on demand.
 ///
@@ -236,16 +226,6 @@ class _WeekLegend extends StatelessWidget {
           runSpacing: 6,
           crossAxisAlignment: WrapCrossAlignment.center,
           children: [
-            for (final course in week.courses)
-              _CourseLegendItem(course: course),
-          ],
-        ),
-        if (week.courses.isNotEmpty) const SizedBox(height: 6),
-        Wrap(
-          spacing: 14,
-          runSpacing: 6,
-          crossAxisAlignment: WrapCrossAlignment.center,
-          children: [
             _PlanLegendItem(view: view),
             _KindLegendItem(
               kind: CalendarEffortKind.scheduled,
@@ -332,41 +312,6 @@ class _PlanLegendPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _PlanLegendPainter oldDelegate) =>
       view != oldDelegate.view;
-}
-
-class _CourseLegendItem extends StatelessWidget {
-  const _CourseLegendItem({required this.course});
-
-  final CalendarWeekCourse course;
-
-  @override
-  Widget build(BuildContext context) => Semantics(
-    label:
-        '课程 ${course.name}，本周计划 ${duration(course.plannedMinutes)}，'
-        '本周实学 ${duration(course.actualMinutes)}',
-    excludeSemantics: true,
-    child: Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        DecoratedBox(
-          key: ValueKey('calendar-week-course-${course.subjectId}'),
-          decoration: BoxDecoration(
-            color: calendarWeekCourseColor(
-              course.subjectId,
-              course.declaredColor,
-            ),
-            shape: BoxShape.circle,
-          ),
-          child: const SizedBox.square(dimension: 9),
-        ),
-        const SizedBox(width: 5),
-        Text(
-          course.name,
-          style: const TextStyle(fontSize: 11, color: PlannerColors.muted),
-        ),
-      ],
-    ),
-  );
 }
 
 class _KindLegendItem extends StatelessWidget {
@@ -644,7 +589,7 @@ class _MirrorPainter extends CustomPainter {
           actualTop += height;
           drewItem = true;
         }
-        // A hairline rule separates adjacent items of the same course so the
+        // A hairline rule separates adjacent task rows so the
         // object attribution stays visible even when their colours match.
         if (drewItem &&
             itemIndex != day.day.items.length - 1 &&
@@ -749,7 +694,7 @@ class _MountainChart extends StatelessWidget {
 }
 
 String _mountainSemantics(CalendarWeekData week) =>
-    '一周学习山脉图，横轴周一至周日，纵轴学习分钟。实学山形按课程与投入分类'
+    '一周学习山脉图，横轴周一至周日，纵轴学习分钟。实学山形按投入类型分类'
     '固定顺序堆叠，高度为当天实际学习总量；虚线为当天计划总量，两者共用同一比例。'
     '本周计划 ${duration(week.plannedMinutes)}，本周实学 ${duration(week.actualMinutes)}。'
     '下方日期按钮可选择某天查看明细。';
@@ -1219,7 +1164,8 @@ class _WeekItemRow extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    '${item.subjectName} · 计划 ${duration(item.plannedMinutes)} · '
+                    '${item.tagNames.isEmpty ? '未标记' : item.tagNames.join(' · ')} · '
+                    '计划 ${duration(item.plannedMinutes)} · '
                     '实学 ${duration(item.actualMinutes)}',
                     style: tabularFigures.copyWith(
                       fontSize: 11,
@@ -1278,7 +1224,7 @@ class _WeekItemRow extends StatelessWidget {
 }
 
 String _itemDescription(CalendarDayItem item) =>
-    '${item.title}，${item.subjectName}，计划 ${duration(item.plannedMinutes)}，'
+    '${item.title}${item.tagNames.isEmpty ? '' : '，标签 ${item.tagNames.join('、')}'}，计划 ${duration(item.plannedMinutes)}，'
     '实学 ${duration(item.actualMinutes)}。'
     '${item.efforts.isEmpty ? '尚无学习记录' : item.efforts.map((effort) => '${effort.kind.label} ${duration(effort.minutes)}').join('，')}';
 

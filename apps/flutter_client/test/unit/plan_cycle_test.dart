@@ -38,7 +38,7 @@ PlannerData openGoalPlan({
       Task(
         id: 'python-1',
         userId: base.profile.userId,
-        subjectId: base.subjects.first.id,
+        tagIds: const [],
         title: '基础练习',
         estimatedMinutes: 600,
         completedMinutes: 0,
@@ -68,11 +68,14 @@ void main() {
     expect(goalStatusLine(data.profile, '2026-10-12'), contains('本次规划'));
   });
 
-  test('an ended cycle is reported as ended instead of a negative countdown', () {
-    final data = openGoalPlan(start: '2026-09-01', end: '2026-09-14');
-    expect(planCycleState(data.profile, '2026-10-12'), PlanCycleState.ended);
-    expect(dashboardGoalLine(data.profile, '2026-10-12'), contains('已结束'));
-  });
+  test(
+    'an ended cycle is reported as ended instead of a negative countdown',
+    () {
+      final data = openGoalPlan(start: '2026-09-01', end: '2026-09-14');
+      expect(planCycleState(data.profile, '2026-10-12'), PlanCycleState.ended);
+      expect(dashboardGoalLine(data.profile, '2026-10-12'), contains('已结束'));
+    },
+  );
 
   test('zero-minute weekdays never receive study blocks', () {
     final data = openGoalPlan();
@@ -95,60 +98,63 @@ void main() {
     }
   });
 
-  test('generating the same cycle twice does not duplicate existing blocks', () {
-    final first = generatePlanBlocks(
-      openGoalPlan(),
-      from: '2026-10-12',
-      to: '2026-10-25',
-    );
-    final second = generatePlanBlocks(
-      first.data,
-      from: '2026-10-12',
-      to: '2026-10-25',
-    );
-    expect(second.blocks, 0);
-    expect(second.data.blocks.length, first.data.blocks.length);
-  });
+  test(
+    'generating the same cycle twice does not duplicate existing blocks',
+    () {
+      final first = generatePlanBlocks(
+        openGoalPlan(),
+        from: '2026-10-12',
+        to: '2026-10-25',
+      );
+      final second = generatePlanBlocks(
+        first.data,
+        from: '2026-10-12',
+        to: '2026-10-25',
+      );
+      expect(second.blocks, 0);
+      expect(second.data.blocks.length, first.data.blocks.length);
+    },
+  );
 
-  test('extending the cycle moves plan boundaries but keeps real deadlines', () {
-    final data = openGoalPlan();
-    final withDeadline = data.copyWith(
-      tasks: [
-        ...data.tasks,
-        data.tasks.first.copyWith(
-          id: 'exam-1',
-          title: '期末考试',
-          deadlineKind: ItemDateKind.deadline,
-          deadline: '2026-10-20',
-        ),
-      ],
-    );
-    final extended = extendPlanCycle(
-      withDeadline,
-      start: '2026-10-26',
-      end: '2026-11-22',
-      today: '2026-10-12',
-    );
-    expect(extended.profile.planStartDate, '2026-10-26');
-    expect(extended.profile.planEndDate, '2026-11-22');
-    expect(
-      extended.tasks.firstWhere((task) => task.id == 'python-1').deadline,
-      '2026-11-22',
-    );
-    expect(
-      extended.tasks.firstWhere((task) => task.id == 'exam-1').deadline,
-      '2026-10-20',
-    );
-  });
+  test(
+    'extending the cycle moves plan boundaries but keeps real deadlines',
+    () {
+      final data = openGoalPlan();
+      final withDeadline = data.copyWith(
+        tasks: [
+          ...data.tasks,
+          data.tasks.first.copyWith(
+            id: 'exam-1',
+            title: '期末考试',
+            deadlineKind: ItemDateKind.deadline,
+            deadline: '2026-10-20',
+          ),
+        ],
+      );
+      final extended = extendPlanCycle(
+        withDeadline,
+        start: '2026-10-26',
+        end: '2026-11-22',
+        today: '2026-10-12',
+      );
+      expect(extended.profile.planStartDate, '2026-10-26');
+      expect(extended.profile.planEndDate, '2026-11-22');
+      expect(
+        extended.tasks.firstWhere((task) => task.id == 'python-1').deadline,
+        '2026-11-22',
+      );
+      expect(
+        extended.tasks.firstWhere((task) => task.id == 'exam-1').deadline,
+        '2026-10-20',
+      );
+    },
+  );
 
   test('settings validation reports the current operation', () {
     final data = openGoalPlan();
     final draft = ProfileSettingsDraft.from(data.profile, today: '2026-10-12');
     expect(validateSettingsDraft(draft), isNull);
-    expect(
-      validateSettingsDraft(draft.copyWith(planEndDate: '')),
-      '请选择规划结束日期',
-    );
+    expect(validateSettingsDraft(draft.copyWith(planEndDate: '')), '请选择规划结束日期');
     expect(
       validateSettingsDraft(draft.copyWith(planEndDate: '2026-10-01')),
       '规划结束日期不能早于开始日期',
@@ -168,18 +174,13 @@ void main() {
     final draft = ProfileSettingsDraft.from(data.profile, today: '2026-10-12');
     expect(settingsAffectSchedule(data, draft), isFalse);
     expect(
-      settingsAffectSchedule(
-        data,
-        draft.copyWith(planEndDate: '2026-11-22'),
-      ),
+      settingsAffectSchedule(data, draft.copyWith(planEndDate: '2026-11-22')),
       isTrue,
     );
     expect(
       settingsAffectSchedule(
         data,
-        draft.copyWith(
-          weeklyMinutes: {...draft.weeklyMinutes, '1': 60},
-        ),
+        draft.copyWith(weeklyMinutes: {...draft.weeklyMinutes, '1': 60}),
       ),
       isTrue,
     );
@@ -291,41 +292,54 @@ void main() {
     expect(adjustment.data.logs, hasLength(1));
   });
 
-  test('shortening the cycle removes adjustable work outside the new window', () {
-    const start = '2026-10-12';
-    final base = openGoalPlan(start: start, end: '2026-10-25');
-    final generated = generatePlanBlocks(base, from: start, to: '2026-10-25').data;
-    expect(
-      generated.blocks.any((block) => block.date.compareTo('2026-10-16') > 0),
-      isTrue,
-      reason: '缩短前存在新边界之外的安排',
-    );
-    final adjustment = reschedulePlan(
-      generated,
-      today: start,
-      start: start,
-      end: '2026-10-16',
-    );
-    expect(
-      adjustment.data.blocks.every(
-        (block) => block.date.compareTo('2026-10-16') <= 0,
-      ),
-      isTrue,
-    );
-    // 预览会保留被清空日期的键（用于显示 X → 0），但新边界之外不再有安排。
-    for (final entry in adjustment.afterLoad.entries) {
-      if (entry.key.compareTo('2026-10-16') > 0) {
-        expect(entry.value, 0, reason: '新边界之外不再安排学习');
+  test(
+    'shortening the cycle removes adjustable work outside the new window',
+    () {
+      const start = '2026-10-12';
+      final base = openGoalPlan(start: start, end: '2026-10-25');
+      final generated = generatePlanBlocks(
+        base,
+        from: start,
+        to: '2026-10-25',
+      ).data;
+      expect(
+        generated.blocks.any((block) => block.date.compareTo('2026-10-16') > 0),
+        isTrue,
+        reason: '缩短前存在新边界之外的安排',
+      );
+      final adjustment = reschedulePlan(
+        generated,
+        today: start,
+        start: start,
+        end: '2026-10-16',
+      );
+      expect(
+        adjustment.data.blocks.every(
+          (block) => block.date.compareTo('2026-10-16') <= 0,
+        ),
+        isTrue,
+      );
+      // 预览会保留被清空日期的键（用于显示 X → 0），但新边界之外不再有安排。
+      for (final entry in adjustment.afterLoad.entries) {
+        if (entry.key.compareTo('2026-10-16') > 0) {
+          expect(entry.value, 0, reason: '新边界之外不再安排学习');
+        }
       }
-    }
-    expect(adjustment.unscheduledMinutes, greaterThan(0));
-  });
+      expect(adjustment.unscheduledMinutes, greaterThan(0));
+    },
+  );
 
   test('fixed, completed and historical arrangements stay untouched', () {
     const start = '2026-10-12';
     final base = openGoalPlan(start: start, end: '2026-10-18');
-    final generated = generatePlanBlocks(base, from: start, to: '2026-10-18').data;
-    final target = generated.blocks.firstWhere((block) => block.date == '2026-10-13');
+    final generated = generatePlanBlocks(
+      base,
+      from: start,
+      to: '2026-10-18',
+    ).data;
+    final target = generated.blocks.firstWhere(
+      (block) => block.date == '2026-10-13',
+    );
     final protected = generated.copyWith(
       blocks: [
         for (final block in generated.blocks)
@@ -345,7 +359,9 @@ void main() {
       start: start,
       end: '2026-10-18',
     );
-    final kept = adjustment.data.blocks.firstWhere((block) => block.id == target.id);
+    final kept = adjustment.data.blocks.firstWhere(
+      (block) => block.id == target.id,
+    );
     expect(kept.isFixed, isTrue);
     expect(kept.durationMinutes, 120);
   });
@@ -353,7 +369,11 @@ void main() {
   test('applying the same constraints twice converges', () {
     const start = '2026-10-12';
     final base = openGoalPlan(start: start, end: '2026-10-18');
-    final generated = generatePlanBlocks(base, from: start, to: '2026-10-18').data;
+    final generated = generatePlanBlocks(
+      base,
+      from: start,
+      to: '2026-10-18',
+    ).data;
     final relaxed = generated.copyWith(
       profile: generated.profile.copyWith(
         weeklyMinutes: {
@@ -361,7 +381,12 @@ void main() {
         },
       ),
     );
-    final first = reschedulePlan(relaxed, today: start, start: start, end: '2026-10-18');
+    final first = reschedulePlan(
+      relaxed,
+      today: start,
+      start: start,
+      end: '2026-10-18',
+    );
     final second = reschedulePlan(
       first.data,
       today: start,
@@ -375,18 +400,15 @@ void main() {
   test('a larger buffer reduces daily capacity and requires the preview', () {
     final data = openGoalPlan(start: '2026-10-12', end: '2026-10-18');
     final draft = ProfileSettingsDraft.from(data.profile, today: '2026-10-12');
-    expect(settingsAffectSchedule(data, draft.copyWith(bufferMinutes: 60)), isTrue);
     expect(
-      settingsAffectSchedule(
-        data,
-        draft.copyWith(planStartDate: '2026-10-13'),
-      ),
+      settingsAffectSchedule(data, draft.copyWith(bufferMinutes: 60)),
       isTrue,
     );
     expect(
-      settingsAffectSchedule(data, draft.copyWith(subjectLimitMinutes: 120)),
+      settingsAffectSchedule(data, draft.copyWith(planStartDate: '2026-10-13')),
       isTrue,
     );
+    expect(settingsAffectSchedule(data, draft), isFalse);
     // 目标描述和目标日期不影响已有安排，不触发重排。
     expect(
       settingsAffectSchedule(

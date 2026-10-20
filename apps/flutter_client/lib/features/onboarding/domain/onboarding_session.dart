@@ -58,7 +58,6 @@ class OnboardingSession {
     this.recommendations = const PlanningRecommendations(),
     required this.answers,
     required this.profile,
-    required this.courses,
     required this.items,
     required this.summary,
     required this.assumptions,
@@ -78,7 +77,7 @@ class OnboardingSession {
     hasPlan: json['has_plan'] as bool? ?? false,
     replanning: json['replanning'] as bool? ?? false,
     planRevision: json['plan_revision'] as int?,
-    stage: json['stage'] as String,
+    stage: json['stage'] == 'courses' ? 'items' : json['stage'] as String,
     question: json['question'] as String,
     questionType: json['question_type'] is String
         ? json['question_type'] as String
@@ -101,12 +100,9 @@ class OnboardingSession {
         )
         .toList(),
     profile: OnboardingProfile.fromJson(JsonMap.from(json['profile'] as Map)),
-    courses: (json['courses'] as List)
-        .map((entry) => CourseDraft.fromJson(JsonMap.from(entry as Map)))
-        .toList(),
-    items: (json['items'] as List)
-        .map((entry) => ItemDraft.fromJson(JsonMap.from(entry as Map)))
-        .toList(),
+    items: _normalizedSessionItems(
+      json,
+    ).map((entry) => ItemDraft.fromJson(JsonMap.from(entry as Map))).toList(),
     summary: json['summary'] as String,
     assumptions: (json['assumptions'] as List).cast<String>(),
     warnings: (json['warnings'] as List).cast<String>(),
@@ -158,7 +154,6 @@ class OnboardingSession {
   final PlanningRecommendations recommendations;
   final List<InterviewAnswer> answers;
   final OnboardingProfile profile;
-  final List<CourseDraft> courses;
   final List<ItemDraft> items;
   final String summary;
   final List<String> assumptions;
@@ -174,35 +169,62 @@ class OnboardingSession {
   final bool constraintsConfirmed;
   final JsonMap? currentPlan;
 
-  OnboardingSession edit({
-    List<CourseDraft>? courses,
-    List<ItemDraft>? items,
-    JsonMap? research,
-  }) => OnboardingSession(
-    revision: revision,
-    hasPlan: hasPlan,
-    replanning: replanning,
-    planRevision: planRevision,
-    stage: stage,
-    question: question,
-    questionType: questionType,
-    questionOptions: questionOptions,
-    questionMultiple: questionMultiple,
-    recommendations: recommendations,
-    answers: answers,
-    profile: profile,
-    courses: courses ?? this.courses,
-    items: items ?? this.items,
-    summary: summary,
-    assumptions: assumptions,
-    warnings: warnings,
-    startDate: startDate,
-    endDate: endDate,
-    learningContext: learningContext,
-    research: research ?? this.research,
-    planning: planning,
-    preview: courses != null || items != null ? null : preview,
-    constraintsConfirmed: constraintsConfirmed,
-    currentPlan: currentPlan,
-  );
+  OnboardingSession edit({List<ItemDraft>? items, JsonMap? research}) =>
+      OnboardingSession(
+        revision: revision,
+        hasPlan: hasPlan,
+        replanning: replanning,
+        planRevision: planRevision,
+        stage: stage,
+        question: question,
+        questionType: questionType,
+        questionOptions: questionOptions,
+        questionMultiple: questionMultiple,
+        recommendations: recommendations,
+        answers: answers,
+        profile: profile,
+        items: items ?? this.items,
+        summary: summary,
+        assumptions: assumptions,
+        warnings: warnings,
+        startDate: startDate,
+        endDate: endDate,
+        learningContext: learningContext,
+        research: research ?? this.research,
+        planning: planning,
+        preview: items != null ? null : preview,
+        constraintsConfirmed: constraintsConfirmed,
+        currentPlan: currentPlan,
+      );
+}
+
+List<dynamic> _normalizedSessionItems(JsonMap json) {
+  final items = json['items'];
+  if (items is! List) return const [];
+  final coursesById = <String, String>{};
+  final courses = json['courses'];
+  if (courses is List) {
+    for (final value in courses) {
+      if (value is Map && value['id'] is String && value['name'] is String) {
+        coursesById[value['id'] as String] = value['name'] as String;
+      }
+    }
+  }
+  return [
+    for (final value in items)
+      if (value is Map)
+        () {
+          final item = JsonMap.from(value);
+          if (!item.containsKey('tag_names')) {
+            final courseId =
+                item.remove('course_id') ?? item.remove('courseId');
+            final name = courseId is String ? coursesById[courseId] : null;
+            item['tag_names'] = name == null ? <String>[] : <String>[name];
+          } else {
+            item.remove('course_id');
+            item.remove('courseId');
+          }
+          return item;
+        }(),
+  ];
 }

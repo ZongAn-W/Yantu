@@ -68,41 +68,18 @@ class CalendarWeekDay {
   int get actualMinutes => day.actualMinutes;
 }
 
-/// A course used by at least one day item of the week, with its week totals.
-class CalendarWeekCourse {
-  const CalendarWeekCourse({
-    required this.subjectId,
-    required this.name,
-    required this.declaredColor,
-    required this.plannedMinutes,
-    required this.actualMinutes,
-  });
-
-  final String subjectId;
-  final String name;
-  final String? declaredColor;
-  final int plannedMinutes;
-  final int actualMinutes;
-}
-
-/// One `course × effort kind` stacking layer, shared by both week charts.
+/// One effort-kind stacking layer, shared by both week charts.
 ///
 /// The position in [CalendarWeekData.layers] is the fixed stacking and legend
 /// order for the whole week. A day without that kind of effort contributes `0`
 /// instead of reordering the layers.
 class CalendarWeekLayer {
   const CalendarWeekLayer({
-    required this.subjectId,
-    required this.courseName,
-    required this.declaredColor,
     required this.kind,
     required this.minutesByDay,
     required this.totalMinutes,
   });
 
-  final String subjectId;
-  final String courseName;
-  final String? declaredColor;
   final CalendarEffortKind kind;
 
   /// Seven values, Monday through Sunday; never reordered or dropped.
@@ -115,9 +92,11 @@ class CalendarWeekLayer {
 /// One immutable week snapshot built from the existing daily domain facts.
 ///
 /// Both week charts, their legends and the day detail read this same object, so
-/// totals, owners, classifications, course colours and item order cannot drift
-/// between the two graphics. The model never writes to the plan and never
-/// derives an effort kind from `actual - planned`.
+/// totals, owners, classifications and item order cannot drift
+/// between the two graphics. Totals are aggregated directly across unique task
+/// rows, without repeating any values for tasks that carry multiple tags. The
+/// model never writes to the plan and never derives an effort kind from
+/// `actual - planned`.
 class CalendarWeekData {
   const CalendarWeekData({
     required this.weekStart,
@@ -125,7 +104,6 @@ class CalendarWeekData {
     required this.plannedMinutes,
     required this.actualMinutes,
     required this.scaleMinutes,
-    required this.courses,
     required this.layers,
     required this.minutesByKind,
   });
@@ -142,10 +120,7 @@ class CalendarWeekData {
   /// independently and over-plan minutes are never truncated.
   final double scaleMinutes;
 
-  /// Course order and colours used by both week charts and their legends.
-  final List<CalendarWeekCourse> courses;
-
-  /// Fixed `course × kind` stacking order for the whole week.
+  /// Fixed effort-kind stacking order for the whole week.
   final List<CalendarWeekLayer> layers;
   final Map<CalendarEffortKind, int> minutesByKind;
 
@@ -162,7 +137,8 @@ class CalendarWeekData {
   }
 
   /// The item order shown in the shared detail list, Monday through Sunday.
-  List<CalendarDayItem> itemsFor(String date) => dayFor(date)?.day.items ?? const [];
+  List<CalendarDayItem> itemsFor(String date) =>
+      dayFor(date)?.day.items ?? const [];
 }
 
 /// Builds the read-only week snapshot that contains [anchorDate].
@@ -177,75 +153,32 @@ CalendarWeekData buildCalendarWeekData(PlannerData data, String anchorDate) {
       ),
   ];
 
-  final courseOrder = <String>[];
-  final courseNames = <String, String>{};
-  final courseColors = <String, String?>{};
-  final plannedByCourse = <String, int>{};
-  final actualByCourse = <String, int>{};
+  // Aggregate each unique task row once into fixed effort-kind layers. A task's
+  // tag list is presentation metadata and never expands its minutes.
+  final layerMinutes = <CalendarEffortKind, List<int>>{};
   for (final weekDay in days) {
     for (final item in weekDay.day.items) {
-      final key = item.subjectId.isEmpty ? 'unknown' : item.subjectId;
-      if (!courseNames.containsKey(key)) {
-        courseOrder.add(key);
-        courseNames[key] = item.subjectName.isEmpty ? '未分类' : item.subjectName;
-        courseColors[key] = item.declaredColor;
-      } else if (courseColors[key] == null && item.declaredColor != null) {
-        courseColors[key] = item.declaredColor;
-      }
-      plannedByCourse[key] = (plannedByCourse[key] ?? 0) + item.plannedMinutes;
-      actualByCourse[key] = (actualByCourse[key] ?? 0) + item.actualMinutes;
-    }
-  }
-
-  // Aggregate actual effort into fixed `course × kind` layers. The order is the
-  // course's first appearance in the canonical day item order, then the stable
-  // effort-kind order, so every day and both charts use identical stacking.
-  final layerMinutes = <String, List<int>>{};
-  final layerKind = <String, CalendarEffortKind>{};
-  final layerSubject = <String, String>{};
-  for (final weekDay in days) {
-    for (final item in weekDay.day.items) {
-      final subjectKey = item.subjectId.isEmpty ? 'unknown' : item.subjectId;
       for (final effort in item.efforts) {
         if (effort.minutes <= 0) continue;
-        final key = '$subjectKey\u0000${effort.kind.name}';
         final minutes = layerMinutes.putIfAbsent(
-          key,
+          effort.kind,
           () => List<int>.filled(7, 0),
         );
         minutes[weekDay.index] += effort.minutes;
-        layerKind[key] = effort.kind;
-        layerSubject[key] = subjectKey;
       }
     }
   }
-  final courseIndex = {
-    for (var index = 0; index < courseOrder.length; index++)
-      courseOrder[index]: index,
-  };
-  final layerKeys = layerMinutes.keys.toList()
-    ..sort((a, b) {
-      final byCourse = courseIndex[layerSubject[a]]!.compareTo(
-        courseIndex[layerSubject[b]]!,
-      );
-      return byCourse != 0
-          ? byCourse
-          : layerKind[a]!.index.compareTo(layerKind[b]!.index);
-    });
   final layers = [
-    for (final key in layerKeys)
-      () {
-        final minutes = layerMinutes[key]!;
-        final subjectId = layerSubject[key]!;
-        return CalendarWeekLayer(
-          subjectId: subjectId,
-          courseName: courseNames[subjectId] ?? '未分类',
-          declaredColor: courseColors[subjectId],
-          kind: layerKind[key]!,
-          minutesByDay: List<int>.unmodifiable(minutes),
-          totalMinutes: minutes.fold<int>(0, (sum, value) => sum + value),
-        );
-      }(),
+    for (final kind in CalendarEffortKind.values)
+      if (layerMinutes.containsKey(kind))
+        CalendarWeekLayer(
+          kind: kind,
+          minutesByDay: List<int>.unmodifiable(layerMinutes[kind]!),
+          totalMinutes: layerMinutes[kind]!.fold<int>(
+            0,
+            (sum, value) => sum + value,
+          ),
+        ),
   ];
 
   final minutesByKind = <CalendarEffortKind, int>{};
@@ -253,17 +186,6 @@ CalendarWeekData buildCalendarWeekData(PlannerData data, String anchorDate) {
     minutesByKind[layer.kind] =
         (minutesByKind[layer.kind] ?? 0) + layer.totalMinutes;
   }
-
-  final courses = [
-    for (final subjectId in courseOrder)
-      CalendarWeekCourse(
-        subjectId: subjectId,
-        name: courseNames[subjectId] ?? '未分类',
-        declaredColor: courseColors[subjectId],
-        plannedMinutes: plannedByCourse[subjectId] ?? 0,
-        actualMinutes: actualByCourse[subjectId] ?? 0,
-      ),
-  ];
 
   var planned = 0;
   var actual = 0;
@@ -283,7 +205,6 @@ CalendarWeekData buildCalendarWeekData(PlannerData data, String anchorDate) {
     plannedMinutes: planned,
     actualMinutes: actual,
     scaleMinutes: math.max(1, maximum).toDouble(),
-    courses: List<CalendarWeekCourse>.unmodifiable(courses),
     layers: List<CalendarWeekLayer>.unmodifiable(layers),
     minutesByKind: Map<CalendarEffortKind, int>.unmodifiable(minutesByKind),
   );

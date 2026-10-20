@@ -72,14 +72,14 @@ PlannerData _scenarioData({
 }) {
   final base = plannerFixture();
   final task = base.tasks.single;
-  final english = base.subjects.single.copyWith(
+  final english = base.tags.single.copyWith(
     id: 'english',
     name: '英语',
     color: '#1f7a5c',
   );
   final plannedOnly = task.copyWith(
     id: 'planned-only',
-    subjectId: english.id,
+    tagIds: [english.id],
     title: '仅计划事项',
   );
   final unscheduled = task.copyWith(id: 'unscheduled', title: longTitle);
@@ -88,7 +88,7 @@ PlannerData _scenarioData({
   String date(int offset) => addDate(anchor, offset);
 
   return base.copyWith(
-    subjects: [base.subjects.single, english],
+    tags: [base.tags.single, english],
     tasks: [task, plannedOnly, unscheduled, over],
     // Retired temporary learning: still present in historical data, but the
     // read-only calendar must never project it into an item or a legend.
@@ -362,15 +362,7 @@ void main() {
           find.text('周实学 ${duration(week.actualMinutes)}'),
           findsOneWidget,
         );
-        // Course colours and effort textures have text legends.
-        expect(
-          find.byKey(const ValueKey('calendar-week-course-calculus')),
-          findsOneWidget,
-        );
-        expect(
-          find.byKey(const ValueKey('calendar-week-course-english')),
-          findsOneWidget,
-        );
+        // Effort types remain identified with text and pattern legends.
         expect(
           find.byKey(const ValueKey('calendar-week-kind-planned')),
           findsOneWidget,
@@ -394,7 +386,7 @@ void main() {
         );
         expect(find.textContaining('用于确认完整名称'), findsNothing);
         expect(find.textContaining('两个方向使用同一分钟比例'), findsNothing);
-        expect(find.textContaining('按课程 × 投入分类固定顺序堆叠'), findsNothing);
+        expect(find.textContaining('课程'), findsNothing);
         await tester.tap(
           find.byKey(ValueKey('calendar-week-day-${week.days[1].date}')),
         );

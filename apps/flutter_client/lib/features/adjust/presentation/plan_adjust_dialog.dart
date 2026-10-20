@@ -91,7 +91,8 @@ class PlanAdjustDialog extends StatelessWidget {
               ),
               PlannerStat(
                 label: '周期长度',
-                value: '${preview.cycle.previousDays} 天 → '
+                value:
+                    '${preview.cycle.previousDays} 天 → '
                     '${preview.cycle.days} 天',
               ),
               PlannerStat(
@@ -201,9 +202,7 @@ class PlanAdjustDialog extends StatelessWidget {
 
   List<Widget> _workloadSection(BuildContext context) {
     final workload = preview.workload;
-    if (workload.updatedTasks.isEmpty &&
-        workload.newTasks.isEmpty &&
-        workload.subjects.isEmpty) {
+    if (workload.updatedTasks.isEmpty && workload.newTasks.isEmpty) {
       return const [];
     }
     final updated = workload.updatedTasks
@@ -224,23 +223,6 @@ class PlanAdjustDialog extends StatelessWidget {
         ...created,
         if (workload.newTasks.length > maxListRows)
           _moreLabel(workload.newTasks.length - maxListRows),
-      ],
-      if (workload.subjects.isNotEmpty) ...[
-        _listHeading('课程总量变化'),
-        for (final subject in workload.subjects)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 2),
-            child: Row(
-              children: [
-                Expanded(child: Text(subject.name)),
-                Text(
-                  '${hoursText(subject.previousMinutes)} → '
-                  '${hoursText(subject.minutes)} 小时',
-                  style: tabularFigures.copyWith(fontSize: 12),
-                ),
-              ],
-            ),
-          ),
       ],
     ];
   }
@@ -267,10 +249,10 @@ class PlanAdjustDialog extends StatelessWidget {
               ),
             ],
           ),
-          if (task.subject.isNotEmpty || task.reason.isNotEmpty)
+          if (task.tagNames.isNotEmpty || task.reason.isNotEmpty)
             _mutedText(
               [
-                if (task.subject.isNotEmpty) task.subject,
+                if (task.tagNames.isNotEmpty) '标签：${task.tagNames.join('、')}',
                 if (task.reason.isNotEmpty) task.reason,
               ].join(' · '),
             ),
@@ -281,7 +263,7 @@ class PlanAdjustDialog extends StatelessWidget {
 
   Widget _newRow(PlanAdjustNewTask task) {
     final meta = [
-      if (task.subject.isNotEmpty) task.subject,
+      if (task.tagNames.isNotEmpty) '标签：${task.tagNames.join('、')}',
       if (task.deadline != null && task.deadline!.isNotEmpty)
         '${task.deadlineKind == ItemDateKind.planEnd ? '本期边界' : '截止'} '
             '${task.deadline}',
@@ -330,9 +312,7 @@ class PlanAdjustDialog extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Expanded(
-                child: Text('${risk.title} · 截止 ${risk.deadline}'),
-              ),
+              Expanded(child: Text('${risk.title} · 截止 ${risk.deadline}')),
               const SizedBox(width: 8),
               Text(
                 '未排 ${duration(risk.unscheduledMinutes)}',

@@ -14,11 +14,7 @@ import '../domain/task_editing.dart';
 import 'planner_sync.dart';
 
 export '../domain/task_editing.dart'
-    show
-        ScheduleOutcome,
-        TaskDraft,
-        validateTaskDraft,
-        resolveSubjectId;
+    show ScheduleOutcome, TaskDraft, validateTaskDraft;
 
 /// Immutable view of the sync coordinator for widgets.
 ///
@@ -81,42 +77,101 @@ class PlannerSession {
   Future<void> edit(PlannerData Function(PlannerData) change) =>
       coordinator.edit(change);
 
-  /// Creates an empty course that can then receive items from the tasks page.
-  ///
-  /// Courses otherwise arrive through the planning flow; this is the explicit
-  /// directory action. The document-level sync already carries `subjects`, so no
-  /// separate endpoint is needed.
-  Future<String> createCourse({
-    required String name,
-    required String color,
-  }) async {
+  Future<String> createTag({required String name, String? color}) async {
     final trimmed = name.trim();
-    if (trimmed.isEmpty) throw StateError('请填写课程名称');
-    if (!RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(color)) {
-      throw StateError('课程颜色格式不正确');
+    if (trimmed.isEmpty) throw StateError('请填写标签名称');
+    if (color != null && !RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(color)) {
+      throw StateError('标签颜色格式不正确');
     }
-    if (data.subjects.any(
-      (subject) => subject.name.trim().toLowerCase() == trimmed.toLowerCase(),
-    )) {
-      throw StateError('已存在同名课程');
-    }
-    final courseId = 'course-${DateTime.now().microsecondsSinceEpoch}';
+    final existing = data.tags
+        .where((tag) => tag.name.trim().toLowerCase() == trimmed.toLowerCase())
+        .firstOrNull;
+    if (existing != null) return existing.id;
+    final tagId = 'tag-${DateTime.now().microsecondsSinceEpoch}';
+    final stamp = nowIso();
     await edit(
       (data) => data.copyWith(
-        subjects: [
-          ...data.subjects,
-          Subject(
-            id: courseId,
+        tags: [
+          ...data.tags,
+          Tag(
+            id: tagId,
             userId: data.profile.userId,
             name: trimmed,
             color: color,
-            priority: 2,
+            createdAt: stamp,
+            updatedAt: stamp,
           ),
         ],
       ),
     );
-    return courseId;
+    return tagId;
   }
+
+  Future<void> renameTag(String tagId, String name) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) throw StateError('请填写标签名称');
+    final duplicate = data.tags.any(
+      (tag) =>
+          tag.id != tagId &&
+          tag.name.trim().toLowerCase() == trimmed.toLowerCase(),
+    );
+    if (duplicate) throw StateError('已存在同名标签');
+    await edit(
+      (data) => data.copyWith(
+        tags: [
+          for (final tag in data.tags)
+            tag.id == tagId
+                ? tag.copyWith(name: trimmed, updatedAt: nowIso())
+                : tag,
+        ],
+      ),
+    );
+  }
+
+  Future<void> recolorTag(String tagId, String? color) async {
+    if (color != null && !RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(color)) {
+      throw StateError('标签颜色格式不正确');
+    }
+    await edit(
+      (data) => data.copyWith(
+        tags: [
+          for (final tag in data.tags)
+            tag.id == tagId ? tag.copyWith(color: color) : tag,
+        ],
+      ),
+    );
+  }
+
+  Future<void> deleteTag(String tagId) => edit(
+    (data) => data.copyWith(
+      tags: data.tags.where((tag) => tag.id != tagId).toList(growable: false),
+      tasks: [
+        for (final task in data.tasks)
+          task.copyWith(
+            tagIds: task.tagIds
+                .where((id) => id != tagId)
+                .toList(growable: false),
+          ),
+      ],
+    ),
+  );
+
+  Future<void> setTaskTags(String taskId, List<String> tagIds) => edit(
+    (data) => data.copyWith(
+      tasks: [
+        for (final task in data.tasks)
+          task.id == taskId
+              ? task.copyWith(
+                  tagIds: tagIds
+                      .where((id) => data.tags.any((tag) => tag.id == id))
+                      .toSet()
+                      .toList(growable: false),
+                  updatedAt: nowIso(),
+                )
+              : task,
+      ],
+    ),
+  );
 
   // ------------------------------------------------------------------ tasks
 

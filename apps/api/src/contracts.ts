@@ -99,19 +99,14 @@ export type ProfileUpdate = z.infer<typeof ProfileUpdateSchema>;
 /** 兼容旧名称，访谈会话复用同一份资料结构。 */
 export const InterviewProfileSchema = ProfileSchema;
 
-export const CourseDraftSchema = z.object({
-  id: z.string().min(1).max(80),
-  name: z.string().min(1).max(100),
-  description: z.string().max(1000).default(""),
-  priority: z.number().int().min(1).max(3).default(2),
-});
-
 /** 事项日期语义：真实截止日期，或本期安排边界。 */
 export const ItemDateKindSchema = z.enum(["deadline", "plan_end"]);
 
 export const ItemDraftSchema = z.object({
   id: z.string().min(1).max(80),
-  course_id: z.string().min(1).max(80),
+  tag_names: z.preprocess(value => value === undefined ? [] : value,
+    z.array(z.string().trim().min(1).max(100)).max(20)
+      .transform(names => [...new Map(names.map(name => [name.normalize("NFKC").toLocaleLowerCase("en-US"), name])).values()])),
   title: z.string().min(1).max(200),
   description: z.string().max(4000).default(""),
   completion_criteria: z.string().max(1000).default(""),
@@ -123,14 +118,38 @@ export const ItemDraftSchema = z.object({
   planning: ItemPlanningSchema.nullable().optional(),
 });
 
-export const PlanDraftSchema = z.object({
-  courses: z.array(CourseDraftSchema).min(1).max(100),
+function normalizePlanDraft(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const draft = value as Record<string, unknown>;
+  const courses = Array.isArray(draft.courses) ? draft.courses : [];
+  const namesById = new Map<string, string>();
+  for (const raw of courses) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const row = raw as Record<string, unknown>;
+    if (typeof row.id === "string" && typeof row.name === "string") namesById.set(row.id, row.name.trim());
+  }
+  const items = Array.isArray(draft.items) ? draft.items.map(raw => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+    const item = { ...(raw as Record<string, unknown>) };
+    if (!Array.isArray(item.tag_names) && typeof item.course_id === "string") {
+      const name = namesById.get(item.course_id);
+      item.tag_names = name ? [name] : [];
+    }
+    delete item.course_id;
+    return item;
+  }) : draft.items;
+  const result: Record<string, unknown> = { ...draft, items };
+  delete result.courses;
+  return result;
+}
+
+export const PlanDraftSchema = z.preprocess(normalizePlanDraft, z.object({
   items: z.array(ItemDraftSchema).min(1).max(500),
   analysis_summary: z.string().max(4000),
   assumptions: z.array(z.string().max(500)).max(20).default([]),
   warnings: z.array(z.string().max(500)).max(20).default([]),
   planning: PlanPlanningSchema.nullable().optional(),
-});
+}));
 
 export const DailyEntrySchema = z.object({
   item_id: z.string().uuid(),

@@ -16,7 +16,7 @@ import '../../shell/app_shell.dart';
 import 'capacity_overrides_dialog.dart';
 import 'delete_account_dialog.dart';
 
-/// Web `/settings` — study information, scheduling boundaries, course priority,
+/// Web `/settings` — study information and scheduling boundaries,
 /// data management, account and sync state.
 class SettingsPage extends ConsumerStatefulWidget {
   const SettingsPage({super.key});
@@ -46,7 +46,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   final _progress = TextEditingController();
   final _constraints = TextEditingController();
   final _buffer = TextEditingController();
-  final _subjectLimit = TextEditingController();
   final _startMinute = TextEditingController();
   final _endMinute = TextEditingController();
   final _weekly = <String, TextEditingController>{};
@@ -54,7 +53,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   int _granularity = 30;
   GoalType _goalType = GoalType.other;
   bool _targetConfirmed = false;
-  Map<String, int> _priorities = const {};
   String? _profileError;
   String? _notice;
   int _weekVersion = 0;
@@ -72,7 +70,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       _progress,
       _constraints,
       _buffer,
-      _subjectLimit,
       _startMinute,
       _endMinute,
       ..._weekly.values,
@@ -102,7 +99,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     _progress.text = draft.currentProgress;
     _constraints.text = data.profile.constraints;
     _buffer.text = '${draft.bufferMinutes}';
-    _subjectLimit.text = '${draft.subjectLimitMinutes}';
     _startMinute.text = '${draft.studyStartMinute}';
     _endMinute.text = '${draft.studyEndMinute}';
     _granularity = draft.granularityMinutes;
@@ -117,9 +113,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
       );
     }
     _weekVersion++;
-    _priorities = {
-      for (final subject in data.subjects) subject.id: subject.priority,
-    };
   }
 
   ProfileSettingsDraft _draft(PlannerData data) =>
@@ -140,14 +133,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             key: int.tryParse(_weekly[key]?.text.trim() ?? '') ?? 0,
         },
         bufferMinutes: _number(_buffer, data.profile.bufferMinutes),
-        subjectLimitMinutes: _number(
-          _subjectLimit,
-          data.profile.subjectLimitMinutes,
-        ),
         studyStartMinute: _number(_startMinute, data.profile.studyStartMinute),
         studyEndMinute: _number(_endMinute, data.profile.studyEndMinute),
         granularityMinutes: _granularity,
-        priorities: _priorities,
       );
 
   static int _number(TextEditingController controller, int fallback) =>
@@ -243,8 +231,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               final right = Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _priorityPanel(data, text),
-                  const SizedBox(height: 16),
                   _dataPanel(snapshot, text),
                   const SizedBox(height: 16),
                   _connectionPanel(snapshot, text),
@@ -304,43 +290,72 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
 
   Widget _accountPanel(PlannerSnapshot snapshot) {
     final auth = ref.watch(authControllerProvider);
+    final user = auth.user;
     return PlannerPanel(
       title: '账号管理',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (auth.user != null) ...[
-            Text(auth.user!.email),
-            const SizedBox(height: 8),
+          if (user == null)
+            const Text('未登录')
+          else ...[
+            Text(
+              user.username,
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 2),
+            Text(
+              user.email,
+              style: const TextStyle(color: PlannerColors.muted, fontSize: 12),
+            ),
           ],
-          const Text('注销后将永久删除账号和学习数据，且无法恢复。'),
-          if (auth.deletionPending) ...[
+          const SizedBox(height: 8),
+          const Text('标签、事项、每日计划和实际学习记录保存在服务器，本机保留离线副本。'),
+          const SizedBox(height: 12),
+          if (auth.error != null) ...[
+            PlannerNotice(auth.error!, tone: PlannerNoticeTone.error),
             const SizedBox(height: 12),
+          ],
+          if (auth.deletionPending) ...[
             const PlannerNotice(
               '注销结果尚未确认，计时和同步已暂停。请联网后再次点击“注销账号”确认结果。',
               tone: PlannerNoticeTone.warning,
             ),
+            const SizedBox(height: 12),
           ],
+          const Text('注销后将永久删除账号和学习数据，且无法恢复。'),
           const SizedBox(height: 12),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
-              key: const ValueKey('settings-delete-account'),
-              style: OutlinedButton.styleFrom(
-                foregroundColor: PlannerColors.danger,
+          Wrap(
+            spacing: 12,
+            runSpacing: 12,
+            children: [
+              AsyncActionButton(
+                key: const ValueKey('settings-sign-out'),
+                label: '退出登录',
+                icon: Icons.logout,
+                filled: false,
+                enabled: user != null && !auth.loading,
+                onPressed: () =>
+                    ref.read(authControllerProvider.notifier).signOut(),
               ),
-              onPressed:
-                  auth.user == null || auth.loading || auth.deletingAccount
-                  ? null
-                  : () => DeleteAccountDialog.show(
-                      context,
-                      onExport: snapshot.data == null
-                          ? null
-                          : () => ref.read(plannerSessionProvider).exportJson(),
-                    ),
-              icon: const Icon(Icons.person_remove_outlined),
-              label: const Text('注销账号'),
-            ),
+              OutlinedButton.icon(
+                key: const ValueKey('settings-delete-account'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: PlannerColors.danger,
+                ),
+                onPressed: user == null || auth.loading || auth.deletingAccount
+                    ? null
+                    : () => DeleteAccountDialog.show(
+                        context,
+                        onExport: snapshot.data == null
+                            ? null
+                            : () =>
+                                  ref.read(plannerSessionProvider).exportJson(),
+                      ),
+                icon: const Icon(Icons.person_remove_outlined),
+                label: const Text('注销账号'),
+              ),
+            ],
           ),
         ],
       ),
@@ -541,12 +556,6 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ),
             const SizedBox(height: 12),
           ],
-          _NumberField(
-            controller: _subjectLimit,
-            label: '单科每日上限（分钟）',
-            helper: '60 至 480，实际排程最多按 240 分钟计算',
-          ),
-          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
@@ -601,57 +610,12 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
   }
 
-  Widget _priorityPanel(PlannerData data, TextTheme text) => PlannerPanel(
-    title: '课程优先级',
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        for (final subject in data.subjects)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Row(
-              children: [
-                Expanded(
-                  child: SubjectChip(
-                    name: subject.name,
-                    color: subjectColor(subject.id, subject.color),
-                  ),
-                ),
-                SizedBox(
-                  width: 130,
-                  child: DropdownButtonFormField<int>(
-                    initialValue: _priorities[subject.id] ?? subject.priority,
-                    decoration: const InputDecoration(labelText: '优先级'),
-                    items: const [
-                      DropdownMenuItem(value: 3, child: Text('高')),
-                      DropdownMenuItem(value: 2, child: Text('中高')),
-                      DropdownMenuItem(value: 1, child: Text('普通')),
-                    ],
-                    onChanged: (value) => setState(() {
-                      _priorities = {
-                        ..._priorities,
-                        subject.id: value ?? subject.priority,
-                      };
-                    }),
-                  ),
-                ),
-              ],
-            ),
-          ),
-        const Text(
-          '优先级影响排程顺序：同一天内优先安排高优先级课程。',
-          style: TextStyle(color: PlannerColors.muted, fontSize: 12),
-        ),
-      ],
-    ),
-  );
-
   Widget _dataPanel(PlannerSnapshot snapshot, TextTheme text) => PlannerPanel(
     title: '数据管理',
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const Text('JSON 包含课程、事项、每日安排、学习记录和重排快照。恢复后先保存在本机，再检查云端版本并同步。'),
+        const Text('JSON 包含标签、事项、每日安排、学习记录和重排快照。恢复后先保存在本机，再检查云端版本并同步。'),
         const SizedBox(height: 12),
         Wrap(
           spacing: 12,
@@ -722,16 +686,11 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   );
 
   Widget _connectionPanel(PlannerSnapshot snapshot, TextTheme text) {
-    final auth = ref.watch(authControllerProvider);
     return PlannerPanel(
       title: '服务器连接',
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          PlannerStat(
-            label: '账号',
-            value: auth.user?.username ?? auth.user?.email ?? '未登录',
-          ),
           PlannerStat(
             label: '同步状态',
             value: syncLabels[snapshot.status] ?? '等待同步',

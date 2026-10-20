@@ -32,7 +32,6 @@ const profile: Profile = {
   daily_limit_minutes: 480,
   granularity_minutes: 30,
   buffer_minutes: 30,
-  subject_limit_minutes: 240,
   study_start_minute: 480,
   study_end_minute: 1200,
   foundation: "3.4",
@@ -40,7 +39,7 @@ const profile: Profile = {
 const task = (id: string, overrides: Partial<Task> = {}): Task => ({
   id,
   user_id: profile.user_id,
-  subject_id: "math",
+  tag_ids: [],
   title: `任务 ${id}`,
   estimated_minutes: 120,
   completed_minutes: 0,
@@ -108,7 +107,7 @@ const input = (overrides: Partial<ReplanInput> = {}): ReplanInput => ({
 const data = (source: ReplanInput): PlannerData => ({
   version: 1,
   profile: source.profile,
-  subjects: [],
+  tags: [],
   tasks: source.tasks,
   blocks: source.blocks,
   logs: source.logs,
@@ -197,7 +196,7 @@ describe("保守重排", () => {
   it("每天学习时长不超过8小时，并保留30分钟机动时间", () => {
     const tasks = [
       task("math", { estimated_minutes: 300 }),
-      task("english", { estimated_minutes: 300, subject_id: "english" }),
+      task("english", { estimated_minutes: 300 }),
     ];
     const preview = generateReplanPreview(
       input({
@@ -219,8 +218,8 @@ describe("保守重排", () => {
     const source = input({
       profile: { ...profile, daily_limit_minutes: 1200, buffer_minutes: 0 },
       tasks: [
-        task("math", { estimated_minutes: 500, subject_id: "math" }),
-        task("cs", { estimated_minutes: 500, subject_id: "cs" }),
+        task("math", { estimated_minutes: 500 }),
+        task("cs", { estimated_minutes: 500 }),
       ],
       blocks: [
         block("m", "math", { duration_minutes: 500 }),
@@ -234,7 +233,7 @@ describe("保守重排", () => {
       ).toBeLessThanOrEqual(450);
   });
 
-  it("同一科目每天最多4小时", () => {
+  it("同一事项只受全局每日容量限制", () => {
     const preview = generateReplanPreview(
       input({
         tasks: [task("math", { estimated_minutes: 600 })],
@@ -244,7 +243,7 @@ describe("保守重排", () => {
     for (const date of new Set(preview.after.map((item) => item.date)))
       expect(
         sum(preview.after.filter((item) => item.date === date)),
-      ).toBeLessThanOrEqual(240);
+      ).toBeLessThanOrEqual(450);
     expect(sum(preview.after)).toBe(600);
   });
 
@@ -320,10 +319,8 @@ describe("保守重排", () => {
         blocks: [block("today", "math", { duration_minutes: 300 })],
       }),
     );
-    expect(sum(preview.after)).toBe(240);
-    expect(preview.conflicts).toEqual([
-      expect.objectContaining({ task_id: "math", minutes: 60 }),
-    ]);
+    expect(sum(preview.after)).toBe(300);
+    expect(preview.conflicts).toEqual([]);
     expect(preview.after.every((item) => item.date <= "2026-10-14")).toBe(true);
   });
 
@@ -432,9 +429,9 @@ describe("超额完成后的有限提前", () => {
       excess_minutes: 60,
       tasks: [
         task("math", { completed_minutes: 180, status: "completed" }),
-        task("low", { priority: 1, subject_id: "english" }),
-        task("high", { priority: 3, subject_id: "cs" }),
-        task("far", { priority: 3, subject_id: "politics" }),
+        task("low", { priority: 1 }),
+        task("high", { priority: 3 }),
+        task("far", { priority: 3 }),
       ],
       blocks: [
         block("today", "math", {
@@ -472,14 +469,14 @@ describe("超额完成后的有限提前", () => {
     expect(taskCompletedMinutes(source.tasks[0], source.logs)).toBe(120);
   });
 
-  it("提前到今天也必须遵守实际用时、机动时间及科目上限", () => {
+  it("提前到今天也必须遵守实际用时、机动时间及每日容量", () => {
     const preview = generateReplanPreview(
       input({
         mode: "overcompleted",
         excess_minutes: 60,
         tasks: [
           task("math", { estimated_minutes: 600, completed_minutes: 420 }),
-          task("future", { subject_id: "english" }),
+          task("future"),
         ],
         blocks: [
           block("today", "math", {

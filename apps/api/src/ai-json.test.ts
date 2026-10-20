@@ -42,8 +42,7 @@ afterEach(() => {
 describe("structured AI request timeouts", () => {
   it("allows item generation to finish after the former 65-second limit", async () => {
     const session = newSession();
-    session.courses = [{ id: "course-1", name: "Reading", description: "", priority: 2 }];
-    const item = { id: "item-1", course_id: "course-1", title: "Read a chapter", estimated_minutes: 60, deadline: "2026-11-14", deadline_kind: "plan_end", priority: 2 };
+    const item = { id: "item-1", title: "Read a chapter", estimated_minutes: 60, deadline: "2026-11-14", deadline_kind: "plan_end", priority: 2 };
     fetchMock.mockImplementation(async (_url, options) => {
       const signal = options!.signal!;
       const delayed = new Promise<Response>(resolve => setTimeout(() => resolve(validResponse({ items: [item], summary: "", assumptions: [], warnings: [] })), 70_000));

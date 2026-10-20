@@ -44,26 +44,17 @@ PlannerData _data({String? planEnd}) {
       dailyLimitMinutes: 480,
       granularityMinutes: 30,
       bufferMinutes: 30,
-      subjectLimitMinutes: 240,
       studyStartMinute: 0,
       studyEndMinute: 1440,
       foundation: '高数基础一轮',
       capacityBasis: CapacityBasis.net,
     ),
-    subjects: const [
-      Subject(
-        id: 's1',
-        userId: 'u1',
-        name: '高数',
-        color: '#4565c7',
-        priority: 3,
-      ),
-    ],
+    tags: const [Tag(id: 's1', userId: 'u1', name: '高数', color: '#4565c7')],
     tasks: [
       Task(
         id: 't1',
         userId: 'u1',
-        subjectId: 's1',
+        tagIds: const ['s1'],
         title: '基础一轮',
         estimatedMinutes: 600,
         completedMinutes: 120,
@@ -79,7 +70,7 @@ PlannerData _data({String? planEnd}) {
       Task(
         id: 't2',
         userId: 'u1',
-        subjectId: 's1',
+        tagIds: const ['s1'],
         title: '线性代数强化',
         estimatedMinutes: 300,
         completedMinutes: 360,
@@ -147,7 +138,8 @@ Map<String, dynamic> _previewJson() {
   return {
     'id': 'job-9',
     'base_revision': 1,
-    'assessment': '目标需要约 1500–2500 小时，当前计划仅 400 小时，明显偏轻；'
+    'assessment':
+        '目标需要约 1500–2500 小时，当前计划仅 400 小时，明显偏轻；'
         '因此延长周期、提高每周投入，并补上真题与政治强化。',
     'verdict': 'too_light',
     'hours': {
@@ -175,7 +167,7 @@ Map<String, dynamic> _previewJson() {
         {
           'task_id': 't1',
           'title': '基础一轮',
-          'subject': '高数',
+          'tag_names': ['数学', '薄弱项'],
           'previous_minutes': 600,
           'minutes': 1200,
           'reason': '补齐章节练习',
@@ -184,19 +176,11 @@ Map<String, dynamic> _previewJson() {
       'new_tasks': [
         {
           'title': '408 真题 15 套',
-          'subject': '408',
+          'tag_names': ['408', '真题'],
           'minutes': 9000,
           'deadline_kind': 'plan_end',
           'deadline': addDate(today, 300),
           'reason': '补齐目标所需学习量',
-        },
-      ],
-      'subjects': [
-        {
-          'subject_id': 's1',
-          'name': '高数',
-          'previous_minutes': 600,
-          'minutes': 1500,
         },
       ],
     },
@@ -396,7 +380,8 @@ void main() {
         preview.workload.newTasks.single.deadlineKind,
         ItemDateKind.planEnd,
       );
-      expect(preview.workload.subjects.single.name, '高数');
+      expect(preview.workload.updatedTasks.single.tagNames, ['数学', '薄弱项']);
+      expect(preview.workload.newTasks.single.tagNames, ['408', '真题']);
       expect(preview.schedule.protectedBlocks, 2);
       expect(preview.deadlineRisks.single.taskId, 't2');
       expect(preview.warnings, hasLength(1));
@@ -454,10 +439,7 @@ void main() {
     };
     final preview = await api.create(expectedRevision: 7, requestId: 'req-1');
     expect(client.paths.single, '/api/ai/plan-adjustments');
-    expect(client.bodies.single, {
-      'expectedRevision': 7,
-      'requestId': 'req-1',
-    });
+    expect(client.bodies.single, {'expectedRevision': 7, 'requestId': 'req-1'});
     expect(client.options.single?.headers?['Idempotency-Key'], 'req-1');
     expect(preview.id, 'job-9');
 
@@ -479,9 +461,7 @@ void main() {
     );
   });
 
-  testWidgets('渲染人物画像、学习进度、近期学习时间与一键调整四个区块（AI 口径）', (
-    tester,
-  ) async {
+  testWidgets('渲染人物画像、学习进度、近期学习时间与一键调整四个区块（AI 口径）', (tester) async {
     _useDesktop(tester);
     await _mount(tester, data: _data());
 
@@ -504,7 +484,9 @@ void main() {
     // 近期学习时间：今天起 7 天与最近 7 天实际用时。
     for (var index = 0; index < 7; index++) {
       expect(
-        find.byKey(Key('adjust-capacity-day-${addDate(shanghaiToday(), index)}')),
+        find.byKey(
+          Key('adjust-capacity-day-${addDate(shanghaiToday(), index)}'),
+        ),
         findsOneWidget,
       );
     }
@@ -518,10 +500,7 @@ void main() {
     expect(find.text('待安排事项'), findsOneWidget);
     expect(find.text('剩余工作量'), findsNWidgets(2));
     expect(find.text('一键调整后续计划'), findsOneWidget);
-    expect(
-      find.textContaining('AI 会审查目标所需时长与当前计划是否匹配'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('AI 会审查目标所需时长与当前计划是否匹配'), findsOneWidget);
     expect(find.textContaining('可能需要 1–2 分钟'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -561,9 +540,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('点击一键调整调用 create 并以快照 revision 请求，随后展示 AI 预览', (
-    tester,
-  ) async {
+  testWidgets('点击一键调整调用 create 并以快照 revision 请求，随后展示 AI 预览', (tester) async {
     _useDesktop(tester);
     final harness = await _mount(tester, data: _data(), revision: 4);
 
@@ -579,10 +556,7 @@ void main() {
     expect(find.byKey(const Key('plan-adjust-verdict')), findsOneWidget);
     expect(find.text('强度/总量偏轻'), findsOneWidget);
     expect(find.byKey(const Key('plan-adjust-assessment')), findsOneWidget);
-    expect(
-      find.textContaining('目标需要约 1500–2500 小时'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('目标需要约 1500–2500 小时'), findsOneWidget);
     expect(find.text('1500–2500 小时'), findsOneWidget);
     expect(find.text('400 小时'), findsOneWidget);
     expect(find.text('1800 小时'), findsOneWidget);
@@ -593,15 +567,11 @@ void main() {
     expect(find.text('10 → 20 小时'), findsOneWidget);
     expect(find.text('408 真题 15 套'), findsOneWidget);
     expect(find.text('新增 150 小时'), findsOneWidget);
-    expect(find.text('10 → 25 小时'), findsOneWidget);
     expect(find.text('保持不变（保护）'), findsOneWidget);
     expect(find.text('仍未安排'), findsOneWidget);
     expect(find.textContaining('未排 1小时'), findsOneWidget);
     expect(find.text('调整后总时长仍低于目标所需下限'), findsOneWidget);
-    expect(
-      find.text('规划周期延长到目标日期前一天；真实截止日期未改动'),
-      findsOneWidget,
-    );
+    expect(find.text('规划周期延长到目标日期前一天；真实截止日期未改动'), findsOneWidget);
     expect(find.text('取消'), findsOneWidget);
     expect(find.text('确认并应用'), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -634,10 +604,7 @@ void main() {
     expect(harness.api.confirmedRevision, 4);
     expect(harness.session.syncCalls, 1);
     expect(find.text('预览 AI 调整方案'), findsNothing);
-    expect(
-      find.text('AI 已按目标、学习进度与近期学习时间重排后续计划。'),
-      findsOneWidget,
-    );
+    expect(find.text('AI 已按目标、学习进度与近期学习时间重排后续计划。'), findsOneWidget);
     await _drainSnackBar(tester);
     expect(
       tester
@@ -697,10 +664,7 @@ void main() {
 
     expect(harness.api.confirmCalls, 1);
     expect(harness.session.syncCalls, 1);
-    expect(
-      find.textContaining('调整已提交，正在同步新计划'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('调整已提交，正在同步新计划'), findsOneWidget);
     await _drainSnackBar(tester);
     expect(tester.takeException(), isNull);
   });
@@ -710,10 +674,7 @@ void main() {
     final today = shanghaiToday();
     await _mount(tester, data: _data(planEnd: addDate(today, -1)));
 
-    expect(
-      find.text('本期规划周期已结束，请先在今日页继续安排下一周期。'),
-      findsOneWidget,
-    );
+    expect(find.text('本期规划周期已结束，请先在今日页继续安排下一周期。'), findsOneWidget);
     expect(
       tester
           .widget<FilledButton>(find.byKey(const Key('adjust-apply')))

@@ -441,7 +441,7 @@ void main() {
     );
 
     test(
-      'sort and course metadata are stable across input orders and many objects',
+      'sort and task tags are stable across input orders and many objects',
       () {
         final base = plannerFixture();
         final tasks = [
@@ -486,10 +486,9 @@ void main() {
         expect(first.items.first.id, 'task:task-15');
         expect(first.items[16].id, 'task:task-16');
         expect(
-          first.items.every((item) => item.declaredColor == '#4565c7'),
+          first.items.every((item) => item.tagNames.contains('高数')),
           isTrue,
         );
-        expect(first.items.every((item) => item.subjectName == '高数'), isTrue);
         expect(() => first.items.clear(), throwsUnsupportedError);
         _expectSharedTotals(data, first);
       },

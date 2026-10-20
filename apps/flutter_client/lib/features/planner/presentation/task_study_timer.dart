@@ -142,51 +142,74 @@ class TaskStudyTimer extends ConsumerWidget {
       value: '已学 $clock，$targetLabel',
       child: ExcludeSemantics(
         child: SizedBox.square(
-          dimension: 104,
-          child: Stack(
-            fit: StackFit.expand,
-            alignment: Alignment.center,
-            children: [
-              Padding(
-                padding: const EdgeInsets.all(4),
-                child: CircularProgressIndicator(
-                  value: ratio,
-                  strokeWidth: 4,
-                  strokeCap: StrokeCap.round,
-                  backgroundColor: PlannerColors.border,
-                  color: color,
-                ),
+          dimension: 92,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: running
+                    ? color.withValues(alpha: 0.28)
+                    : PlannerColors.border,
               ),
-              Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Text(
-                      '已学',
-                      style: TextStyle(
-                        fontSize: 10,
-                        color: PlannerColors.muted,
+              boxShadow: running
+                  ? [
+                      BoxShadow(
+                        color: color.withValues(alpha: 0.10),
+                        blurRadius: 0,
+                        spreadRadius: 3,
                       ),
-                    ),
-                    Text(
-                      clock,
-                      key: Key('study-clock-$_ownerKey-$date'),
-                      style: tabularFigures.copyWith(
-                        fontSize: 15,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                    Text(
-                      targetLabel,
-                      style: const TextStyle(
-                        fontSize: 10,
-                        color: PlannerColors.muted,
-                      ),
-                    ),
-                  ],
+                    ]
+                  : null,
+            ),
+            child: Stack(
+              fit: StackFit.expand,
+              alignment: Alignment.center,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(4),
+                  child: CircularProgressIndicator(
+                    value: ratio,
+                    strokeWidth: 3.5,
+                    strokeCap: StrokeCap.round,
+                    backgroundColor: PlannerColors.surfaceMuted,
+                    color: color,
+                  ),
                 ),
-              ),
-            ],
+                Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Text(
+                        '已学',
+                        style: TextStyle(
+                          fontSize: 9.5,
+                          height: 1.3,
+                          color: PlannerColors.subtle,
+                        ),
+                      ),
+                      Text(
+                        clock,
+                        key: Key('study-clock-$_ownerKey-$date'),
+                        style: tabularFigures.copyWith(
+                          fontSize: 14.5,
+                          height: 1.35,
+                          fontWeight: FontWeight.w600,
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                      Text(
+                        targetLabel,
+                        style: const TextStyle(
+                          fontSize: 9.5,
+                          height: 1.3,
+                          color: PlannerColors.subtle,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -206,10 +229,10 @@ class TaskStudyTimer extends ConsumerWidget {
                 FilledButton.icon(
                   key: Key('study-timer-action-$_ownerKey-$date'),
                   style: FilledButton.styleFrom(
-                    minimumSize: const Size(0, 36),
-                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                    minimumSize: const Size(0, 34),
+                    padding: const EdgeInsets.symmetric(horizontal: 12),
                     shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(6),
+                      borderRadius: BorderRadius.circular(PlannerRadius.small),
                     ),
                   ),
                   onPressed:
@@ -218,24 +241,29 @@ class TaskStudyTimer extends ConsumerWidget {
                       : () => _toggle(context, ref, timer),
                   icon: Icon(
                     running ? Icons.pause : Icons.play_arrow,
-                    size: 18,
+                    size: 16,
                   ),
                   label: Text(action),
                 ),
               if (running)
-                TextButton.icon(
+                OutlinedButton.icon(
                   key: Key('study-timer-end-$_ownerKey-$date'),
+                  style: OutlinedButton.styleFrom(
+                    minimumSize: const Size(0, 34),
+                    padding: const EdgeInsets.symmetric(horizontal: 10),
+                  ),
                   onPressed: !timer.ready || timer.busy
                       ? null
                       : () => _toggle(context, ref, timer),
-                  icon: const Icon(Icons.stop, size: 18),
-                  label: const Text('结束计时'),
+                  icon: const Icon(Icons.stop, size: 15),
+                  label: const Text('结束'),
                 ),
               if (last != null)
-                IconButton(
+                PlannerIconAction(
                   key: Key('undo-study-session-$_ownerKey-$date'),
                   tooltip: last.isLegacy ? '删除历史计时累计' : '撤销上一段计时',
-                  icon: const Icon(Icons.undo, size: 19),
+                  icon: Icons.undo,
+                  iconSize: 16,
                   onPressed:
                       timer.ready &&
                           !timer.busy &&

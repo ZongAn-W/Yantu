@@ -1,20 +1,18 @@
-export type SubjectId = string;
 export type TaskStatus =
   "not_started" | "in_progress" | "completed" | "delayed" | "conflict" | "archived";
 export type Priority = 1 | 2 | 3;
-export interface Subject {
-  id: SubjectId;
+export interface Tag {
+  id: string;
   user_id: string;
   name: string;
-  color: string;
-  priority: Priority;
+  color?: string;
 }
 export interface Task {
   id: string;
   user_id: string;
-  subject_id: SubjectId;
+  tag_ids: string[];
   title: string;
-  /** Scope and completion criteria for this course item. */
+  /** Learning scope and completion criteria. */
   description?: string;
   estimated_minutes: number;
   completed_minutes: number;
@@ -94,7 +92,6 @@ export interface Profile {
   daily_limit_minutes: number;
   granularity_minutes: number;
   buffer_minutes: number;
-  subject_limit_minutes: number;
   study_start_minute: number;
   study_end_minute: number;
   foundation: string;
@@ -144,7 +141,7 @@ export interface ReplanRun extends ReplanPreview {
 export interface PlannerData {
   version: 1;
   profile: Profile;
-  subjects: Subject[];
+  tags: Tag[];
   tasks: Task[];
   blocks: ScheduleBlock[];
   logs: TimeLog[];

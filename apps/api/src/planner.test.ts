@@ -6,14 +6,14 @@ import { PlannerDocumentSchema, type PlannerDocument } from "./sync-contracts.js
 
 function replanFixture() {
   const stamp = "2026-10-01T00:00:00Z";
-  const task = (id: string, fixed = false): PlannerDocument["tasks"][number] => ({ id, user_id: "owner", subject_id: "math", title: id,
+  const task = (id: string, fixed = false): PlannerDocument["tasks"][number] => ({ id, user_id: "owner", tag_ids: ["math"], title: id,
     estimated_minutes: 240, completed_minutes: 0, priority: 2, deadline: "2026-10-21", is_fixed: fixed, status: "not_started", created_at: stamp, updated_at: stamp });
   const block = (id: string, task_id: string, date: string, extra = {}): PlannerDocument["blocks"][number] => ({ id, user_id: "owner", task_id,
     date, start_minute: 480, duration_minutes: 60, actual_minutes: 0, is_fixed: false, status: "planned", created_at: stamp, updated_at: stamp, ...extra });
   const document: PlannerDocument = { version: 1, profile: { user_id: "owner", planning_mode: "daily", goal_text: "考研复习", goal_type: "exam",
     target_school: "", target_program: "", target_date: null, plan_start_date: "2026-10-18", plan_end_date: "2026-10-21",
-    daily_limit_minutes: 240, granularity_minutes: 30, buffer_minutes: 30, subject_limit_minutes: 240, study_start_minute: 480, study_end_minute: 1320, foundation: "" },
-    subjects: [{ id: "math", user_id: "owner", name: "高数", color: "#275e91", priority: 2 }], tasks: [task("reuse"), task("old"), task("fixed", true)],
+    daily_limit_minutes: 240, granularity_minutes: 30, buffer_minutes: 30, study_start_minute: 480, study_end_minute: 1320, foundation: "" },
+    tags: [{ id: "math", user_id: "owner", name: "高数", color: "#275e91" }], tasks: [task("reuse"), task("old"), task("fixed", true)],
     blocks: [block("past", "old", "2026-10-16"), block("future-old", "old", "2026-10-18"), block("actual", "reuse", "2026-10-18", { actual_minutes: 30 }),
       block("completed", "old", "2026-10-19", { status: "completed", actual_minutes: 60 }), block("fixed-block", "fixed", "2026-10-18", { is_fixed: true })],
     logs: [{ id: "log", user_id: "owner", task_id: "reuse", block_id: "actual", date: "2026-10-18", minutes: 30, started_at: stamp, ended_at: stamp, source: "manual" }],
@@ -21,8 +21,7 @@ function replanFixture() {
   const session = { ...newSession(), has_plan: true, replanning: true, start_date: "2026-10-18", end_date: "2026-10-21",
     profile: ProfileSchema.parse({ goal_text: "考研复习", goal_type: "exam", plan_start_date: "2026-10-18", plan_end_date: "2026-10-21",
       weekly_minutes: Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(day => [String(day), 240])) }),
-    courses: [{ id: "math", name: "高数", description: "", priority: 2 }],
-    items: ["reuse", "fixed"].map(id => ({ id, course_id: "math", title: id, description: "", completion_criteria: "", estimated_minutes: 240, deadline: "2026-10-21", deadline_kind: "plan_end" as const, priority: 2 })) };
+    items: ["reuse", "fixed"].map(id => ({ id, tag_names: ["高数"], title: id, description: "", completion_criteria: "", estimated_minutes: 240, deadline: "2026-10-21", deadline_kind: "plan_end" as const, priority: 2 })) };
   return { document, session };
 }
 
@@ -180,8 +179,7 @@ describe("API planning contracts", () => {
 
   it("keeps structural validation separate from course reference validation", () => {
     expect(() => PlanDraftSchema.parse({
-      courses: [{ id: "math", name: "数学", description: "", priority: 3 }],
-      items: [{ id: "item", course_id: "english", title: "一轮复习", description: "", completion_criteria: "", estimated_minutes: 60, deadline: "2027-12-25", priority: 2 }],
+      items: [{ id: "item", tag_names: ["英语"], title: "一轮复习", description: "", completion_criteria: "", estimated_minutes: 60, deadline: "2027-12-25", priority: 2 }],
       analysis_summary: "",
       assumptions: [],
       warnings: [],

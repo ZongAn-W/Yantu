@@ -86,11 +86,7 @@ class _CalendarDayChartState extends State<CalendarDayChart> {
 
 /// Daily totals shared by the stacked day graphics.
 class CalendarDayTotals extends StatelessWidget {
-  const CalendarDayTotals({
-    required this.day,
-    this.capacityMinutes,
-    super.key,
-  });
+  const CalendarDayTotals({required this.day, this.capacityMinutes, super.key});
 
   final CalendarDayData day;
 
@@ -292,18 +288,13 @@ class _ChartItemLabelState extends State<_ChartItemLabel> {
 }
 
 String _itemDescription(CalendarDayItem item) =>
-    '${item.title}，${item.subjectName}，计划 ${duration(item.plannedMinutes)}，实学 ${duration(item.actualMinutes)}。'
+    '${item.title}${item.tagNames.isEmpty ? '' : '，标签 ${item.tagNames.join('、')}'}，计划 ${duration(item.plannedMinutes)}，实学 ${duration(item.actualMinutes)}。'
     '${item.efforts.isEmpty ? '尚无学习记录' : item.efforts.map((effort) => '${effort.kind.label} ${duration(effort.minutes)}').join('，')}';
 
 Color _itemColor(CalendarDayItem item) {
-  if (RegExp(r'^#[0-9a-fA-F]{6}$').hasMatch(item.declaredColor?.trim() ?? '') ||
-      subjectColors.containsKey(item.subjectId)) {
-    return subjectColor(item.subjectId, item.declaredColor);
-  }
-  // String.hashCode is not a persistent color contract on every Flutter target.
-  final seed = item.subjectId == 'unknown' || item.subjectId.isEmpty
-      ? item.id
-      : item.subjectId;
+  // Keep color tied to the task identity, never to a tag: one task may have
+  // several tags, but it appears exactly once in this chart.
+  final seed = item.id;
   var hash = 0;
   for (final code in seed.codeUnits) {
     hash = (hash * 31 + code) & 0x7fffffff;

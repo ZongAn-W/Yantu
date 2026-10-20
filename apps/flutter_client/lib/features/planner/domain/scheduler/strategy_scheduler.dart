@@ -22,9 +22,8 @@ class _FlexibleWeekPlan {
   final List<_FlexibleSession> sessions_ = [];
   int placedNew = 0;
 
-  List<_FlexibleSession> get pending => sessions_
-      .where((session) => !session.placed)
-      .toList();
+  List<_FlexibleSession> get pending =>
+      sessions_.where((session) => !session.placed).toList();
 }
 
 class _FlexibleSession {
@@ -208,9 +207,6 @@ StrategyResult scheduleStrategy(
           log.date == date &&
           (log.blockId == null || !day.any((block) => block.id == log.blockId)),
     );
-    final courseBlocks = day.where(
-      (block) => byId[block.taskId]?.subjectId == task.subjectId,
-    );
     // The same occupancy accounting is used by manual placement: overlapping timed
     // records count once and are clipped to the study window.
     final dailyOccupied = base.occupiedDayMinutes(
@@ -220,24 +216,11 @@ StrategyResult scheduleStrategy(
       logs: data.logs,
       date: date,
     );
-    final courseOccupied = base.occupiedDayMinutes(
-      profile: data.profile,
-      fixedEvents: const [],
-      dayBlocks: courseBlocks.toList(),
-      logs: data.logs,
-      date: date,
-    );
     final daily =
         base.dailyStudyBudget(data.profile, date) -
         dailyOccupied -
         orphanLogs.fold<int>(0, (sum, log) => sum + math.max(0, log.minutes));
-    final course =
-        math.min(240, data.profile.subjectLimitMinutes) -
-        courseOccupied -
-        orphanLogs
-            .where((log) => byId[log.taskId]?.subjectId == task.subjectId)
-            .fold<int>(0, (sum, log) => sum + math.max(0, log.minutes));
-    return math.max(0, math.min(daily, course));
+    return math.max(0, daily);
   }
 
   bool add(Task task, String date, int duration, [String? instance]) {
@@ -525,7 +508,8 @@ StrategyResult scheduleStrategy(
         final candidates = [...plan.dates]
           ..sort((a, b) {
             final left = (plan.dates.indexOf(a) - session.preferredIndex).abs();
-            final right = (plan.dates.indexOf(b) - session.preferredIndex).abs();
+            final right = (plan.dates.indexOf(b) - session.preferredIndex)
+                .abs();
             return left != right ? left.compareTo(right) : a.compareTo(b);
           });
         for (final date in candidates) {
@@ -547,7 +531,7 @@ StrategyResult scheduleStrategy(
           plan.sessions,
           plan.oldSessions + plan.placedNew,
           '每周练习尚缺一次（${activityOf(plan.task)?['session_minutes'] as int? ?? 30}分钟）；'
-              '请核对可用时间、有效日期和前置条件',
+          '请核对可用时间、有效日期和前置条件',
           plan.weekStart,
         ),
       );
@@ -561,104 +545,109 @@ StrategyResult scheduleStrategy(
       (task) => activityOf(task)?['kind'] == 'recurring',
     )) {
       preparePredecessors(task);
-    final size = activityOf(task)?['session_minutes'] as int? ?? 30;
-    for (final week in recurringDemand(
-      task,
-      data.profile.planStartDate.isEmpty ? from : data.profile.planStartDate,
-      data.profile.planEndDate.isEmpty ? to : data.profile.planEndDate,
-    )) {
-      final first = week['start'] as String, last = week['end'] as String;
-      if (last.compareTo(from) < 0 || first.compareTo(to) > 0) continue;
-      final weekStart = week['week'] as String,
-          sessions = week['sessions'] as int;
-      final orphanWork = data.logs
-          .where(
-            (log) =>
-                log.taskId == task.id &&
-                log.date.compareTo(first) >= 0 &&
-                log.date.compareTo(last) <= 0 &&
-                !blocks.any(
-                  (block) => block.taskId == task.id && block.date == log.date,
-                ),
-          )
-          .fold<int>(0, (sum, log) => sum + math.max(0, log.minutes));
-      final oldSessions =
-          blocks
-              .where(
-                (block) =>
-                    block.taskId == task.id &&
-                    block.date.compareTo(first) >= 0 &&
-                    block.date.compareTo(last) <= 0 &&
-                    block.activityInstanceId == null,
-              )
-              .map((block) => block.date)
-              .toSet()
-              .length +
-          orphanWork ~/ size;
-      final credit = orphanWork % size;
-      final dates = List.generate(
-        _days(first, last),
-        (i) => base.addDays(first, i),
-      );
-      for (var i = 0; i < sessions; i++) {
-        final instance = '${task.id}:$weekStart:$i';
-        if (i < oldSessions ||
-            blocks.any((block) => block.activityInstanceId == instance)) {
-          continue;
-        }
-        final preferred = ((i + .5) * dates.length / sessions).floor();
-        if (dates[preferred].compareTo(to) > 0) continue;
-        final needed = size - (i == oldSessions ? credit : 0);
-        final candidates =
-            dates
+      final size = activityOf(task)?['session_minutes'] as int? ?? 30;
+      for (final week in recurringDemand(
+        task,
+        data.profile.planStartDate.isEmpty ? from : data.profile.planStartDate,
+        data.profile.planEndDate.isEmpty ? to : data.profile.planEndDate,
+      )) {
+        final first = week['start'] as String, last = week['end'] as String;
+        if (last.compareTo(from) < 0 || first.compareTo(to) > 0) continue;
+        final weekStart = week['week'] as String,
+            sessions = week['sessions'] as int;
+        final orphanWork = data.logs
+            .where(
+              (log) =>
+                  log.taskId == task.id &&
+                  log.date.compareTo(first) >= 0 &&
+                  log.date.compareTo(last) <= 0 &&
+                  !blocks.any(
+                    (block) =>
+                        block.taskId == task.id && block.date == log.date,
+                  ),
+            )
+            .fold<int>(0, (sum, log) => sum + math.max(0, log.minutes));
+        final oldSessions =
+            blocks
                 .where(
-                  (date) =>
-                      date.compareTo(from) >= 0 && date.compareTo(to) <= 0,
+                  (block) =>
+                      block.taskId == task.id &&
+                      block.date.compareTo(first) >= 0 &&
+                      block.date.compareTo(last) <= 0 &&
+                      block.activityInstanceId == null,
                 )
-                .toList()
-              ..sort((a, b) {
-                final distance = (dates.indexOf(a) - preferred).abs().compareTo(
-                  (dates.indexOf(b) - preferred).abs(),
-                );
-                return distance != 0 ? distance : a.compareTo(b);
-              });
-        final placed = candidates.any(
-          (date) =>
-              !blocks.any(
-                (block) => block.taskId == task.id && block.date == date,
-              ) &&
-              unlocked(task, date) &&
-              add(task, date, needed, instance),
+                .map((block) => block.date)
+                .toSet()
+                .length +
+            orphanWork ~/ size;
+        final credit = orphanWork % size;
+        final dates = List.generate(
+          _days(first, last),
+          (i) => base.addDays(first, i),
         );
-        if (!placed) {
-          unscheduled += needed;
-          issues.add(
-            StrategyIssue(
-              invalid.contains(task.id)
-                  ? 'DEPENDENCY_INVALID'
-                  : 'RECURRENCE_SHORTFALL',
-              task.id,
-              sessions,
-              oldSessions +
-                  blocks
-                      .where(
-                        (block) =>
-                            block.taskId == task.id &&
-                            (block.activityInstanceId?.startsWith(
-                                  '${task.id}:$weekStart:',
-                                ) ??
-                                false),
-                      )
-                      .length,
-              '每周练习尚缺一次（$size分钟）；请核对可用时间、有效日期和前置条件',
-              weekStart,
-            ),
+        for (var i = 0; i < sessions; i++) {
+          final instance = '${task.id}:$weekStart:$i';
+          if (i < oldSessions ||
+              blocks.any((block) => block.activityInstanceId == instance)) {
+            continue;
+          }
+          final preferred = ((i + .5) * dates.length / sessions).floor();
+          if (dates[preferred].compareTo(to) > 0) continue;
+          final needed = size - (i == oldSessions ? credit : 0);
+          final candidates =
+              dates
+                  .where(
+                    (date) =>
+                        date.compareTo(from) >= 0 && date.compareTo(to) <= 0,
+                  )
+                  .toList()
+                ..sort((a, b) {
+                  final distance = (dates.indexOf(a) - preferred)
+                      .abs()
+                      .compareTo((dates.indexOf(b) - preferred).abs());
+                  return distance != 0 ? distance : a.compareTo(b);
+                });
+          final placed = candidates.any(
+            (date) =>
+                !blocks.any(
+                  (block) => block.taskId == task.id && block.date == date,
+                ) &&
+                unlocked(task, date) &&
+                add(task, date, needed, instance),
           );
+          if (!placed) {
+            unscheduled += needed;
+            issues.add(
+              StrategyIssue(
+                invalid.contains(task.id)
+                    ? 'DEPENDENCY_INVALID'
+                    : 'RECURRENCE_SHORTFALL',
+                task.id,
+                sessions,
+                oldSessions +
+                    blocks
+                        .where(
+                          (block) =>
+                              block.taskId == task.id &&
+                              (block.activityInstanceId?.startsWith(
+                                    '${task.id}:$weekStart:',
+                                  ) ??
+                                  false),
+                        )
+                        .length,
+                '每周练习尚缺一次（$size分钟）；请核对可用时间、有效日期和前置条件',
+                weekStart,
+              ),
+            );
+          }
         }
       }
     }
-  }
-    for (var date = from; date.compareTo(to) <= 0; date = base.addDays(date, 1)) {
+    for (
+      var date = from;
+      date.compareTo(to) <= 0;
+      date = base.addDays(date, 1)
+    ) {
       for (final task in finite) {
         fillFinite(task, date);
       }

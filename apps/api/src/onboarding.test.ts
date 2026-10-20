@@ -3,7 +3,7 @@ import { ProfileSchema } from "./contracts.js";
 import { ActionSchema, CalendarDateSchema, FIRST_QUESTION, FIRST_QUESTION_OPTIONS, QuestionOptionsSchema, RecommendationsSchema, newSession, normalizeQuestionOptions, SessionSchema, type OnboardingSession } from "./onboarding-contracts.js";
 import { advanceOnboarding } from "./onboarding.js";
 import { sanitizeInterviewSession } from "./onboarding-evidence.js";
-import { generateCourses, generateItems, nextInterview } from "./onboarding-ai.js";
+import { generateItems, nextInterview } from "./onboarding-ai.js";
 import { buildPlanningDocument, newPlanning } from "./planning-service.js";
 
 const aiConfig = vi.hoisted(() => ({ aiApiKey: "", aiBaseUrl: "https://ai.invalid", aiModel: "test", aiReasoningEffort: "max",
@@ -23,7 +23,7 @@ async function finishPreview(session: OnboardingSession, fields: {start_date: st
   const preview = await advanceOnboarding(session, { type: "preview_schedule", ...fields, detail_days: 14 });
   return advanceOnboarding(preview, { type: "finish", ...fields, preview_token: preview.preview?.token as string });
 }
-/** 生成课程要求至少 5 个有效回答；补齐测试用回答，不改变既有目标资料。 */
+/** 确保规划测试有足够的访谈上下文，不改变现有回答。 */
 const withMinimumAnswers = (session: OnboardingSession) => ({
   ...session,
   stage: "interview" as const,
@@ -76,7 +76,6 @@ describe("guided onboarding", () => {
     expect(session.profile).toMatchObject({ goal_type: "exam", goal_subtype: "考研", target_school: "上海交通大学",
       target_program: "计算机技术", target_date: null });
     expect(session.profile.goal_text).toBe("我要考研");
-    expect(session.courses).toEqual([]);
     expect(session.items).toEqual([]);
     // 没有明确日期时保持未知，不编造考试日期。
     expect(session.recommendations.target_date).toBe("");
@@ -172,16 +171,17 @@ describe("guided onboarding", () => {
     expect(session.recommendations.plan_end_date).toBe("2026-11-13");
   });
 
-  it("builds fallback courses from the real goal instead of exam subjects", async () => {
+  it("generates items directly from the goal and offers tags only as optional grouping", async () => {
     const skillSession = withMinimumAnswers(await answer(newSession(), "从零学习 Python，能独立处理 CSV 并完成简单的数据分析练习"));
-    const skill = await advanceOnboarding(skillSession, { type: "generate_courses" });
+    const skill = await confirmConstraints(await advanceOnboarding(skillSession, { type: "continue" }));
     expect(skill.profile.goal_type).toBe("skill");
-    expect(skill.courses.map(course => course.name)).toEqual(["Python"]);
-    expect(skill.courses.some(course => /政治|数学/.test(course.name))).toBe(false);
+    expect(skill.stage).toBe("items");
+    expect(skill.items.length).toBeGreaterThan(0);
+    expect(skill.items.every(item => !item.tag_names?.some(name => /政治|数学/.test(name)))).toBe(true);
     const readingSession = withMinimumAnswers(await answer(newSession(), "每天读一点历史，没有固定截止日期"));
-    const reading = await advanceOnboarding(readingSession, { type: "generate_courses" });
+    const reading = await confirmConstraints(await advanceOnboarding(readingSession, { type: "continue" }));
     expect(reading.profile.goal_type).toBe("self_study");
-    expect(reading.courses.map(course => course.name)).toEqual(["历史"]);
+    expect(reading.items.length).toBeGreaterThan(0);
   });
 
   it("reads legacy saved recommendations and maps the old date field", () => {
@@ -209,30 +209,25 @@ describe("guided onboarding", () => {
     expect(session.answers).toHaveLength(5);
   });
 
-  it("requires five valid answers before course generation", async () => {
-    let session = newSession();
-    for (let index = 0; index < 4; index++) session = await answer(session, `第${index + 1}个回答`);
-    expect(session.stage).toBe("interview");
-    await expect(advanceOnboarding(session, { type: "generate_courses" })).rejects.toThrow("至少5个");
-    const fifth = await answer(session, "第5个回答");
-    const courses = await advanceOnboarding(fifth, { type: "generate_courses" });
-    expect(courses.stage).toBe("courses");
-    expect(courses.answers).toHaveLength(5);
+  it("lets the user continue to planning constraints without a course confirmation step", async () => {
+    const session = await answer(newSession(), "每天读一点历史");
+    const constraints = await advanceOnboarding(session, { type: "continue" });
+    expect(constraints.stage).toBe("constraints");
+    expect(constraints.answers).toHaveLength(1);
   });
 
-  it("resumes a legacy checkpoint session directly in the interview with generation available", async () => {
+  it("resumes a legacy checkpoint into the current constraints stage", async () => {
     const legacy = { ...(await fiveAnswers()), stage: "checkpoint" as const };
     const restored = sanitizeInterviewSession(legacy);
     expect(restored.stage).toBe("interview");
     expect(restored.answers).toEqual(legacy.answers);
     expect(restored.question).toBe(legacy.question);
-    // 当前待答问题不需要回答，也不会被当成已确认回答。
-    const courses = await advanceOnboarding(legacy, { type: "generate_courses" });
-    expect(courses.stage).toBe("courses");
-    expect(courses.answers).toEqual(legacy.answers);
+    const constraints = await advanceOnboarding(legacy, { type: "continue" });
+    expect(constraints.stage).toBe("constraints");
+    expect(constraints.answers).toEqual(legacy.answers);
   });
 
-  it("stops adding questions at the limit but keeps generation available", async () => {
+  it("stops adding questions at the limit but lets the user continue", async () => {
     let session = newSession();
     for (let index = 0; index < 50; index++) session = await answer(session, `第${index + 1}个回答`);
     expect(session.answers).toHaveLength(50);
@@ -240,23 +235,16 @@ describe("guided onboarding", () => {
     expect(session.question).toBe("");
     expect(session.question_options).toEqual([]);
     await expect(answer(session, "第51个回答")).rejects.toThrow("已达到50题");
-    const courses = await advanceOnboarding(session, { type: "generate_courses" });
-    expect(courses.stage).toBe("courses");
-    expect(courses.answers).toHaveLength(50);
+    const constraints = await advanceOnboarding(session, { type: "continue" });
+    expect(constraints.stage).toBe("constraints");
+    expect(constraints.answers).toHaveLength(50);
   });
 
-  it("keeps courses and items behind separate confirmations and finishes a finite cycle", async () => {
-    const courses = await advanceOnboarding(await fiveAnswers(), { type: "generate_courses" });
-    expect(courses.stage).toBe("courses");
-    expect(courses.items).toEqual([]);
-    const custom = [{ id: "custom", name: "计算机组成原理", description: "408", priority: 3 }];
-    const constraints = await advanceOnboarding(courses, { type: "confirm_courses", courses: custom });
+  it("generates and confirms items directly after capacity confirmation", async () => {
+    const constraints = await advanceOnboarding(await fiveAnswers(), { type: "continue" });
     expect(constraints.stage).toBe("constraints");
-    expect(constraints.items).toEqual([]);
     const items = await confirmConstraints(constraints);
     expect(items.stage).toBe("items");
-    expect(items.courses).toEqual(custom);
-    expect(items.items.every(i => i.course_id === "custom")).toBe(true);
     expect(items.end_date).toBe("2026-11-13");
     const schedule = await advanceOnboarding(items, { type: "confirm_items", items: items.items });
     expect(schedule.stage).toBe("schedule");
@@ -272,8 +260,8 @@ describe("guided onboarding", () => {
 
   it("allows finishing without any target date", async () => {
     const readingSession = withMinimumAnswers(await answer(newSession(), "每天读一点历史，没有固定截止日期"));
-    const session = await advanceOnboarding(readingSession, { type: "generate_courses" });
-    const items = await confirmConstraints(await advanceOnboarding(session, { type: "confirm_courses", courses: session.courses }));
+    const session = await advanceOnboarding(readingSession, { type: "continue" });
+    const items = await confirmConstraints(session);
     const schedule = await advanceOnboarding(items, { type: "confirm_items", items: items.items });
     const done = await finishPreview(schedule, { start_date: "2026-10-17", end_date: "2026-11-13",
       weekly_minutes: week });
@@ -283,25 +271,25 @@ describe("guided onboarding", () => {
     expect(done.items.every(i => i.deadline === "2026-11-13" && i.deadline_kind === "plan_end")).toBe(true);
   });
 
-  it("rejects stage skipping, orphan items and duplicate course ids", async () => {
-    await expect(advanceOnboarding(newSession(), { type: "generate_courses" })).rejects.toThrow("至少5个");
-    const session = await advanceOnboarding(await fiveAnswers(), { type: "generate_courses" });
-    await expect(advanceOnboarding(session, { type: "confirm_courses", courses: [session.courses[0], session.courses[0]] })).rejects.toThrow("重复");
-    const items = await confirmConstraints(await advanceOnboarding(session, { type: "confirm_courses", courses: session.courses }));
-    await expect(advanceOnboarding(items, { type: "confirm_items", items: [{ ...items.items[0], course_id: "missing" }] })).rejects.toThrow("已确认的课程");
-    await expect(advanceOnboarding(items, { type: "confirm_items", items: [items.items[0]] })).rejects.toThrow("每门课程");
+  it("rejects stage skipping and duplicate item ids while allowing untagged items", async () => {
+    await expect(advanceOnboarding(newSession(), { type: "set_constraints", start_date: "2026-10-17", end_date: "2026-11-13", weekly_minutes: week })).rejects.toThrow("当前阶段");
+    const constraints = await advanceOnboarding(await fiveAnswers(), { type: "continue" });
+    const items = await confirmConstraints(constraints);
+    await expect(advanceOnboarding(items, { type: "confirm_items", items: [items.items[0], items.items[0]] })).rejects.toThrow("事项编号重复");
+    const untagged = items.items.map(item => ({ ...item, tag_names: [] }));
+    expect((await advanceOnboarding(items, { type: "confirm_items", items: untagged })).stage).toBe("schedule");
   });
 
   it("keeps a real deadline when the target date was initially unknown", async () => {
     const session = { ...(await fiveAnswers()), stage: "schedule" as const,
-      items: [{ id: "manual", course_id: "math", title: "自定义截止", description: "", completion_criteria: "",
+      items: [{ id: "manual", tag_names: [], title: "自定义截止", description: "", completion_criteria: "",
         estimated_minutes: 60, deadline: "2026-12-31", deadline_kind: "deadline" as const, priority: 2 }] };
     const done = await advanceOnboarding(session, { type: "finish", start_date: "2026-11-01", end_date: "2027-12-25", weekly_minutes: { "1": 120 } });
     expect(done.items[0].deadline).toBe("2026-12-31");
   });
   it("retains a past real deadline outside the new cycle without inventing a contradictory start", async () => {
     const session = { ...newSession(), stage: "schedule" as const,
-      items: [{ id: "old", course_id: "course", title: "已过截止但仍保留的事项", description: "", completion_criteria: "",
+      items: [{ id: "old", tag_names: [], title: "已过截止但仍保留的事项", description: "", completion_criteria: "",
         estimated_minutes: 60, earliest_date: "2026-10-01", deadline: "2026-10-10", deadline_kind: "deadline" as const, priority: 2 }] };
     const done = await advanceOnboarding(session, { type: "finish", start_date: "2026-10-17", end_date: "2026-11-13", weekly_minutes: week });
     expect(done.items[0].deadline).toBe("2026-10-10");
@@ -311,9 +299,9 @@ describe("guided onboarding", () => {
   it("extends plan-end items into the next cycle but keeps real deadlines", async () => {
     const session = { ...(await fiveAnswers()), stage: "schedule" as const,
       items: [
-        { id: "open", course_id: "math", title: "本期推进", description: "", completion_criteria: "", estimated_minutes: 60,
+        { id: "open", tag_names: [], title: "本期推进", description: "", completion_criteria: "", estimated_minutes: 60,
           deadline: "2026-11-13", deadline_kind: "plan_end" as const, priority: 2 },
-        { id: "real", course_id: "math", title: "真实截止", description: "", completion_criteria: "", estimated_minutes: 60,
+        { id: "real", tag_names: [], title: "真实截止", description: "", completion_criteria: "", estimated_minutes: 60,
           deadline: "2026-11-20", deadline_kind: "deadline" as const, priority: 2 },
       ] };
     const done = await advanceOnboarding(session, { type: "finish", start_date: "2026-10-17", end_date: "2026-12-31", weekly_minutes: { "1": 120 } });
@@ -324,7 +312,7 @@ describe("guided onboarding", () => {
   it("extends only plan-end items and never rewrites a real deadline", async () => {
     const profile = ProfileSchema.parse({ goal_text: "通用学习", plan_start_date: "2026-10-17", plan_end_date: "2026-11-13" });
     const item = (id: string, deadline: string, kind: "deadline" | "plan_end", extra: Record<string, unknown> = {}) =>
-      ({ id, course_id: "c", title: id, description: "", completion_criteria: "", estimated_minutes: 60, deadline, deadline_kind: kind, priority: 2, ...extra });
+      ({ id, tag_names: [], title: id, description: "", completion_criteria: "", estimated_minutes: 60, deadline, deadline_kind: kind, priority: 2, ...extra });
     const session = { ...newSession(), stage: "schedule" as const, end_date: "2026-11-13", profile,
       items: [
         item("real-at-old-end", "2026-11-13", "deadline"),
@@ -344,7 +332,7 @@ describe("guided onboarding", () => {
   it("keeps a follow-up item that starts after this cycle without scheduling it", async () => {
     const profile = ProfileSchema.parse({ goal_text: "通用学习", plan_start_date: "2026-10-17", plan_end_date: "2026-11-13" });
     const session = { ...newSession(), stage: "schedule" as const, end_date: "2026-11-13", profile,
-      items: [{ id: "later", course_id: "c", title: "后续事项", description: "", completion_criteria: "", estimated_minutes: 60,
+      items: [{ id: "later", tag_names: [], title: "后续事项", description: "", completion_criteria: "", estimated_minutes: 60,
         earliest_date: "2027-02-01", deadline: "2027-03-01", deadline_kind: "deadline" as const, priority: 2 }] };
     const done = await advanceOnboarding(session, { type: "finish", start_date: "2026-10-17", end_date: "2026-11-13", weekly_minutes: week });
     expect(done.items[0].earliest_date).toBe("2027-02-01");
@@ -613,8 +601,7 @@ describe("guided onboarding", () => {
   it("backfills recommendations for a legacy items draft without another interview question", async () => {
     const session = await fiveAnswers();
     session.stage = "items";
-    session.courses = [{ id: "math", name: "高数", description: "", priority: 2 }];
-    session.items = [{ id: "math-1", course_id: "math", title: "基础复习", description: "", completion_criteria: "",
+    session.items = [{ id: "math-1", tag_names: [], title: "基础复习", description: "", completion_criteria: "",
       estimated_minutes: 60, deadline: "2026-11-13", deadline_kind: "plan_end", priority: 2 }];
     session.recommendations = SessionSchema.parse({ ...session, recommendations: undefined }).recommendations;
     const recommendations = { target_date: "2027-12-20", target_date_reason: "依据2027年目标估算，官方日期待公布", target_date_estimated: true,
@@ -637,9 +624,8 @@ describe("guided onboarding", () => {
 
   it("provides AI item generation the plan cycle rather than an unrelated default", async () => {
     const session = await fiveAnswers();
-    session.courses = [{ id: "math", name: "高数", description: "", priority: 2 }];
     aiConfig.aiApiKey = "key";
-    fetchMock.mockResolvedValue(Response.json({ choices: [{ message: { content: JSON.stringify({ items: [{ id: "math-1", course_id: "math", title: "基础复习", estimated_minutes: 60, deadline: "2026-11-13", deadline_kind: "plan_end" }], summary: "", assumptions: [], warnings: [] }) } }] }));
+    fetchMock.mockResolvedValue(Response.json({ choices: [{ message: { content: JSON.stringify({ items: [{ id: "math-1", tag_names: ["高数"], title: "基础复习", estimated_minutes: 60, deadline: "2026-11-13", deadline_kind: "plan_end" }], summary: "", assumptions: [], warnings: [] }) } }] }));
     await generateItems(session);
     const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     expect(JSON.parse(request.messages[1].content).plan_end_date).toBe("2026-11-13");
@@ -647,31 +633,28 @@ describe("guided onboarding", () => {
     expect(request.reasoning_effort).toBe("high");
   });
 
-  it("includes current manual edits in conversational revisions and rejects new course references", async () => {
-    const session = await advanceOnboarding(await fiveAnswers(), { type: "generate_courses" });
-    session.courses = [{ id: "manual", name: "手动课程", description: "自定义范围", priority: 1 }];
+  it("includes current manual edits in conversational item revisions and accepts tag names", async () => {
+    const session: OnboardingSession = { ...await fiveAnswers(), stage: "items", items: [{ id: "manual", tag_names: ["手动标签"],
+      title: "手动事项", description: "自定义范围", completion_criteria: "", estimated_minutes: 60,
+      deadline: "2026-11-13", deadline_kind: "plan_end", priority: 1 }] };
     aiConfig.aiApiKey = "key";
-    fetchMock.mockResolvedValue(Response.json({ choices: [{ message: { content: JSON.stringify({ courses: session.courses, summary: "修改后", assumptions: [], warnings: [] }) } }] }));
-    await generateCourses(session, "保留手动课程");
-    expect(JSON.parse(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).messages[1].content).courses).toEqual(session.courses);
-    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).reasoning_effort).toBe("low");
-    fetchMock.mockResolvedValue(Response.json({ choices: [{ message: { content: JSON.stringify({ items: [{ id: "bad", course_id: "invented", title: "错误引用", estimated_minutes: 60, deadline: "2027-12-25" }], summary: "", assumptions: [], warnings: [] }) } }] }));
-    await expect(generateItems(session)).rejects.toThrow("已确认的课程");
+    fetchMock.mockResolvedValue(Response.json({ choices: [{ message: { content: JSON.stringify({ items: [{ ...session.items[0], title: "修改后", tag_names: ["新标签"] }], summary: "修改后", assumptions: [], warnings: [] }) } }] }));
+    await generateItems(session, "保留手动事项");
+    expect(JSON.parse(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).messages[1].content).items[0].tag_names).toEqual(["手动标签"]);
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).reasoning_effort).toBe("high");
   });
 
   it("preserves progress on AI errors and clearly reports unavailable chat editing", async () => {
     const session = await fiveAnswers();
     aiConfig.aiApiKey = "key";
     fetchMock.mockResolvedValue(new Response(null, { status: 503 }));
-    await expect(advanceOnboarding(session, { type: "generate_courses" })).rejects.toThrow("503");
+    const constraints = await advanceOnboarding(session, { type: "continue" });
+    await expect(confirmConstraints(constraints)).rejects.toThrow("503");
     expect(session.stage).toBe("interview");
-    aiConfig.aiApiKey = "";
-    await expect(generateCourses(session, "增加一门课")).rejects.toThrow("尚未配置 AI");
   });
 
   it("retains the constraints draft after an AI timeout and allows the same submission to be retried", async () => {
-    const session: OnboardingSession = { ...newSession(), stage: "constraints",
-      courses: [{ id: "math", name: "高数", description: "", priority: 2 }] };
+    const session: OnboardingSession = { ...newSession(), stage: "constraints" };
     const before = structuredClone(session);
     aiConfig.aiApiKey = "key";
     fetchMock.mockRejectedValueOnce(new DOMException("The operation was aborted due to timeout", "TimeoutError"));
@@ -680,7 +663,7 @@ describe("guided onboarding", () => {
     expect(session).toEqual(before);
 
     fetchMock.mockResolvedValueOnce(Response.json({ choices: [{ message: { content: JSON.stringify({
-      items: [{ id: "math-1", course_id: "math", title: "极限练习", estimated_minutes: 60,
+      items: [{ id: "math-1", tag_names: ["高数"], title: "极限练习", estimated_minutes: 60,
         deadline: "2026-11-13", deadline_kind: "plan_end" }], summary: "", assumptions: [], warnings: [],
     }) } }] }));
     const retried = await confirmConstraints(session);
@@ -698,8 +681,7 @@ describe("full-period onboarding (one model response, flexible capacity)", () =>
     start_date: cycle.start_date, end_date: cycle.end_date,
     profile: ProfileSchema.parse({ goal_text: "线性代数复习", plan_start_date: cycle.start_date, plan_end_date: cycle.end_date }),
     recommendations: { ...newSession().recommendations, plan_end_date: cycle.end_date, weekly_minutes: week120 },
-    courses: [{ id: "math", name: "线性代数", description: "", priority: 2 }],
-    items: [{ id: "math-1", course_id: "math", title: "矩阵章节", description: "", completion_criteria: "",
+    items: [{ id: "math-1", tag_names: ["线性代数"], title: "矩阵章节", description: "", completion_criteria: "",
       estimated_minutes: 120, earliest_date: cycle.start_date, deadline: cycle.end_date,
       deadline_kind: "plan_end", priority: 2,
       planning: { workload: { components: [{ id: "unit", label: "章", quantity: 2, unit: "章", minutes_per_unit: 60 }],
@@ -709,11 +691,10 @@ describe("full-period onboarding (one model response, flexible capacity)", () =>
 
   it("generates the whole cycle with exactly one model response and ignores the model's rolling flag", async () => {
     const session: OnboardingSession = { ...newSession(), stage: "constraints",
-      courses: [{ id: "math", name: "线性代数", description: "", priority: 2 }],
       recommendations: { ...newSession().recommendations, weekly_minutes: week120, plan_end_date: cycle.end_date } };
     aiConfig.aiApiKey = "key";
     fetchMock.mockResolvedValueOnce(Response.json({ choices: [{ message: { content: JSON.stringify({
-      items: [{ id: "math-1", course_id: "math", title: "矩阵章节", description: "矩阵运算", completion_criteria: "完成练习",
+      items: [{ id: "math-1", tag_names: ["线性代数"], title: "矩阵章节", description: "矩阵运算", completion_criteria: "完成练习",
         estimated_minutes: 120, earliest_date: cycle.start_date, deadline: cycle.end_date, deadline_kind: "plan_end", priority: 2,
         planning: { workload: { components: [{ id: "unit", label: "章", quantity: 2, unit: "章", minutes_per_unit: 60 }],
           source: "估算", confidence: "low", calibration: "记录速度" }, activity: { kind: "finite" }, dependencies: [] } }],
@@ -755,7 +736,6 @@ describe("full-period onboarding (one model response, flexible capacity)", () =>
 
   it("keeps generating the full cycle when materials and speed are unknown (fallback estimates stay visible)", async () => {
     const session: OnboardingSession = { ...newSession(), stage: "constraints",
-      courses: [{ id: "photo", name: "摄影", description: "", priority: 2 }],
       recommendations: { ...newSession().recommendations, weekly_minutes: week120, plan_end_date: cycle.end_date } };
     const items = await advanceOnboarding(session, { type: "set_constraints", ...cycle, weekly_minutes: week120 });
     expect(items.stage).toBe("items");

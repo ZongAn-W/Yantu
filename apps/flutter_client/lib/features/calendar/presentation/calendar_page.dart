@@ -52,8 +52,8 @@ final calendarOverviewMetricsProvider = Provider<ProgressMetrics?>((ref) {
 /// the calendar month containing it. Switching the scope, the graphic or the
 /// month never changes the selected date, and the page never writes data.
 ///
-/// The compact status strip (cumulative minutes, remaining work and course
-/// content completion) stays independent of the selected date: it always
+/// The compact status strip (cumulative minutes, remaining work and task
+/// completion) stays independent of the selected date: it always
 /// describes "as of today".
 class CalendarPage extends ConsumerStatefulWidget {
   const CalendarPage({super.key});
@@ -253,8 +253,9 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
                 if (_mode == CalendarMode.week)
                   _WeekChartSelector(
                     value: weekView,
-                    onChanged: (view) =>
-                        ref.read(calendarWeekViewProvider.notifier).select(view),
+                    onChanged: (view) => ref
+                        .read(calendarWeekViewProvider.notifier)
+                        .select(view),
                   ),
               ],
             ),
@@ -266,10 +267,7 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
 
   List<Widget> _dayScope(PlannerData data) {
     final day = buildCalendarDayData(data, _selectedDate);
-    final capacity = resolveDayCapacity(
-      data.profile,
-      _selectedDate,
-    ).minutes;
+    final capacity = resolveDayCapacity(data.profile, _selectedDate).minutes;
     return [
       Column(
         key: ValueKey('calendar-day-$_selectedDate'),

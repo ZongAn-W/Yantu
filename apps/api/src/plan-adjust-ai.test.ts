@@ -36,19 +36,18 @@ function fixture() {
       daily_limit_minutes: 480,
       granularity_minutes: 30,
       buffer_minutes: 30,
-      subject_limit_minutes: 240,
       study_start_minute: 480,
       study_end_minute: 1320,
       weekly_minutes: { "0": 120, "1": 300, "2": 300, "3": 300, "4": 300, "5": 300, "6": 240 },
       capacity_basis: "net",
     },
-    subjects: [
-      { id: "s-math", user_id: OWNER, name: "数学", color: "#4565c7", priority: 3 },
-      { id: "s-en", user_id: OWNER, name: "英语", color: "#e8684a", priority: 2 },
+    tags: [
+      { id: "s-math", user_id: OWNER, name: "数学", color: "#4565c7" },
+      { id: "s-en", user_id: OWNER, name: "英语", color: "#e8684a" },
     ],
     tasks: [
       {
-        id: "t-math", user_id: OWNER, subject_id: "s-math", title: "高数基础一轮",
+        id: "t-math", user_id: OWNER, tag_ids: ["s-math"], title: "高数基础一轮",
         estimated_minutes: 12000, completed_minutes: 600, priority: 3,
         deadline: "2027-10-01", deadline_kind: "deadline", earliest_date: "2026-10-01",
         is_fixed: false, status: "in_progress", created_at: STAMP, updated_at: STAMP,
@@ -63,7 +62,7 @@ function fixture() {
         },
       },
       {
-        id: "t-en", user_id: OWNER, subject_id: "s-en", title: "英语真题",
+        id: "t-en", user_id: OWNER, tag_ids: ["s-en"], title: "英语真题",
         estimated_minutes: 3000, completed_minutes: 0, priority: 2,
         deadline: "2027-12-20", deadline_kind: "deadline",
         is_fixed: false, status: "not_started", created_at: STAMP, updated_at: STAMP,
@@ -129,10 +128,9 @@ const validOutput = {
     reason: "近期每周实际约 2 小时，可逐步提高到 20 小时",
   },
   task_updates: [{ task_id: "t-math", estimated_minutes: 20000, reason: "数学需要更多一轮" }],
-  new_subjects: [{ key: "s408", name: "408", priority: 3 }],
   new_tasks: [
     {
-      key: "t408", subject: "s408", title: "408 真题 15 套", description: "完成并复盘",
+      key: "t408", tag_names: ["408"], title: "408 真题 15 套", description: "完成并复盘",
       estimated_minutes: 9000, deadline_kind: "plan_end", priority: 3, reason: "补齐 408 训练量",
     },
   ],
@@ -200,14 +198,14 @@ describe("buildAdjustmentContext", () => {
       completed_minutes: 600,
       remaining_minutes: 14400,
     });
-    expect(context.totals.subject_totals).toContainEqual({
-      subject: "数学", planned_minutes: 12000, completed_minutes: 600, remaining_minutes: 11400,
+    expect(context.totals.tag_totals).toContainEqual({
+      tag: "数学", task_count: 1, planned_minutes: 12000, completed_minutes: 600, remaining_minutes: 11400,
     });
 
     expect(context.tasks).toHaveLength(2);
     expect(context.tasks[0]).toMatchObject({
       task_id: "t-math",
-      subject: "数学",
+      tags: ["数学"],
       estimated_minutes: 12000,
       completed_minutes: 600,
       remaining_minutes: 11400,
@@ -231,10 +229,7 @@ describe("buildAdjustmentContext", () => {
     expect(context.recent_execution.days[5]).toMatchObject({
       date: "2026-10-17", planned_minutes: 120, actual_minutes: 90, scheduled_minutes: 90,
     });
-    expect(context.recent_execution.per_subject_last14).toEqual([
-      { subject: "数学", actual_minutes: 90, planned_minutes: 120 },
-      { subject: "英语", actual_minutes: 30, planned_minutes: 60 },
-    ]);
+    expect(context.recent_execution).not.toHaveProperty("per_subject_last14");
 
     expect(context.future_load.next14_days).toHaveLength(14);
     expect(context.future_load.next14_days[0].date).toBe("2026-10-18");
@@ -289,7 +284,6 @@ describe("generatePlanAdjustment", () => {
     );
     const result = await generatePlanAdjustment(buildAdjustmentContext(fixture(), TODAY));
     expect(result.task_updates).toEqual([]);
-    expect(result.new_subjects).toEqual([]);
     expect(result.new_tasks).toEqual([]);
     expect(result.warnings).toEqual([]);
     expect(result.intensity).toBeUndefined();

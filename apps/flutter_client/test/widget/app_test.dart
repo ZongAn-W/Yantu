@@ -458,6 +458,14 @@ void main() {
     await tester.pumpAndSettle();
     expect(router.routeInformationProvider.value.uri.path, '/settings');
     expect(find.text('学习目标与规划'), findsOneWidget);
+    // Account features live in the Settings page; the global avatar/dialog is gone.
+    expect(find.text('账号管理'), findsOneWidget);
+    expect(find.byKey(const ValueKey('settings-sign-out')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('settings-delete-account')),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('账号与同步'), findsNothing);
 
     await tester.tap(find.widgetWithText(NavigationDestination, '调整'));
     await tester.pumpAndSettle();

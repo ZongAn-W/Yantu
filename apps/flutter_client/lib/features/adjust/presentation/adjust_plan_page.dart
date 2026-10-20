@@ -267,9 +267,7 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
     PlannerData data,
     ProgressMetrics metrics,
   ) {
-    final subjectNames = {
-      for (final subject in data.subjects) subject.id: subject.name,
-    };
+    final tagNames = {for (final tag in data.tags) tag.id: tag.name};
     final tasks =
         [
           for (final task in data.tasks)
@@ -321,7 +319,10 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
             for (final task in shown)
               _TaskProgressRow(
                 task: task,
-                subjectName: subjectNames[task.subjectId] ?? '课程',
+                tagNames: [
+                  for (final id in task.tagIds)
+                    if (tagNames[id] case final name?) name,
+                ],
               ),
             if (tasks.length > shown.length)
               Text(
@@ -533,10 +534,10 @@ class _ProfileField extends StatelessWidget {
 
 /// 一个未归档事项的完成度：完成分钟 / 预算分钟、百分比与日期语义。
 class _TaskProgressRow extends StatelessWidget {
-  const _TaskProgressRow({required this.task, required this.subjectName});
+  const _TaskProgressRow({required this.task, required this.tagNames});
 
   final Task task;
-  final String subjectName;
+  final List<String> tagNames;
 
   @override
   Widget build(BuildContext context) {
@@ -570,7 +571,10 @@ class _TaskProgressRow extends StatelessWidget {
                 style: const TextStyle(fontWeight: FontWeight.w600),
               ),
               Text(
-                '$subjectName · ${statusLabels[task.status] ?? '进行中'}',
+                [
+                  if (tagNames.isNotEmpty) tagNames.join('、'),
+                  statusLabels[task.status] ?? '进行中',
+                ].join(' · '),
                 style: const TextStyle(
                   color: PlannerColors.muted,
                   fontSize: 12,

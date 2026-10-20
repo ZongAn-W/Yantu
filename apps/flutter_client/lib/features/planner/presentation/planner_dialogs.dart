@@ -11,18 +11,7 @@ import '../domain/planner_format.dart';
 import '../domain/planning_feedback.dart';
 import '../domain/study_day.dart' as day_ops;
 import '../domain/study_day.dart' show unscheduledTaskMinutes;
-
-String subjectNameOf(PlannerData data, String subjectId) =>
-    data.subjects
-        .where((subject) => subject.id == subjectId)
-        .firstOrNull
-        ?.name ??
-    subjectId;
-
-String? subjectColorOf(PlannerData data, String subjectId) => data.subjects
-    .where((subject) => subject.id == subjectId)
-    .firstOrNull
-    ?.color;
+import '../../tasks/presentation/tasks_dialogs.dart' show TagManagementDialog;
 
 /// Moves one task day to another date, mirroring the Web "调整事项日期" dialog.
 class MoveTaskDayDialog extends ConsumerStatefulWidget {
@@ -259,27 +248,20 @@ class TaskEditorDialog extends ConsumerStatefulWidget {
     this.taskId,
     this.quickStart = false,
     this.initialTitle = '',
-    this.initialSubjectId = '',
     super.key,
   });
 
   final String? taskId;
   final bool quickStart;
   final String initialTitle;
-  final String initialSubjectId;
-
   static Future<bool> showQuickStart(
     BuildContext context, {
     String initialTitle = '',
-    String initialSubjectId = '',
   }) async =>
       await showDialog<bool>(
         context: context,
-        builder: (context) => TaskEditorDialog(
-          quickStart: true,
-          initialTitle: initialTitle,
-          initialSubjectId: initialSubjectId,
-        ),
+        builder: (context) =>
+            TaskEditorDialog(quickStart: true, initialTitle: initialTitle),
       ) ==
       true;
 
@@ -297,7 +279,6 @@ class _TaskEditorDialogState extends ConsumerState<TaskEditorDialog> {
   late TaskDraft _draft;
   late TextEditingController _title;
   late TextEditingController _description;
-  late TextEditingController _course;
   late TextEditingController _estimated;
   String? _error;
   bool _saving = false;
@@ -316,15 +297,11 @@ class _TaskEditorDialogState extends ConsumerState<TaskEditorDialog> {
     if (widget.quickStart) {
       _draft = _draft.copyWith(
         title: widget.initialTitle,
-        subjectId: widget.initialSubjectId,
         deadlineKind: ItemDateKind.planEnd,
       );
     }
     _title = TextEditingController(text: _draft.title);
     _description = TextEditingController(text: _draft.description);
-    _course = TextEditingController(
-      text: subjectNameOf(data, _draft.subjectId),
-    );
     _estimated = TextEditingController(text: '${_draft.estimatedMinutes}');
   }
 
@@ -332,7 +309,6 @@ class _TaskEditorDialogState extends ConsumerState<TaskEditorDialog> {
   void dispose() {
     _title.dispose();
     _description.dispose();
-    _course.dispose();
     _estimated.dispose();
     super.dispose();
   }
@@ -459,9 +435,7 @@ class _TaskEditorDialogState extends ConsumerState<TaskEditorDialog> {
             mainAxisSize: MainAxisSize.min,
             children: [
               if (widget.quickStart) ...[
-                const Text(
-                  '填写课程和事项名称即可保存。预计时长、优先级和日期暂用下方初始值，可按需调整；保存后不会自动安排日程。',
-                ),
+                const Text('填写事项名称即可保存。标签、预计时长、优先级和日期均可按需调整；保存后不会自动安排日程。'),
                 const SizedBox(height: 12),
               ],
               TextField(
@@ -487,39 +461,58 @@ class _TaskEditorDialogState extends ConsumerState<TaskEditorDialog> {
                 ),
               ),
               const SizedBox(height: 12),
-              TextField(
-                controller: _course,
-                enabled: !_saving,
-                decoration: InputDecoration(
-                  labelText: '课程',
-                  helperText: '可输入已有课程名或新课程名',
-                  suffixIcon: PopupMenuButton<String>(
-                    tooltip: '选择已有课程',
-                    icon: const Icon(Icons.arrow_drop_down),
-                    onSelected: _saving
+              if (data.tags.isNotEmpty) ...[
+                Row(
+                  children: [
+                    Text(
+                      '标签（选填）',
+                      style: Theme.of(context).textTheme.labelLarge,
+                    ),
+                    const Spacer(),
+                    TextButton.icon(
+                      key: const Key('quick-task-manage-tags'),
+                      onPressed: _saving
+                          ? null
+                          : () => TagManagementDialog.show(context),
+                      icon: const Icon(Icons.sell_outlined, size: 16),
+                      label: const Text('管理标签'),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    for (final tag in data.tags)
+                      FilterChip(
+                        key: Key('quick-task-tag-${tag.id}'),
+                        label: Text(tag.name),
+                        selected: _draft.tagIds.contains(tag.id),
+                        onSelected: _saving
+                            ? null
+                            : (selected) => setState(() {
+                                final ids = {..._draft.tagIds};
+                                selected ? ids.add(tag.id) : ids.remove(tag.id);
+                                _draft = _draft.copyWith(tagIds: ids.toList());
+                              }),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+              ] else ...[
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    key: const Key('quick-task-manage-tags'),
+                    onPressed: _saving
                         ? null
-                        : (value) => setState(() {
-                            _course.text = value;
-                            _draft = _draft.copyWith(
-                              subjectId: resolveSubjectId(data, value),
-                            );
-                          }),
-                    itemBuilder: (context) => [
-                      for (final subject in data.subjects)
-                        PopupMenuItem(
-                          value: subject.name,
-                          child: Text(subject.name),
-                        ),
-                    ],
+                        : () => TagManagementDialog.show(context),
+                    icon: const Icon(Icons.sell_outlined, size: 16),
+                    label: const Text('创建标签'),
                   ),
                 ),
-                onChanged: (value) => setState(() {
-                  _draft = _draft.copyWith(
-                    subjectId: resolveSubjectId(data, value),
-                  );
-                  _error = null;
-                }),
-              ),
+              ],
               const SizedBox(height: 12),
               DropdownButtonFormField<int>(
                 initialValue: _draft.priority,

@@ -1,5 +1,5 @@
 import { type OnboardingAction, type OnboardingSession, type ScheduleAction, CalendarDateSchema, FIRST_QUESTION, newSession, validateReferences } from "./onboarding-contracts.js";
-import { generateCourses, generateItems, nextInterview, recommendSchedule, shanghaiDate } from "./onboarding-ai.js";
+import { generateItems, nextInterview, recommendSchedule, shanghaiDate } from "./onboarding-ai.js";
 import { sanitizeInterviewSession } from "./onboarding-evidence.js";
 import { buildLearningContext, ResearchSchema } from "./learning-context.js";
 import { type CapacityBasis } from "./contracts.js";
@@ -170,14 +170,14 @@ export async function advanceOnboarding(current: OnboardingSession, action: Onbo
     return { ...newSession(), revision: session.revision + 1, has_plan: session.has_plan,
       replanning: session.has_plan, plan_revision: session.plan_revision, current_plan: session.current_plan };
   } else if (action.type === "resume_interview") {
-    if (session.answers.length >= 50) throw new Error("已达到50题，请根据当前回答生成课程，或重新访谈");
+    if (session.answers.length >= 50) throw new Error("已达到50题，请继续确认规划条件，或重新访谈");
     Object.assign(session, await nextInterview(session), { stage: "interview", replanning: session.has_plan });
   } else if (action.type === "refresh_plan") {
     if (!session.replanning) throw new Error("当前没有需要更新的重新规划草案");
   } else if (action.type === "retry_research") {
-    requireStage("interview", "checkpoint", "courses", "items", "schedule");
+    requireStage("interview", "checkpoint", "constraints", "items", "schedule");
   } else if (action.type === "set_exam_year") {
-    requireStage("interview", "checkpoint", "courses", "items", "schedule");
+    requireStage("interview", "checkpoint", "constraints", "items", "schedule");
     const currentYear = Number(shanghaiDate().slice(0, 4));
     if (session.profile.goal_subtype !== "考研") throw new Error("只有考研目标需要设置初试年份");
     if (action.year < currentYear || action.year > currentYear + 10) throw new Error("请选择未来十年内的初试年份");
@@ -186,10 +186,10 @@ export async function advanceOnboarding(current: OnboardingSession, action: Onbo
     session.research = ResearchSchema.parse({});
   } else if (action.type === "answer") {
     requireStage("interview");
-    if (session.answers.length >= 50) throw new Error("已达到50题，请根据当前回答生成科目");
+    if (session.answers.length >= 50) throw new Error("已达到50题，请继续确认规划条件，或重新访谈");
     session.answers.push({ question: session.question, answer: action.answer, ...(session.question_fields.length ? { fields: session.question_fields } : {}) });
     if (session.answers.length >= 50) {
-      // 到达题数上限后不再追加问题，保留“根据当前回答生成科目”入口。
+      // 到达题数上限后不再追加问题，用户可继续确认规划条件。
       session.question = "";
       session.question_options = [];
       session.question_multiple = false;
@@ -207,27 +207,11 @@ export async function advanceOnboarding(current: OnboardingSession, action: Onbo
       session.recommendations = result.recommendations;
     }
   } else if (action.type === "continue") {
-    // 兼容旧客户端的暂停页动作；新流程已不再使用 checkpoint，直接保持访谈。
+    // Continue leaves the interview and opens schedule constraints.
     requireStage("interview", "checkpoint");
-    if (session.answers.length >= 50) throw new Error("已达到50题，请根据当前回答生成科目");
-    session.stage = "interview";
-  } else if (action.type === "generate_courses") {
-    requireStage("interview", "checkpoint");
-    const validAnswers = session.answers.filter(answer => answer.answer.trim().length > 0).length;
-    if (validAnswers < 5) throw new Error("请先完成至少5个有效回答，再根据当前回答生成科目");
-    Object.assign(session, await generateCourses(session), { stage: "courses", items: [] });
-  } else if (action.type === "save_courses" || action.type === "revise_courses" || action.type === "confirm_courses") {
-    requireStage("courses");
-    validateReferences(action.courses, []);
-    session.courses = action.courses;
-    session.items = [];
-    session.preview = null;
-    if (action.type === "revise_courses") Object.assign(session, await generateCourses(session, action.instruction));
-    if (action.type === "confirm_courses") {
-      session.recommendations = await ensureRecommendations(session);
-      if (!session.end_date) session.end_date = session.recommendations.plan_end_date || cycleEnd(session.profile);
-      session.stage = "constraints";
-    }
+    session.recommendations = await ensureRecommendations(session);
+    if (!session.end_date) session.end_date = session.recommendations.plan_end_date || cycleEnd(session.profile);
+    session.stage = "constraints";
   } else if (action.type === "set_constraints") {
     requireStage("constraints");
     Object.assign(session, prepareSchedule(session, action), { constraints_confirmed: true });
@@ -243,7 +227,7 @@ export async function advanceOnboarding(current: OnboardingSession, action: Onbo
     session.planning = checked.planning;
   } else if (action.type === "save_items" || action.type === "revise_items" || action.type === "confirm_items") {
     requireStage("items");
-    validateReferences(session.courses, action.items);
+    validateReferences(action.items);
     for (const item of action.items) {
       if (item.earliest_date && item.earliest_date > item.deadline) throw new Error(`事项「${item.title}」的开始日期晚于截止日期`);
     }
@@ -251,7 +235,6 @@ export async function advanceOnboarding(current: OnboardingSession, action: Onbo
     session.preview = null;
     if (action.type === "revise_items") Object.assign(session, await generateItems(session, action.instruction));
     if (action.type === "confirm_items") {
-      if (session.courses.some(course => !session.items.some(item => item.course_id === course.id))) throw new Error("每门课程至少需要一个学习事项");
       session.recommendations = await ensureRecommendations(session);
       session.stage = "schedule";
       if (!session.end_date) session.end_date = session.recommendations.plan_end_date || cycleEnd(session.profile);
@@ -264,9 +247,8 @@ export async function advanceOnboarding(current: OnboardingSession, action: Onbo
       end_date: session.end_date, requested_mode: mode, requested_detail_days: action.detail_days });
     Object.assign(session, await checkAndRepair(session, currentDocument));
   } else if (action.type === "back") {
-    requireStage("courses", "constraints", "items", "schedule");
+    requireStage("constraints", "items", "schedule");
     if (action.target === "interview") session.stage = "interview";
-    else if (action.target === "courses") session.stage = "courses";
     else if (action.target === "constraints") { session.stage = "constraints"; session.preview = null; }
     else {
       requireStage("schedule");

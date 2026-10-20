@@ -74,7 +74,89 @@ const MondayKey = z.string().refine((value) => {
     && parsed.getUTCDay() === 1;
 }, "容量覆盖的周标识必须是周一日期");
 
-export const PlannerDocumentSchema = z
+function normalizeLegacyTagDocument(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const document = value as Record<string, unknown>;
+  const profile = document.profile && typeof document.profile === "object"
+    ? document.profile as Record<string, unknown>
+    : {};
+  const owner = typeof profile.user_id === "string" ? profile.user_id : "";
+  const oldSubjects = Array.isArray(document.subjects) ? document.subjects : [];
+  const suppliedTags = Array.isArray(document.tags) ? document.tags : [];
+  const aliases = new Map<string, string>();
+  const byName = new Map<string, Record<string, unknown>>();
+  const tagRows: Record<string, unknown>[] = [];
+
+  for (const raw of suppliedTags) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const row = raw as Record<string, unknown>;
+    if (typeof row.name !== "string" || typeof row.id !== "string") continue;
+    const name = row.name.trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    const id = row.id;
+    const tag: Record<string, unknown> = { ...row, id, user_id: row.user_id ?? owner, name };
+    delete tag.priority;
+    delete tag.description;
+    tagRows.push(tag);
+    if (!byName.has(key)) byName.set(key, tag);
+    aliases.set(row.id, id);
+  }
+  for (const raw of oldSubjects) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const row = raw as Record<string, unknown>;
+    if (typeof row.name !== "string" || typeof row.id !== "string") continue;
+    const name = row.name.trim();
+    if (!name) continue;
+    const key = name.toLowerCase();
+    const existing = byName.get(key);
+    const id = existing && typeof existing.id === "string" ? existing.id : row.id;
+    aliases.set(row.id, id);
+    if (existing) continue;
+    const tag: Record<string, unknown> = { ...row, id, user_id: row.user_id ?? owner, name };
+    delete tag.priority;
+    delete tag.description;
+    byName.set(key, tag);
+    tagRows.push(tag);
+  }
+
+  const subjectNames = new Map<string, string>();
+  for (const raw of oldSubjects) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const row = raw as Record<string, unknown>;
+    if (typeof row.id === "string" && typeof row.name === "string") subjectNames.set(row.id, row.name.trim().toLowerCase());
+  }
+  const tasks = Array.isArray(document.tasks) ? document.tasks.map((raw) => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+    const task = { ...(raw as Record<string, unknown>) };
+    const legacyRef = typeof task.subject_id === "string" ? task.subject_id
+      : typeof task.course_id === "string" ? task.course_id : null;
+    const hasTagIds = Array.isArray(task.tag_ids);
+    const refs = hasTagIds ? (task.tag_ids as unknown[]).filter((id): id is string => typeof id === "string")
+      : legacyRef ? [legacyRef] : [];
+    const tagIds = refs.map((id) => {
+      const alias = aliases.get(id);
+      if (alias) return alias;
+      const name = subjectNames.get(id);
+      const named = name ? byName.get(name) : undefined;
+      if (typeof named?.id === "string") return named.id;
+      return hasTagIds ? id : null;
+    }).filter((id): id is string => id !== null);
+    task.tag_ids = [...new Set(tagIds)];
+    delete task.subject_id;
+    delete task.course_id;
+    return task;
+  }) : document.tasks;
+
+  const result: Record<string, unknown> = { ...document, tags: tagRows, tasks };
+  delete result.subjects;
+  const normalizedProfile = { ...profile };
+  delete normalizedProfile.subject_limit_minutes;
+  result.profile = normalizedProfile;
+  return result;
+}
+
+export const PlannerDocumentSchema = z.preprocess(normalizeLegacyTagDocument, z
   .object({
     version: z.literal(1),
     planning: PlanPlanningSchema.nullable().optional(),
@@ -116,20 +198,20 @@ export const PlannerDocumentSchema = z
         daily_limit_minutes: minutes.max(1440),
         granularity_minutes: minutes.positive(),
         buffer_minutes: minutes,
-        subject_limit_minutes: minutes,
         study_start_minute: minutes.max(1440),
         study_end_minute: minutes.max(1440),
         foundation: z.string().max(20000),
       })
       .passthrough(),
-    subjects: z
+    tags: z
       .array(
         z
           .object({
             ...owned,
-            name: z.string().min(1).max(200),
-            color: z.string().max(40),
-            priority,
+            name: z.string().trim().min(1).max(200),
+            color: z.string().max(40).nullable().optional(),
+            created_at: stamp.optional(),
+            updated_at: stamp.optional(),
           })
           .passthrough(),
       )
@@ -140,7 +222,7 @@ export const PlannerDocumentSchema = z
           .object({
             ...owned,
             ...timestamped,
-            subject_id: id,
+            tag_ids: z.array(id).max(100).default([]),
             title: z.string().min(1).max(200),
             description: z.string().max(20000).optional(),
             estimated_minutes: minutes.positive(),
@@ -259,7 +341,7 @@ export const PlannerDocumentSchema = z
   .superRefine((data, ctx) => {
     const owner = data.profile.user_id;
     const collections = [
-      "subjects",
+      "tags",
       "tasks",
       "blocks",
       "logs",
@@ -279,7 +361,14 @@ export const PlannerDocumentSchema = z
         ids.add(row.id);
       }
     }
-    const subjects = new Set(data.subjects.map((row) => row.id));
+    const tags = new Set(data.tags.map((row) => row.id));
+    const tagNames = new Set<string>();
+    for (const tag of data.tags) {
+      const normalized = tag.name.trim().toLowerCase();
+      if (tagNames.has(normalized))
+        ctx.addIssue({ code: "custom", path: ["tags", tag.id, "name"], message: "同一账号内标签名称不能重复" });
+      tagNames.add(normalized);
+    }
     const tasks = new Set(data.tasks.map((row) => row.id));
     const blocks = new Map(data.blocks.map((row) => [row.id, row]));
     // 容量覆盖使用稳定落点：周覆盖键必须是周一日期，日期覆盖必须是有效日期。
@@ -295,13 +384,14 @@ export const PlannerDocumentSchema = z
           ctx.addIssue({ code: "custom", path: ["tasks", task.id, "planning", "workload"], message: "事项预算与结构化工作量不一致，请先修改工作量或重新评估" });
       }
       if (
-        !subjects.has(task.subject_id) ||
+        task.tag_ids.some((tagId) => !tags.has(tagId)) ||
+        new Set(task.tag_ids).size !== task.tag_ids.length ||
         (task.earliest_date && task.earliest_date > task.deadline)
       )
         ctx.addIssue({
           code: "custom",
           path: ["tasks"],
-          message: "事项引用或起止日期无效",
+          message: "事项标签引用或起止日期无效",
         });
       if (task.planning?.dependencies?.some(dependency => !tasks.has(dependency.task_id) || dependency.task_id === task.id))
         ctx.addIssue({ code: "custom", path: ["tasks", task.id, "planning", "dependencies"], message: "前置事项引用无效" });
@@ -352,5 +442,5 @@ export const PlannerDocumentSchema = z
           message: "学习记录引用无效",
         });
     }
-  });
+  }));
 export type PlannerDocument = z.infer<typeof PlannerDocumentSchema>;

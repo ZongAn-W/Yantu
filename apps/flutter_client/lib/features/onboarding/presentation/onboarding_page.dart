@@ -131,10 +131,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       return _interviewChat(state, session, flow);
     }
     final index = switch (stage) {
-      'courses' => 1,
-      'constraints' => 2,
-      'items' => 3,
-      'schedule' || 'complete' => 4,
+      'constraints' => 1,
+      'items' => 2,
+      'schedule' || 'complete' => 3,
       _ => 0,
     };
     final body = SafeArea(
@@ -185,7 +184,6 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                       children: [
                         for (final (i, title) in [
                           '目标访谈',
-                          '确认课程',
                           '确认条件',
                           '确认事项',
                           '每日计划',
@@ -227,8 +225,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                         busy: state.loading,
                         onAction: flow.act,
                       ),
-                    if (stage == 'courses' || stage == 'items')
-                      _draft(session, flow, state.loading),
+                    if (stage == 'items') _draft(session, flow, state.loading),
                     if (stage == 'schedule' || stage == 'constraints')
                       _schedule(session, flow, state.loading),
                     if (stage == 'complete')
@@ -296,7 +293,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       planChanged: state.planChanged,
       embedded: widget.embedded,
       onAnswer: (answer) => flow.act({'type': 'answer', 'answer': answer}),
-      onGenerate: () => flow.act({'type': 'generate_courses'}),
+      onGenerate: () => flow.act({'type': 'generate_items'}),
       onRestart: () => _restart(flow),
       onReload: flow.reload,
       onRefreshPlan: () => flow.act({'type': 'refresh_plan'}),
@@ -404,14 +401,10 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
   }
 
   Widget _draft(OnboardingSession session, OnboardingFlow flow, bool busy) {
-    final courses = session.stage == 'courses';
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Text(
-          courses ? '确认你的课程' : '确认学习事项',
-          style: Theme.of(context).textTheme.headlineSmall,
-        ),
+        Text('确认学习事项', style: Theme.of(context).textTheme.headlineSmall),
         const SizedBox(height: 8),
         Text(session.summary),
         const SizedBox(height: 12),
@@ -429,161 +422,88 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
             child: PlannerNotice(warning, tone: PlannerNoticeTone.warning),
           ),
         const SizedBox(height: 12),
-        for (final course in session.courses) ...[
+        for (final item in session.items) ...[
           const Divider(height: 24),
-          if (courses)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(course.name),
-              subtitle: course.description.isEmpty
-                  ? null
-                  : Text(course.description),
-              trailing: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    tooltip: '编辑 ${course.name}',
-                    onPressed: busy
-                        ? null
-                        : () async {
-                            final edited = await editCourseDraft(
-                              context,
-                              course,
-                            );
-                            if (edited != null && mounted) {
-                              flow.editCourses([
-                                for (final c in session.courses)
-                                  c.id == course.id ? edited : c,
-                              ]);
-                            }
-                          },
-                    icon: const Icon(Icons.edit_outlined),
-                  ),
-                  IconButton(
-                    tooltip: '删除 ${course.name}',
-                    onPressed: busy || session.courses.length <= 1
-                        ? null
-                        : () => flow.editCourses(
-                            session.courses
-                                .where((c) => c.id != course.id)
-                                .toList(),
-                          ),
-                    icon: const Icon(Icons.delete_outline),
-                  ),
-                ],
-              ),
-            )
-          else ...[
-            Text(course.name, style: Theme.of(context).textTheme.titleMedium),
-            for (final item in session.items.where(
-              (i) => i.courseId == course.id,
-            ))
-              ListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text(item.title),
-                subtitle: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${(item.estimatedMinutes / 60).toStringAsFixed(1)} 小时 · ${item.earliestDate ?? '待定'} 至 ${item.deadline}\n${item.description}${item.completionCriteria.isEmpty ? '' : '\n完成标准：${item.completionCriteria}'}',
-                    ),
-                    WorkloadDetails(planning: item.planning),
-                  ],
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            title: Text(item.title),
+            subtitle: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '${(item.estimatedMinutes / 60).toStringAsFixed(1)} 小时 · ${item.earliestDate ?? '待定'} 至 ${item.deadline}\n${item.description}${item.completionCriteria.isEmpty ? '' : '\n完成标准：${item.completionCriteria}'}',
                 ),
-                trailing: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    IconButton(
-                      tooltip: '编辑 ${item.title}',
-                      onPressed: busy
-                          ? null
-                          : () async {
-                              final edited = await editItemDraft(
-                                context,
-                                item,
-                                session.courses,
-                              );
-                              if (edited != null && mounted) {
-                                flow.editItems([
-                                  for (final i in session.items)
-                                    i.id == item.id ? edited : i,
-                                ]);
-                              }
-                            },
-                      icon: const Icon(Icons.edit_outlined),
-                    ),
-                    IconButton(
-                      tooltip: '删除 ${item.title}',
-                      onPressed: busy
-                          ? null
-                          : () => flow.editItems(
-                              session.items
-                                  .where((i) => i.id != item.id)
-                                  .toList(),
-                            ),
-                      icon: const Icon(Icons.delete_outline),
-                    ),
-                  ],
-                ),
-              ),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: busy
-                    ? null
-                    : () async {
-                        final item = await editItemDraft(
-                          context,
-                          ItemDraft(
-                            id: 'item-${DateTime.now().microsecondsSinceEpoch}',
-                            courseId: course.id,
-                            title: '',
-                            estimatedMinutes: 120,
-                            earliestDate: shanghaiToday(),
-                            deadline: session.endDate.isNotEmpty
-                                ? session.endDate
-                                : session.recommendations.planEndDate.isNotEmpty
-                                ? session.recommendations.planEndDate
-                                : session.profile.resolvedPlanEnd(
-                                    shanghaiToday(),
-                                  ),
-                            deadlineKind: ItemDateKind.planEnd,
-                          ),
-                          session.courses,
-                        );
-                        if (item != null && mounted) {
-                          flow.editItems([...session.items, item]);
-                        }
-                      },
-                icon: const Icon(Icons.add),
-                label: const Text('添加事项'),
-              ),
+                if (item.tagNames.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
+                    child: Text('标签：${item.tagNames.join('、')}'),
+                  ),
+                WorkloadDetails(planning: item.planning),
+              ],
             ),
-          ],
-        ],
-        if (courses)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: busy
-                  ? null
-                  : () async {
-                      final course = await editCourseDraft(
-                        context,
-                        CourseDraft(
-                          id: 'course-${DateTime.now().microsecondsSinceEpoch}',
-                          name: '',
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: '编辑 ${item.title}',
+                  onPressed: busy
+                      ? null
+                      : () async {
+                          final edited = await editItemDraft(context, item);
+                          if (edited != null && mounted) {
+                            flow.editItems([
+                              for (final current in session.items)
+                                current.id == item.id ? edited : current,
+                            ]);
+                          }
+                        },
+                  icon: const Icon(Icons.edit_outlined),
+                ),
+                IconButton(
+                  tooltip: '删除 ${item.title}',
+                  onPressed: busy
+                      ? null
+                      : () => flow.editItems(
+                          session.items
+                              .where((current) => current.id != item.id)
+                              .toList(),
                         ),
-                      );
-                      if (course != null && mounted) {
-                        flow.editCourses([...session.courses, course]);
-                      }
-                    },
-              icon: const Icon(Icons.add),
-              label: const Text('添加课程'),
+                  icon: const Icon(Icons.delete_outline),
+                ),
+              ],
             ),
           ),
+        ],
         const SizedBox(height: 20),
+        Align(
+          alignment: Alignment.centerLeft,
+          child: TextButton.icon(
+            onPressed: busy
+                ? null
+                : () async {
+                    final item = await editItemDraft(
+                      context,
+                      ItemDraft(
+                        id: 'item-${DateTime.now().microsecondsSinceEpoch}',
+                        title: '',
+                        estimatedMinutes: 120,
+                        earliestDate: shanghaiToday(),
+                        deadline: session.endDate.isNotEmpty
+                            ? session.endDate
+                            : session.recommendations.planEndDate.isNotEmpty
+                            ? session.recommendations.planEndDate
+                            : session.profile.resolvedPlanEnd(shanghaiToday()),
+                        deadlineKind: ItemDateKind.planEnd,
+                      ),
+                    );
+                    if (item != null && mounted) {
+                      flow.editItems([...session.items, item]);
+                    }
+                  },
+            icon: const Icon(Icons.add),
+            label: const Text('添加事项'),
+          ),
+        ),
         TextFormField(
           controller: _revision,
           enabled: !busy,
@@ -592,9 +512,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
           maxLength: 2000,
           decoration: InputDecoration(
             labelText: '修改要求',
-            hintText: courses
-                ? '例如：专业课改为计算机组成原理，增加线性代数'
-                : '例如：英语增加背单词，高数一轮复习增加到80小时',
+            hintText: '例如：增加薄弱章节练习，调整复习工作量',
           ),
         ),
         Align(
@@ -605,7 +523,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                 : () async {
                     if (_revision.text.trim().isEmpty) return;
                     if (await flow.act({
-                      'type': courses ? 'revise_courses' : 'revise_items',
+                      'type': 'revise_items',
                       'instruction': _revision.text.trim(),
                       ..._draftPayload(session),
                     })) {
@@ -625,19 +543,16 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
             TextButton.icon(
               onPressed: busy
                   ? null
-                  : () => flow.act({
-                      'type': 'back',
-                      'target': courses ? 'interview' : 'constraints',
-                    }),
+                  : () => flow.act({'type': 'back', 'target': 'constraints'}),
               icon: const Icon(Icons.arrow_back),
-              label: Text(courses ? '返回访谈' : '返回时间条件'),
+              label: const Text('返回时间条件'),
             ),
             OutlinedButton.icon(
               onPressed: busy
                   ? null
                   : () async {
                       if (await flow.act({
-                            'type': courses ? 'save_courses' : 'save_items',
+                            'type': 'save_items',
                             ..._draftPayload(session),
                           }) &&
                           mounted) {
@@ -653,11 +568,11 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               onPressed: busy
                   ? null
                   : () => flow.act({
-                      'type': courses ? 'confirm_courses' : 'confirm_items',
+                      'type': 'confirm_items',
                       ..._draftPayload(session),
                     }),
               icon: const Icon(Icons.check),
-              label: Text(courses ? '确认课程，设置时间条件' : '确认事项，预览安排'),
+              label: const Text('确认事项，预览安排'),
             ),
           ],
         ),
@@ -665,10 +580,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
     );
   }
 
-  Map<String, dynamic> _draftPayload(OnboardingSession session) =>
-      session.stage == 'courses'
-      ? {'courses': session.courses.map((c) => c.toJson()).toList()}
-      : {'items': session.items.map((i) => i.toJson()).toList()};
+  Map<String, dynamic> _draftPayload(OnboardingSession session) => {
+    'items': session.items.map((item) => item.toJson()).toList(),
+  };
 
   /// 只有“大致周容量范围”模式需要用户明确确认采用的保守基线。
   bool get _capacityNeedsConfirmation =>
@@ -735,7 +649,6 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
       dailyLimitMinutes: 480,
       granularityMinutes: 30,
       bufferMinutes: 30,
-      subjectLimitMinutes: 240,
       studyStartMinute: 480,
       studyEndMinute: 1320,
       foundation: '',
@@ -790,13 +703,13 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
         const SizedBox(height: 8),
         if (!constraints)
           Text(
-            '${session.courses.length} 门课程 · ${session.items.length} 个事项 · 总预算 ${(budget / 60).toStringAsFixed(1)} 小时',
+            '${session.items.length} 个事项 · 总预算 ${(budget / 60).toStringAsFixed(1)} 小时',
           ),
         if (constraints)
           Text(
             session.profile.goalText.isNotEmpty
                 ? session.profile.goalText
-                : '本次课程：${session.courses.map((c) => c.name).join('、')}',
+                : '请确认本次规划周期和可用时间。',
           ),
         if (!constraints) PlanningRouteView(planning: session.planning),
         const SizedBox(height: 20),
@@ -1092,9 +1005,8 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
         const SizedBox(height: 8),
         Text(
           _netCapacity
-              ? '只给周总量时，程序按模板比例生成每日建议，不会存成你逐日确认的分配；'
-                    '单门课程每天最多4小时。'
-              : '每日预留30分钟机动，单门课程每天最多4小时。',
+              ? '只给周总量时，程序按模板比例生成每日建议，不会存成你逐日确认的分配。'
+              : '旧计划沿用总预算口径，并在安排前扣除每日机动时间。',
           style: const TextStyle(color: PlannerColors.muted),
         ),
         const SizedBox(height: 8),
@@ -1127,12 +1039,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
             TextButton.icon(
               onPressed: busy
                   ? null
-                  : () => flow.act({
-                      'type': 'back',
-                      'target': constraints ? 'courses' : 'items',
-                    }),
+                  : () => flow.act({'type': 'back', 'target': 'items'}),
               icon: const Icon(Icons.arrow_back),
-              label: Text(constraints ? '返回修改课程' : '返回修改事项'),
+              label: const Text('返回修改事项'),
             ),
             if (!constraints)
               OutlinedButton.icon(

@@ -18,9 +18,8 @@ const profile = ProfileSchema.parse({
   plan_end_date: "2027-12-25",
 });
 const draft = {
-  courses: [{ id: "math", name: "数学", description: "数学复习", priority: 3 }],
   items: [{
-    id: "math-1", course_id: "math", title: "极限练习", description: "练习极限计算",
+    id: "math-1", tag_names: ["数学", "薄弱项"], title: "极限练习", description: "练习极限计算",
     completion_criteria: "完成练习并订正", estimated_minutes: 60,
     deadline: "2027-12-25", deadline_kind: "deadline", priority: 3,
   }],
@@ -48,8 +47,8 @@ describe("AI plan draft generation", () => {
     const result = await createPlanDraft(profile);
 
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(result.courses.map((course) => course.name)).toEqual(["基础入门", "动手练习", "综合实践"]);
-    expect(result.items).toHaveLength(6);
+    expect(result.items).toHaveLength(2);
+    expect(result.items[0].tag_names).toEqual([]);
     expect(result.items.every((item) => item.deadline === profile.plan_end_date)).toBe(true);
     expect(result.items.every((item) => item.deadline_kind === "plan_end")).toBe(true);
   });
@@ -80,27 +79,23 @@ describe("AI plan draft generation", () => {
     const request = JSON.parse(String(fetchMock.mock.calls[0][1]?.body));
     const prompt = JSON.parse(request.messages.find((message: { role: string }) => message.role === "user").content);
     const properties = prompt.output_schema.properties;
-    for (const collection of [properties.courses, properties.items]) {
-      expect(collection.items.properties.priority).toEqual({ type: "integer", enum: [1, 2, 3] });
-      expect(collection.items.required).toContain("priority");
-    }
+    expect(properties.items.items.properties.priority).toEqual({ type: "integer", enum: [1, 2, 3] });
+    expect(properties.items.items.required).toContain("priority");
     expect(PlanDraftSchema.parse(prompt.example)).toEqual(prompt.example);
-    expect(prompt.example.items[0].course_id).toBe(prompt.example.courses[0].id);
+    expect(prompt.example.items[0]).not.toHaveProperty("course_id");
     expect(prompt.profile).toEqual(profile);
     expect(prompt.current_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
   });
 
   it.each([
     ["invalid JSON", "not JSON"],
-    ["an invalid draft", JSON.stringify({ courses: [], items: [] })],
+    ["an invalid draft", JSON.stringify({ items: [] })],
     ["numeric-string priorities", JSON.stringify({
       ...draft,
-      courses: draft.courses.map((course) => ({ ...course, priority: "3" })),
       items: draft.items.map((item) => ({ ...item, priority: "3" })),
     })],
     ["named priorities", JSON.stringify({
       ...draft,
-      courses: draft.courses.map((course) => ({ ...course, priority: "高" })),
       items: draft.items.map((item) => ({ ...item, priority: "high" })),
     })],
   ])("reports %s without returning a fallback draft", async (_name, content) => {

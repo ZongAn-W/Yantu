@@ -1,7 +1,7 @@
 import 'package:sjtu_study_planner_client/features/planner/domain/planner_format.dart';
 import 'package:sjtu_study_planner_client/shared/models/planner_models.dart';
 
-/// The document shape `/api/planner/sync` stores, with two courses, two tasks and
+/// The document shape `/api/planner/sync` stores, with two tags, two tasks and
 /// one planned block each for today, plus a repeating rest event.
 ///
 /// It is shared by the integration tests and the debug probe so both assert against
@@ -26,32 +26,19 @@ PlannerData seededPlan() {
       dailyLimitMinutes: 480,
       granularityMinutes: 30,
       bufferMinutes: 30,
-      subjectLimitMinutes: 240,
       studyStartMinute: 480,
       studyEndMinute: 1320,
       foundation: '集成验收数据',
     ),
-    subjects: const [
-      Subject(
-        id: 'calculus',
-        userId: userId,
-        name: '高数',
-        color: '#4565c7',
-        priority: 3,
-      ),
-      Subject(
-        id: 'english',
-        userId: userId,
-        name: '英语',
-        color: '#1f7a5a',
-        priority: 2,
-      ),
+    tags: const [
+      Tag(id: 'calculus', userId: userId, name: '高数', color: '#4565c7'),
+      Tag(id: 'english', userId: userId, name: '英语', color: '#1f7a5a'),
     ],
     tasks: const [
       Task(
         id: 'task-math',
         userId: userId,
-        subjectId: 'calculus',
+        tagIds: ['calculus'],
         title: '基础一轮',
         description: '范围：极限、导数与积分基础题。',
         estimatedMinutes: 600,
@@ -67,7 +54,7 @@ PlannerData seededPlan() {
       Task(
         id: 'task-english',
         userId: userId,
-        subjectId: 'english',
+        tagIds: ['english'],
         title: '真题精读',
         description: '2015 年至 2019 年阅读真题精读。',
         estimatedMinutes: 300,

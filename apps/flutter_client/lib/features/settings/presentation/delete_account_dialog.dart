@@ -109,7 +109,7 @@ class _DeleteAccountDialogState extends ConsumerState<DeleteAccountDialog> {
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
                   const Text(
-                    '注销会永久删除云端账号、学习目标、课程与事项、计划、学习记录和 AI 访谈数据，并清理本机此账号的数据及恢复备份。历史损坏文件若无法自动清理，会提示你手动处理。',
+                    '注销会永久删除云端账号、学习目标、标签与事项、计划、学习记录和 AI 访谈数据，并清理本机此账号的数据及恢复备份。历史损坏文件若无法自动清理，会提示你手动处理。',
                   ),
                   const SizedBox(height: 12),
                   const Text('此操作无法撤销。如需保留记录，请先导出本地数据。其他设备已下载的数据需在对应设备上清理。'),

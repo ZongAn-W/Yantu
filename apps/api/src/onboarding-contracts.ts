@@ -1,6 +1,6 @@
 import { z } from "zod";
 import {
-  CalendarDateSchema, CapacityBasisSchema, CourseDraftSchema, DateCapacityOverridesSchema, ItemDraftSchema, NullableDateSchema,
+  CalendarDateSchema, CapacityBasisSchema, DateCapacityOverridesSchema, ItemDraftSchema, NullableDateSchema,
   ProfileSchema, WeekCapacityOverridesSchema,
 } from "./contracts.js";
 import { LearningContextSchema, ResearchSchema, LEARNER_FIELDS } from "./learning-context.js";
@@ -97,19 +97,43 @@ const legacyRecommendations = z.preprocess(value => {
 export const RecommendationsSchema = legacyRecommendations;
 export type OnboardingRecommendations = z.infer<typeof RecommendationsSchema>;
 
-export const CoursesSchema = z.array(CourseDraftSchema).min(1).max(100);
 export const ItemsSchema = z.array(ItemDraftSchema.extend({
   earliest_date: CalendarDateSchema.optional(),
   deadline: CalendarDateSchema,
 })).min(1).max(500);
 
-export const SessionSchema = z.object({
+function normalizeLegacySession(value: unknown): unknown {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const session = { ...(value as Record<string, unknown>) };
+  const courses = Array.isArray(session.courses) ? session.courses : [];
+  const names = new Map<string, string>();
+  for (const raw of courses) {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) continue;
+    const row = raw as Record<string, unknown>;
+    if (typeof row.id === "string" && typeof row.name === "string") names.set(row.id, row.name.trim());
+  }
+  if (Array.isArray(session.items)) session.items = session.items.map(raw => {
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return raw;
+    const item = { ...(raw as Record<string, unknown>) };
+    if (!Array.isArray(item.tag_names) && typeof item.course_id === "string") {
+      const name = names.get(item.course_id);
+      item.tag_names = name ? [name] : [];
+    }
+    delete item.course_id;
+    return item;
+  });
+  delete session.courses;
+  if (session.stage === "courses") session.stage = "constraints";
+  return session;
+}
+
+export const SessionSchema = z.preprocess(normalizeLegacySession, z.object({
   revision: z.number().int().nonnegative(),
   has_plan: z.boolean().default(false),
   replanning: z.boolean().default(false),
   plan_revision: z.number().int().nonnegative().nullable().default(null),
   current_plan: z.record(z.unknown()).nullable().default(null),
-  stage: z.enum(["interview", "checkpoint", "courses", "constraints", "items", "schedule", "complete"]),
+  stage: z.enum(["interview", "checkpoint", "constraints", "items", "schedule", "complete"]),
   question: z.string().max(1000),
   question_type: QuestionTypeSchema.optional(),
   question_options: QuestionOptionsSchema.default([]),
@@ -121,7 +145,6 @@ export const SessionSchema = z.object({
   answers: z.array(z.object({ question: z.string().max(1000), answer: z.string().max(4000), fields: z.array(z.enum(LEARNER_FIELDS)).optional() })).max(50),
   profile: ProfileSchema,
   recommendations: RecommendationsSchema.default({}),
-  courses: z.array(CourseDraftSchema).max(100),
   items: z.array(ItemDraftSchema).max(500),
   summary: z.string().max(4000),
   assumptions: z.array(z.string().max(500)).max(20),
@@ -131,7 +154,7 @@ export const SessionSchema = z.object({
   constraints_confirmed: z.boolean().default(false),
   planning: PlanPlanningSchema.nullable().default(null),
   preview: z.record(z.unknown()).nullable().default(null),
-});
+}));
 export type OnboardingSession = z.infer<typeof SessionSchema>;
 
 /**
@@ -164,16 +187,12 @@ export const ActionSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("retry_research") }),
   z.object({ type: z.literal("answer"), answer: z.string().trim().min(1, "请先填写回答").max(4000) }),
   z.object({ type: z.literal("continue") }),
-  z.object({ type: z.literal("generate_courses") }),
-  z.object({ type: z.literal("save_courses"), courses: CoursesSchema }),
-  z.object({ type: z.literal("confirm_courses"), courses: CoursesSchema }),
   z.object({ type: z.literal("set_constraints"), ...scheduleFields }),
   z.object({ type: z.literal("preview_schedule"), ...scheduleFields }),
-  z.object({ type: z.literal("revise_courses"), courses: CoursesSchema, instruction: z.string().trim().min(1).max(2000) }),
   z.object({ type: z.literal("save_items"), items: ItemsSchema }),
   z.object({ type: z.literal("confirm_items"), items: ItemsSchema }),
   z.object({ type: z.literal("revise_items"), items: ItemsSchema, instruction: z.string().trim().min(1).max(2000) }),
-  z.object({ type: z.literal("back"), target: z.enum(["interview", "courses", "constraints", "items"]) }),
+  z.object({ type: z.literal("back"), target: z.enum(["interview", "constraints", "items"]) }),
   z.object({
     type: z.literal("finish"),
     ...scheduleFields,
@@ -191,14 +210,11 @@ export function newSession(): OnboardingSession {
     question_options: FIRST_QUESTION_OPTIONS, question_multiple: false,
     question_fields: [], learning_context: LearningContextSchema.parse({}), research: ResearchSchema.parse({}), exam_year_override: null,
     profile: ProfileSchema.parse({}), recommendations: RecommendationsSchema.parse({}),
-    courses: [], items: [], summary: "", assumptions: [], warnings: [], start_date: "", end_date: "",
+    items: [], summary: "", assumptions: [], warnings: [], start_date: "", end_date: "",
     constraints_confirmed: false, planning: null, preview: null,
   };
 }
 
-export function validateReferences(courses: OnboardingSession["courses"], items: OnboardingSession["items"]) {
-  if (new Set(courses.map(c => c.id)).size !== courses.length) throw new Error("课程编号重复，请修改后重试");
+export function validateReferences(items: OnboardingSession["items"]) {
   if (new Set(items.map(i => i.id)).size !== items.length) throw new Error("事项编号重复，请修改后重试");
-  const ids = new Set(courses.map(c => c.id));
-  if (items.some(i => !ids.has(i.course_id))) throw new Error("事项必须属于已确认的课程");
 }

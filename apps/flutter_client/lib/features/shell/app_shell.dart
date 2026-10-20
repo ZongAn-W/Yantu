@@ -5,7 +5,6 @@ import 'package:go_router/go_router.dart';
 import '../../core/sync/sync_state.dart';
 import '../../core/theme.dart';
 import '../../core/widgets.dart';
-import '../auth/application/auth_controller.dart';
 import '../planner/application/planner_session.dart';
 import '../planner/application/study_timer.dart';
 import '../planner/domain/planner_format.dart';
@@ -27,7 +26,7 @@ Color syncTone(SyncStatus status) => switch (status) {
   SyncStatus.syncing || SyncStatus.connecting => PlannerColors.blue,
   SyncStatus.offline || SyncStatus.conflict => PlannerColors.orange,
   SyncStatus.error => PlannerColors.danger,
-  _ => PlannerColors.muted,
+  _ => PlannerColors.subtle,
 };
 
 class ShellDestination {
@@ -88,7 +87,6 @@ class AppShell extends StatelessWidget {
               selectedIndex: index,
               onSelect: (path) => _go(context, path),
             ),
-            const VerticalDivider(width: 1),
             Expanded(child: _Workspace(child: child)),
           ],
         ),
@@ -98,9 +96,13 @@ class AppShell extends StatelessWidget {
       appBar: AppBar(
         title: Text(
           shellDestinations[index].label,
-          style: const TextStyle(fontWeight: FontWeight.w600),
+          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
         ),
-        actions: const [_SyncAction(), _AccountAction()],
+        actions: const [_SyncAction(), SizedBox(width: 6)],
+        bottom: const PreferredSize(
+          preferredSize: Size.fromHeight(1),
+          child: Divider(height: 1),
+        ),
       ),
       body: _Workspace(child: child),
       bottomNavigationBar: NavigationBar(
@@ -148,47 +150,67 @@ class _ActiveTimerStrip extends ConsumerWidget {
     final relationLabel = relation == null
         ? ''
         : '${timeLogRelationLabels[relation] ?? ''} · ';
-    return ColoredBox(
-      color: PlannerColors.surface,
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 20),
-        child: Row(
-          children: [
-            const Icon(
-              Icons.timer_outlined,
-              size: 18,
+    final date = shanghaiToday();
+    final elapsed = timer.elapsedFor(taskId, date);
+    final clock =
+        '${elapsed.inMinutes.toString().padLeft(2, '0')}:'
+        '${(elapsed.inSeconds % 60).toString().padLeft(2, '0')}';
+    return Container(
+      decoration: const BoxDecoration(
+        color: PlannerColors.surface,
+        border: Border(bottom: BorderSide(color: PlannerColors.border)),
+      ),
+      padding: const EdgeInsets.fromLTRB(20, 7, 12, 7),
+      child: Row(
+        children: [
+          const StatusDot(color: PlannerColors.green),
+          const SizedBox(width: PlannerSpace.md),
+          Text(
+            relationLabel,
+            style: const TextStyle(
+              fontSize: 11.5,
+              color: PlannerColors.muted,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+          Expanded(
+            child: Text(
+              task?.title ?? '正在计时',
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: 12.5, height: 1.5),
+            ),
+          ),
+          Text(
+            clock,
+            style: tabularFigures.copyWith(
+              fontSize: 13.5,
+              fontWeight: FontWeight.w600,
               color: PlannerColors.blue,
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                '$relationLabel${task?.title ?? '正在计时'}',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontSize: 12),
-              ),
-            ),
-            IconButton(
-              tooltip: '暂停当前计时',
-              icon: const Icon(Icons.pause, size: 20),
-              onPressed: timer.busy
-                  ? null
-                  : () async {
-                      try {
-                        await timer.pause();
-                      } catch (_) {
-                        if (context.mounted) {
-                          showPlannerMessage(
-                            context,
-                            timer.error ?? '计时保存失败',
-                            tone: PlannerNoticeTone.error,
-                          );
-                        }
+          ),
+          const SizedBox(width: PlannerSpace.sm),
+          PlannerIconAction(
+            tooltip: '暂停当前计时',
+            icon: Icons.pause,
+            tone: PlannerColors.blue,
+            onPressed: timer.busy
+                ? null
+                : () async {
+                    try {
+                      await timer.pause();
+                    } catch (_) {
+                      if (context.mounted) {
+                        showPlannerMessage(
+                          context,
+                          timer.error ?? '计时保存失败',
+                          tone: PlannerNoticeTone.error,
+                        );
                       }
-                    },
-            ),
-          ],
-        ),
+                    }
+                  },
+          ),
+        ],
       ),
     );
   }
@@ -221,8 +243,9 @@ class _StatusBanners extends ConsumerWidget {
       banner = null;
     }
     if (banner == null) return const SizedBox.shrink();
+    final compact = MediaQuery.sizeOf(context).width < 700;
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+      padding: EdgeInsets.fromLTRB(compact ? 16 : 24, 12, compact ? 16 : 24, 0),
       child: banner,
     );
   }
@@ -238,122 +261,170 @@ class _Sidebar extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final snapshot = ref.watch(plannerDataProvider);
     final profile = snapshot.data?.profile;
-    final text = Theme.of(context).textTheme;
-    return SizedBox(
+    return Container(
       width: 240,
-      child: ColoredBox(
-        color: PlannerColors.surface,
-        child: SafeArea(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
+      decoration: const BoxDecoration(
+        color: PlannerColors.sidebar,
+        border: Border(right: BorderSide(color: PlannerColors.border)),
+      ),
+      child: SafeArea(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const _Brand(),
+            const SizedBox(height: PlannerSpace.lg),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 6),
+              child: Text(
+                '工作台',
+                style: TextStyle(
+                  fontSize: 11,
+                  height: 1.4,
+                  letterSpacing: 0.6,
+                  fontWeight: FontWeight.w500,
+                  color: PlannerColors.subtle,
+                ),
+              ),
+            ),
+            for (var index = 0; index < shellDestinations.length; index++)
+              _SidebarTile(
+                destination: shellDestinations[index],
+                selected: index == selectedIndex,
+                onTap: () => onSelect(shellDestinations[index].path),
+              ),
+            const Spacer(),
+            if (profile != null)
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 18, 16, 12),
-                child: Row(
-                  children: [
-                    Container(
-                      width: 34,
-                      height: 34,
-                      decoration: BoxDecoration(
-                        color: PlannerColors.blue,
-                        borderRadius: BorderRadius.circular(9),
-                      ),
-                      child: const Icon(
-                        Icons.school_outlined,
-                        color: Colors.white,
-                        size: 20,
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
+                padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: PlannerColors.surface,
+                    border: Border.all(color: PlannerColors.border),
+                    borderRadius: BorderRadius.circular(PlannerRadius.control),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
                         children: [
-                          Text('不白学', style: text.titleMedium),
-                          const Text(
-                            '学习执行台',
+                          const StatusDot(color: PlannerColors.blue, size: 6),
+                          const SizedBox(width: 6),
+                          Text(
+                            '当前目标',
                             style: TextStyle(
-                              color: PlannerColors.muted,
-                              fontSize: 12,
+                              fontSize: 10.5,
+                              height: 1.4,
+                              letterSpacing: 0.4,
+                              fontWeight: FontWeight.w500,
+                              color: PlannerColors.subtle,
                             ),
                           ),
                         ],
                       ),
-                    ),
-                    // The desktop layout has no app bar, so the account and
-                    // sign-out dialog must also be reachable from the sidebar.
-                    const _AccountAction(),
-                  ],
-                ),
-              ),
-              Expanded(
-                child: ListView(
-                  padding: const EdgeInsets.symmetric(horizontal: 8),
-                  children: [
-                    for (
-                      var index = 0;
-                      index < shellDestinations.length;
-                      index++
-                    )
-                      _SidebarTile(
-                        destination: shellDestinations[index],
-                        selected: index == selectedIndex,
-                        onTap: () => onSelect(shellDestinations[index].path),
+                      const SizedBox(height: 5),
+                      Text(
+                        goalHeadline(profile),
+                        style: const TextStyle(
+                          fontSize: 12.5,
+                          height: 1.45,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                  ],
-                ),
-              ),
-              if (profile != null)
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: PlannerColors.background,
-                      border: Border.all(color: PlannerColors.border),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          goalHeadline(profile),
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
+                      const SizedBox(height: 2),
+                      Text(
+                        goalStatusLine(profile, shanghaiToday()),
+                        style: const TextStyle(
+                          color: PlannerColors.muted,
+                          fontSize: 11.5,
+                          height: 1.45,
                         ),
-                        const SizedBox(height: 2),
-                        Text(
-                          goalStatusLine(profile, shanghaiToday()),
-                          style: const TextStyle(
-                            color: PlannerColors.muted,
-                            fontSize: 12,
-                          ),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
-                    ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
                   ),
                 ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
-                child: _SyncTile(
-                  status: snapshot.status,
-                  pending: snapshot.pending,
-                  onTap: () => context.go('/settings'),
-                ),
               ),
-            ],
-          ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 12),
+              child: _SyncTile(
+                status: snapshot.status,
+                pending: snapshot.pending,
+                onTap: () => context.go('/settings'),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
 }
 
-class _SidebarTile extends StatelessWidget {
+class _Brand extends StatelessWidget {
+  const _Brand();
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.fromLTRB(16, 18, 16, 0),
+    child: Row(
+      children: [
+        Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            color: PlannerColors.blue,
+            borderRadius: BorderRadius.circular(9),
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x26305d8a),
+                blurRadius: 8,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          child: const Icon(
+            Icons.auto_stories_outlined,
+            color: Colors.white,
+            size: 18,
+          ),
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '不白学',
+                style: TextStyle(
+                  fontSize: 15,
+                  height: 1.3,
+                  fontWeight: FontWeight.w600,
+                  letterSpacing: 0.2,
+                  color: PlannerColors.text,
+                ),
+              ),
+              Text(
+                '学习执行台',
+                style: TextStyle(
+                  color: PlannerColors.subtle,
+                  fontSize: 10.5,
+                  height: 1.5,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+class _SidebarTile extends StatefulWidget {
   const _SidebarTile({
     required this.destination,
     required this.selected,
@@ -365,48 +436,75 @@ class _SidebarTile extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 2),
-    child: Material(
-      color: selected ? const Color(0x14275e91) : Colors.transparent,
-      borderRadius: BorderRadius.circular(8),
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(8),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-          child: Row(
-            children: [
-              Icon(
-                destination.icon,
-                size: 18,
-                color: selected ? PlannerColors.blue : PlannerColors.muted,
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Text(
-                  destination.label,
-                  style: TextStyle(
-                    fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                    color: selected ? PlannerColors.blue : PlannerColors.text,
+  State<_SidebarTile> createState() => _SidebarTileState();
+}
+
+class _SidebarTileState extends State<_SidebarTile> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final selected = widget.selected;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 1),
+      child: MouseRegion(
+        cursor: SystemMouseCursors.click,
+        onEnter: (_) => setState(() => _hover = true),
+        onExit: (_) => setState(() => _hover = false),
+        child: Material(
+          color: selected
+              ? PlannerColors.selected
+              : (_hover ? PlannerColors.hover : Colors.transparent),
+          borderRadius: BorderRadius.circular(PlannerRadius.small),
+          child: InkWell(
+            onTap: widget.onTap,
+            borderRadius: BorderRadius.circular(PlannerRadius.small),
+            hoverColor: Colors.transparent,
+            child: Container(
+              height: 34,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              child: Row(
+                children: [
+                  if (selected) ...[
+                    Container(
+                      width: 3,
+                      height: 14,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                        color: PlannerColors.blue,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                  ] else
+                    const SizedBox(width: 11),
+                  Icon(
+                    widget.destination.icon,
+                    size: 17,
+                    color: selected ? PlannerColors.blue : PlannerColors.muted,
                   ),
-                ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      widget.destination.label,
+                      style: TextStyle(
+                        fontSize: 13,
+                        height: 1.3,
+                        fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
+                        color: selected ? PlannerColors.blue : PlannerColors.text,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-              if (selected)
-                const Icon(
-                  Icons.chevron_right,
-                  size: 16,
-                  color: PlannerColors.blue,
-                ),
-            ],
+            ),
           ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
 
-class _SyncTile extends StatelessWidget {
+class _SyncTile extends StatefulWidget {
   const _SyncTile({
     required this.status,
     required this.pending,
@@ -418,31 +516,56 @@ class _SyncTile extends StatelessWidget {
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => Material(
-    color: PlannerColors.background,
-    borderRadius: BorderRadius.circular(8),
-    child: InkWell(
-      onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-        child: Row(
-          children: [
-            Icon(Icons.cloud_outlined, size: 16, color: syncTone(status)),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                syncLabels[status] ?? '等待同步',
-                style: const TextStyle(fontSize: 13),
-                overflow: TextOverflow.ellipsis,
+  State<_SyncTile> createState() => _SyncTileState();
+}
+
+class _SyncTileState extends State<_SyncTile> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) => MouseRegion(
+    cursor: SystemMouseCursors.click,
+    onEnter: (_) => setState(() => _hover = true),
+    onExit: (_) => setState(() => _hover = false),
+    child: Material(
+      color: _hover ? PlannerColors.hover : Colors.transparent,
+      borderRadius: BorderRadius.circular(PlannerRadius.small),
+      child: InkWell(
+        onTap: widget.onTap,
+        borderRadius: BorderRadius.circular(PlannerRadius.small),
+        hoverColor: Colors.transparent,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          child: Row(
+            children: [
+              Icon(
+                Icons.cloud_outlined,
+                size: 15,
+                color: syncTone(widget.status),
               ),
-            ),
-            if (pending)
-              const Tooltip(
-                message: '有待同步修改',
-                child: Icon(Icons.sync_problem, size: 15),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  syncLabels[widget.status] ?? '等待同步',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    height: 1.4,
+                    color: PlannerColors.muted,
+                  ),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-          ],
+              if (widget.pending)
+                const Tooltip(
+                  message: '有待同步修改',
+                  child: Icon(
+                    Icons.sync_problem,
+                    size: 14,
+                    color: PlannerColors.orange,
+                  ),
+                ),
+            ],
+          ),
         ),
       ),
     ),
@@ -472,121 +595,6 @@ class _SyncAction extends ConsumerWidget {
           style: const TextStyle(fontSize: 12),
         ),
       ),
-    );
-  }
-}
-
-class _AccountAction extends ConsumerWidget {
-  const _AccountAction();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final user = ref.watch(authControllerProvider).user;
-    final initial = (user?.username.isNotEmpty ?? false)
-        ? user!.username.characters.first
-        : 'U';
-    return IconButton(
-      tooltip: '账号与同步',
-      icon: CircleAvatar(
-        radius: 14,
-        backgroundColor: PlannerColors.blue,
-        child: Text(
-          initial,
-          style: const TextStyle(color: Colors.white, fontSize: 13),
-        ),
-      ),
-      onPressed: () => showDialog<void>(
-        context: context,
-        builder: (context) => const AccountDialog(),
-      ),
-    );
-  }
-}
-
-/// Account and sync dialog reachable from every workbench route.
-class AccountDialog extends ConsumerWidget {
-  const AccountDialog({super.key});
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final auth = ref.watch(authControllerProvider);
-    final snapshot = ref.watch(plannerDataProvider);
-    return AlertDialog(
-      title: const Text('账号与同步'),
-      content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Text(
-              auth.user?.username ?? auth.user?.email ?? '',
-              style: const TextStyle(fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            const Text('课程、事项、每日计划和实际学习记录保存在服务器，本机保留离线副本。'),
-            const SizedBox(height: 16),
-            PlannerStat(
-              label: '同步状态',
-              value: syncLabels[snapshot.status] ?? '等待同步',
-              tone: syncTone(snapshot.status),
-            ),
-            PlannerStat(label: '云端版本', value: '${snapshot.revision}'),
-            PlannerStat(label: '待同步修改', value: snapshot.pending ? '有' : '无'),
-            const SizedBox(height: 8),
-            if (snapshot.message.isNotEmpty)
-              PlannerNotice(
-                snapshot.message,
-                tone: snapshot.status == SyncStatus.error
-                    ? PlannerNoticeTone.error
-                    : PlannerNoticeTone.info,
-              ),
-            if (auth.error != null) ...[
-              const SizedBox(height: 8),
-              PlannerNotice(auth.error!, tone: PlannerNoticeTone.error),
-            ],
-          ],
-        ),
-      ),
-      actions: [
-        TextButton(
-          onPressed: auth.loading
-              ? null
-              : () async {
-                  final messenger = ScaffoldMessenger.of(context);
-                  try {
-                    await ref.read(plannerSessionProvider).sync();
-                  } catch (error) {
-                    messenger.showSnackBar(
-                      SnackBar(content: Text('同步失败：$error')),
-                    );
-                  }
-                },
-          child: const Text('立即同步'),
-        ),
-        TextButton(
-          onPressed: () => Navigator.pop(context),
-          child: const Text('关闭'),
-        ),
-        FilledButton.icon(
-          onPressed: auth.loading
-              ? null
-              : () async {
-                  final navigator = Navigator.of(context);
-                  await ref.read(authControllerProvider.notifier).signOut();
-                  if (!context.mounted) return;
-                  // Keep the dialog open when the local timer checkpoint could not
-                  // be saved: the account stays signed in and the error is shown.
-                  final latest = ref.read(authControllerProvider);
-                  if (latest.user == null && latest.error == null) {
-                    navigator.pop();
-                  }
-                },
-          icon: const Icon(Icons.logout, size: 18),
-          style: FilledButton.styleFrom(backgroundColor: PlannerColors.danger),
-          label: const Text('退出登录'),
-        ),
-      ],
     );
   }
 }

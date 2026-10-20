@@ -291,14 +291,6 @@ export function checkScheduledPlan(document: PlannerDocument, from: string, to: 
     const protectedLoad = timed ? union(day.filter(block => protectedIds.has(block.id)).map(intervalOf))
       : day.filter(block => protectedIds.has(block.id)).reduce((sum, block) => sum + loadOf(block), 0);
     if (load > Math.max(budget, protectedLoad)) fail("DAILY_CAPACITY", "每日安排超出有效容量", undefined, date, budget, load);
-    for (const subject of new Set(day.map(block => taskById.get(block.task_id)?.subject_id))) {
-      const courseBlocks = day.filter(block => taskById.get(block.task_id)?.subject_id === subject);
-      const amount = timed ? union(courseBlocks.map(intervalOf)) : courseBlocks.reduce((sum, block) => sum + loadOf(block), 0);
-      const protectedAmount = timed ? union(courseBlocks.filter(block => protectedIds.has(block.id)).map(intervalOf))
-        : courseBlocks.filter(block => protectedIds.has(block.id)).reduce((sum, block) => sum + loadOf(block), 0);
-      if (amount > Math.max(Math.min(240, document.profile.subject_limit_minutes), protectedAmount))
-        fail("COURSE_CAPACITY", "同课程安排超出每日上限", undefined, date, Math.min(240, document.profile.subject_limit_minutes), amount);
-    }
   }
   // Weekly totals and specific dates must not silently fight each other.
   for (const week of resolveWeeksInRange(document.profile, from, to)) {
@@ -324,7 +316,7 @@ export function checkScheduledPlan(document: PlannerDocument, from: string, to: 
 export function frozenInputs(session: OnboardingSession) {
   return { profile: session.profile, learning_context: session.learning_context, research: session.research,
     start_date: session.start_date, end_date: session.end_date, plan_revision: session.plan_revision,
-    current_plan: session.current_plan, courses: session.courses, items: session.items,
+    current_plan: session.current_plan, items: session.items,
     planning: session.planning ? { ...session.planning, detailed_until: undefined, forecast: undefined, needs_review: undefined, capacity: undefined } : null };
 }
 
@@ -334,12 +326,11 @@ export function checkLearningStrategy(session: OnboardingSession): QualityIssue[
   const report = (code: string, message: string, item_id?: string, expected?: unknown, actual?: unknown) =>
     issues.push({ code, severity: "error", item_id, expected, actual, message,
       evidence: "已确认事项及结构化学习范围", repair: "核对工作量或事项引用后重新检查；缩减范围需明确说明" });
-  const ids = new Set(session.items.map(item => item.id)), courses = new Set(session.courses.map(course => course.id));
+  const ids = new Set(session.items.map(item => item.id));
   const existing = Array.isArray(session.current_plan?.items) ? session.current_plan.items as Array<Record<string, unknown>> : [];
   const evidenceIds = new Set([...session.answers.map((_, index) => `answer:${index}`), ...session.research.sources.map(source => source.url)]);
   if (ids.size !== session.items.length) report("DUPLICATE_ITEM", "事项编号重复");
   for (const item of session.items) {
-    if (!courses.has(item.course_id)) report("COURSE_REFERENCE", "事项引用的课程不存在", item.id);
     if (item.earliest_date && item.earliest_date > item.deadline) report("DATE_ORDER", "事项开始日期晚于截止日期", item.id);
     const old = existing.find(row => row.id === item.id);
     if (old && old.deadline_kind !== "plan_end" && (old.deadline !== item.deadline || item.deadline_kind === "plan_end"))
@@ -394,7 +385,9 @@ export function checkLearningStrategy(session: OnboardingSession): QualityIssue[
     if (phase.start_date && phase.end_date && phase.start_date > phase.end_date) report("ROUTE_DATES", `「${phase.title}」的日期顺序有误`);
   }
   for (const subject of session.learning_context.subjects.filter(subject => subject.weakness)) {
-    if (!session.courses.some(course => course.name.includes(subject.name) || subject.name.includes(course.name)))
+    const relevant = session.items.some(item => [item.title, item.description, ...item.tag_names]
+      .some(value => value.toLocaleLowerCase("en-US").includes(subject.name.toLocaleLowerCase("en-US"))));
+    if (!relevant)
       issues.push({ code: "WEAKNESS_COVERAGE_UNKNOWN", severity: "warning", message: `尚不能确认计划是否回应「${subject.name}」的薄弱项`,
         evidence: subject.weakness, repair: "确认相关事项或将该内容明确列入未覆盖范围" });
   }
@@ -409,9 +402,9 @@ export function checkLearningStrategy(session: OnboardingSession): QualityIssue[
 
 function emptyDocument(session: OnboardingSession): PlannerDocument {
   return { version: 1, profile: { user_id: "planning-preview", planning_mode: "daily", target_school: "", target_program: "",
-    daily_limit_minutes: 480, buffer_minutes: 30, granularity_minutes: 30, subject_limit_minutes: 240,
+    daily_limit_minutes: 480, buffer_minutes: 30, granularity_minutes: 30,
     study_start_minute: 480, study_end_minute: 1320, foundation: "" },
-    subjects: [], tasks: [], blocks: [], logs: [], fixed_events: [], replan_runs: [], phases: [] };
+    tags: [], tasks: [], blocks: [], logs: [], fixed_events: [], replan_runs: [], phases: [] };
 }
 
 /** Shared trial/commit calculation. Runtime identities are supplied by the caller. */
@@ -425,11 +418,32 @@ export function buildPlanningDocument(session: OnboardingSession, current?: Plan
   const document = result.document;
   const mapping = new Map<string, string>();
   const claimed = new Set<string>();
+  const normalizeTagName = (value: string) => value.normalize("NFKC").trim().toLocaleLowerCase("en-US");
+  const tagByName = new Map(document.tags.map(tag => [normalizeTagName(tag.name), tag]));
+  const resolveItemTags = (item: OnboardingSession["items"][number], task: PlannerDocument["tasks"][number]) => {
+    const names = (item as unknown as { tag_names?: unknown }).tag_names;
+    if (names === undefined) return;
+    if (!Array.isArray(names)) throw new Error(`事项「${item.title}」的标签格式无效`);
+    const ids: string[] = [];
+    for (const raw of names) {
+      if (typeof raw !== "string" || !raw.trim()) continue;
+      const name = raw.normalize("NFKC").trim();
+      const key = normalizeTagName(name);
+      let tag = tagByName.get(key);
+      if (!tag) {
+        const id = `tag-${createHash("sha256").update(`${owner}:${key}`).digest("hex").slice(0, 32)}`;
+        tag = { id, user_id: owner, name, created_at: new Date().toISOString(), updated_at: new Date().toISOString() };
+        tagByName.set(key, tag);
+        document.tags.push(tag);
+      }
+      if (!ids.includes(tag.id)) ids.push(tag.id);
+    }
+    task.tag_ids = ids;
+  };
   for (const item of session.items) {
     const task = document.tasks.find(task => task.id === item.id) ?? document.tasks.find(task => !claimed.has(task.id)
-      && task.status !== "archived" && task.title === item.title
-      && document.subjects.find(subject => subject.id === task.subject_id)?.name === session.courses.find(course => course.id === item.course_id)?.name);
-    if (task) { mapping.set(item.id, task.id); claimed.add(task.id); }
+      && task.status !== "archived" && task.title === item.title);
+    if (task) { mapping.set(item.id, task.id); claimed.add(task.id); resolveItemTags(item, task); }
   }
   const metadata = normalizePlanningMetadata(structuredClone(session.planning ?? newPlanning()), {
     start_date: session.start_date, end_date: session.end_date });

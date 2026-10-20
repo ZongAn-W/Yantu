@@ -59,25 +59,27 @@ export type PlanAdjustmentPreview = {
     updated_tasks: Array<{
       task_id: string;
       title: string;
-      subject: string;
+      tag_names: string[];
       previous_minutes: number;
       minutes: number;
       reason: string;
     }>;
     new_tasks: Array<{
       title: string;
-      subject: string;
+      tag_names: string[];
       minutes: number;
       deadline_kind: "deadline" | "plan_end";
       deadline: string;
       reason: string;
     }>;
-    subjects: Array<{
-      subject_id: string;
+    tags: Array<{
+      tag_id: string;
       name: string;
+      task_count: number;
       previous_minutes: number;
       minutes: number;
     }>;
+    tag_totals_note: string;
   };
   schedule: {
     protected_blocks: number;
@@ -107,18 +109,6 @@ export type PlanAdjustmentResult = {
   preview: PlanAdjustmentPreview;
 };
 
-/** 新课程颜色按固定调色板循环，避免依赖随机值导致两次预览颜色不同。 */
-const SUBJECT_COLORS = [
-  "#4565c7",
-  "#e8684a",
-  "#6dc8ec",
-  "#9270ca",
-  "#ff9d4d",
-  "#269a99",
-  "#f58bb8",
-  "#61ddaa",
-] as const;
-
 const DAY_MS = 86_400_000;
 const dateValue = (value: string) => Date.parse(`${value}T00:00:00Z`);
 const dayCount = (start: string, end: string) =>
@@ -137,10 +127,15 @@ function activeTasks(document: PlannerDocument): Task[] {
   return document.tasks.filter((task) => task.status !== "archived");
 }
 
-function subjectMinutes(document: PlannerDocument): Map<string, number> {
-  const totals = new Map<string, number>();
-  for (const task of activeTasks(document))
-    totals.set(task.subject_id, (totals.get(task.subject_id) ?? 0) + task.estimated_minutes);
+function tagStats(document: PlannerDocument): Map<string, { task_count: number; minutes: number }> {
+  const totals = new Map<string, { task_count: number; minutes: number }>();
+  for (const tag of document.tags) totals.set(tag.id, { task_count: 0, minutes: 0 });
+  for (const task of activeTasks(document)) for (const tagId of task.tag_ids) {
+    const current = totals.get(tagId);
+    if (!current) continue;
+    current.task_count++;
+    current.minutes += task.estimated_minutes;
+  }
   return totals;
 }
 
@@ -352,35 +347,21 @@ export function applyPlanAdjustment(
   if (rebalancedWorkloads)
     notes.push(`${rebalancedWorkloads} 个事项的结构化工作量已按新预算等比例同步`);
 
-  // §5.4 新增课程与事项：课程先按既有 id 匹配，再按 new_subjects 的 key 匹配。
-  const existingSubjectIds = new Set(before.subjects.map((subject) => subject.id));
-  const subjectKeyToId = new Map<string, string>();
-  for (const [index, spec] of ai.new_subjects.entries()) {
-    if (subjectKeyToId.has(spec.key))
-      throw new PlanAdjustmentError(
-        "AI 给出的新增课程标识重复，请重试",
-        `new_subjects duplicate key=${spec.key}`,
-      );
-    const subjectId = runtime.newId();
-    subjectKeyToId.set(spec.key, subjectId);
-    document.subjects.push({
-      id: subjectId,
-      user_id: owner,
-      name: spec.name,
-      color: SUBJECT_COLORS[index % SUBJECT_COLORS.length],
-      priority: spec.priority as 1 | 2 | 3,
-    });
-  }
+  // AI returns names only. Resolve existing labels case-insensitively and assign server IDs.
+  const tagByName = new Map(document.tags.map(tag => [tag.name.trim().toLowerCase(), tag]));
+  const resolveTagNames = (names: readonly string[]) => [...new Set(names.map(name => name.trim()).filter(Boolean))].map(name => {
+    const key = name.toLowerCase();
+    let tag = tagByName.get(key);
+    if (!tag) {
+      tag = { id: runtime.newId(), user_id: owner, name, color: null };
+      tagByName.set(key, tag);
+      document.tags.push(tag);
+    }
+    return tag.id;
+  });
   const createdTasks: Array<{ task: Task; reason: string }> = [];
   for (const spec of ai.new_tasks) {
-    const subjectId = existingSubjectIds.has(spec.subject)
-      ? spec.subject
-      : subjectKeyToId.get(spec.subject);
-    if (!subjectId)
-      throw new PlanAdjustmentError(
-        `AI 新增事项引用了不存在的课程（${spec.subject}），请重试`,
-        `new_tasks key=${spec.key} subject=${spec.subject}`,
-      );
+    const tagIds = resolveTagNames(spec.tag_names);
     let deadline: string;
     if (spec.deadline_kind === "plan_end") deadline = endDate;
     else {
@@ -404,7 +385,7 @@ export function applyPlanAdjustment(
     const task: Task = {
       id: runtime.newId(),
       user_id: owner,
-      subject_id: subjectId,
+      tag_ids: tagIds,
       title: spec.title,
       description: spec.description,
       estimated_minutes: spec.estimated_minutes,
@@ -502,17 +483,18 @@ export function applyPlanAdjustment(
   if (ai.required_minutes.max > 0 && nextMinutes > ai.required_minutes.max)
     warnings.push("调整后总时长仍高于目标所需上限");
 
-  const beforeSubjectMinutes = subjectMinutes(before);
-  const afterSubjectMinutes = subjectMinutes(document);
-  const subjectName = new Map(document.subjects.map((subject) => [subject.id, subject.name]));
-  const workloadSubjects = document.subjects
-    .map((subject) => ({
-      subject_id: subject.id,
-      name: subject.name,
-      previous_minutes: beforeSubjectMinutes.get(subject.id) ?? 0,
-      minutes: afterSubjectMinutes.get(subject.id) ?? 0,
+  const beforeTagStats = tagStats(before);
+  const afterTagStats = tagStats(document);
+  const tagName = new Map(document.tags.map((tag) => [tag.id, tag.name]));
+  const workloadTags = document.tags
+    .map((tag) => ({
+      tag_id: tag.id,
+      name: tag.name,
+      task_count: afterTagStats.get(tag.id)?.task_count ?? 0,
+      previous_minutes: beforeTagStats.get(tag.id)?.minutes ?? 0,
+      minutes: afterTagStats.get(tag.id)?.minutes ?? 0,
     }))
-    .filter((row) => row.previous_minutes !== row.minutes);
+    .filter((row) => row.previous_minutes !== row.minutes || (beforeTagStats.get(row.tag_id)?.task_count ?? 0) !== row.task_count);
 
   const loggedMinutes = new Map<string, number>();
   for (const log of document.logs)
@@ -574,7 +556,7 @@ export function applyPlanAdjustment(
         return {
           task_id: taskId,
           title: task.title,
-          subject: subjectName.get(task.subject_id) ?? task.subject_id,
+          tag_names: task.tag_ids.map(id => tagName.get(id)).filter((name): name is string => Boolean(name)),
           previous_minutes: change.previous,
           minutes: change.minutes,
           reason: change.reason,
@@ -582,13 +564,14 @@ export function applyPlanAdjustment(
       }),
       new_tasks: createdTasks.map(({ task, reason }) => ({
         title: task.title,
-        subject: subjectName.get(task.subject_id) ?? task.subject_id,
+        tag_names: task.tag_ids.map(id => tagName.get(id)).filter((name): name is string => Boolean(name)),
         minutes: task.estimated_minutes,
         deadline_kind: deadlineKind(task) as "deadline" | "plan_end",
         deadline: task.deadline,
         reason,
       })),
-      subjects: workloadSubjects,
+      tags: workloadTags,
+      tag_totals_note: "按标签分别统计，同一事项可属于多个标签，因此不同标签的分钟数不能相加。",
     },
     schedule: {
       protected_blocks: protectedIds.size,

@@ -30,9 +30,7 @@ class CalendarDayItem {
   const CalendarDayItem({
     required this.id,
     required this.title,
-    required this.subjectId,
-    required this.subjectName,
-    required this.declaredColor,
+    required this.tagNames,
     required this.plannedMinutes,
     required this.actualMinutes,
     required this.scheduledMinutes,
@@ -41,9 +39,7 @@ class CalendarDayItem {
 
   final String id;
   final String title;
-  final String subjectId;
-  final String subjectName;
-  final String? declaredColor;
+  final List<String> tagNames;
   final int plannedMinutes;
   final int actualMinutes;
 
@@ -89,7 +85,7 @@ class CalendarDayData {
 CalendarDayData buildCalendarDayData(PlannerData data, String date) {
   final summary = dayExecutionSummary(data, date);
   final tasks = {for (final task in data.tasks) task.id: task};
-  final subjects = {for (final subject in data.subjects) subject.id: subject};
+  final tags = {for (final tag in data.tags) tag.id: tag};
   final builders = <String, _DayItemBuilder>{};
   var actualMinutes = 0;
 
@@ -97,14 +93,13 @@ CalendarDayData buildCalendarDayData(PlannerData data, String date) {
     final id = 'task:$taskId';
     return builders.putIfAbsent(id, () {
       final task = tasks[taskId];
-      final subjectId = task?.subjectId ?? 'unknown';
-      final subject = subjects[subjectId];
       return _DayItemBuilder(
         id: id,
         title: task?.title ?? '已删除事项',
-        subjectId: subjectId,
-        subjectName: subject?.name ?? '未分类',
-        declaredColor: subject?.color,
+        tagNames: [
+          for (final tagId in task?.tagIds ?? const <String>[])
+            if (tags[tagId] case final tag?) tag.name,
+        ],
       );
     });
   }
@@ -130,13 +125,7 @@ CalendarDayData buildCalendarDayData(PlannerData data, String date) {
       final id = 'log:${log.id}';
       owner = builders.putIfAbsent(
         id,
-        () => _DayItemBuilder(
-          id: id,
-          title: '历史学习记录',
-          subjectId: 'unknown',
-          subjectName: '未分类',
-          declaredColor: null,
-        ),
+        () => _DayItemBuilder(id: id, title: '历史学习记录', tagNames: const []),
       );
     }
     owner.actual += log.minutes;
@@ -196,16 +185,12 @@ class _DayItemBuilder {
   _DayItemBuilder({
     required this.id,
     required this.title,
-    required this.subjectId,
-    required this.subjectName,
-    required this.declaredColor,
+    required this.tagNames,
   });
 
   final String id;
   final String title;
-  final String subjectId;
-  final String subjectName;
-  final String? declaredColor;
+  final List<String> tagNames;
   int planned = 0;
   int actual = 0;
   int scheduled = 0;
@@ -217,9 +202,7 @@ class _DayItemBuilder {
   CalendarDayItem build() => CalendarDayItem(
     id: id,
     title: title,
-    subjectId: subjectId,
-    subjectName: subjectName,
-    declaredColor: declaredColor,
+    tagNames: List.unmodifiable(tagNames),
     plannedMinutes: planned,
     actualMinutes: actual,
     scheduledMinutes: scheduled,

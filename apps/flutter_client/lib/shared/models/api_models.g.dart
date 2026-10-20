@@ -107,7 +107,11 @@ _ItemDraft _$ItemDraftFromJson(Map<String, dynamic> json) => $checkedCreate(
   ($checkedConvert) {
     final val = _ItemDraft(
       id: $checkedConvert('id', (v) => v as String),
-      courseId: $checkedConvert('course_id', (v) => v as String),
+      tagNames: $checkedConvert(
+        'tag_names',
+        (v) =>
+            (v as List<dynamic>?)?.map((e) => e as String).toList() ?? const [],
+      ),
       title: $checkedConvert('title', (v) => v as String),
       description: $checkedConvert('description', (v) => v as String? ?? ''),
       completionCriteria: $checkedConvert(
@@ -132,7 +136,7 @@ _ItemDraft _$ItemDraftFromJson(Map<String, dynamic> json) => $checkedCreate(
     return val;
   },
   fieldKeyMap: const {
-    'courseId': 'course_id',
+    'tagNames': 'tag_names',
     'completionCriteria': 'completion_criteria',
     'estimatedMinutes': 'estimated_minutes',
     'earliestDate': 'earliest_date',
@@ -143,7 +147,7 @@ _ItemDraft _$ItemDraftFromJson(Map<String, dynamic> json) => $checkedCreate(
 Map<String, dynamic> _$ItemDraftToJson(_ItemDraft instance) =>
     <String, dynamic>{
       'id': instance.id,
-      'course_id': instance.courseId,
+      'tag_names': instance.tagNames,
       'title': instance.title,
       'description': instance.description,
       'completion_criteria': instance.completionCriteria,
@@ -165,12 +169,6 @@ _PlanDraft _$PlanDraftFromJson(Map<String, dynamic> json) => $checkedCreate(
   json,
   ($checkedConvert) {
     final val = _PlanDraft(
-      courses: $checkedConvert(
-        'courses',
-        (v) => (v as List<dynamic>)
-            .map((e) => CourseDraft.fromJson(e as Map<String, dynamic>))
-            .toList(),
-      ),
       items: $checkedConvert(
         'items',
         (v) => (v as List<dynamic>)
@@ -197,7 +195,6 @@ _PlanDraft _$PlanDraftFromJson(Map<String, dynamic> json) => $checkedCreate(
 
 Map<String, dynamic> _$PlanDraftToJson(_PlanDraft instance) =>
     <String, dynamic>{
-      'courses': instance.courses.map((e) => e.toJson()).toList(),
       'items': instance.items.map((e) => e.toJson()).toList(),
       'analysis_summary': instance.analysisSummary,
       'assumptions': instance.assumptions,

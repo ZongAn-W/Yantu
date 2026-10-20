@@ -188,6 +188,16 @@ describe("flexible capacity scheduling (net / overrides / priority mixing)", () 
   const newBlocks = (result: ReturnType<typeof run>, input: StrategyInput) =>
     result.blocks.filter(block => !input.blocks.some(original => original.id === block.id));
 
+  it("allows an untagged item to use more than the former group cap within daily capacity", () => {
+    const input = { profile: profile({ capacity_basis: "net",
+      weekly_minutes: { "0": 0, "1": 300, "2": 0, "3": 0, "4": 0, "5": 0, "6": 0 } }),
+      tasks: [task("reading", { estimated_minutes: 300, tag_ids: [] })], blocks: [], logs: [], fixed_events: [] } as StrategyInput;
+    const result = run(input);
+    const monday = newBlocks(result, input).filter(block => block.date === "2026-10-19");
+    expect(monday.reduce((sum, block) => sum + block.duration_minutes, 0)).toBe(300);
+    expect(result.unscheduled_minutes).toBe(0);
+  });
+
   it("keeps the legacy gross 30-minute buffer and 480 ceiling exactly as before", () => {
     const input = { profile: profile({ weekly_minutes: { "0": 0, "1": 20, "2": 0, "3": 0, "4": 0, "5": 0, "6": 0 } }),
       tasks: [task("reading", { estimated_minutes: 60 })], blocks: [], logs: [], fixed_events: [] } as StrategyInput;

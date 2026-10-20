@@ -30,7 +30,9 @@ export function evaluationSession(test: typeof EVALUATION_CASES[number]): Onboar
     answers: [{ question: "学习目标", answer: test.goal }],
     profile: ProfileSchema.parse({ goal_type: test.type, goal_text: test.goal, target_date: null,
       plan_start_date: start, plan_end_date: end, weekly_minutes: week }),
-    courses: [{ id: "course", name: test.course, description: test.goal, priority: 2 }] };
+    items: [{ id: `seed-${test.id}`, tag_names: [test.course], title: `${test.course}学习`, description: test.goal,
+      completion_criteria: "完成一个可验证的小目标", estimated_minutes: test.minutes, deadline: end,
+      deadline_kind: "plan_end", priority: 2 }] };
 }
 
 async function run() {
@@ -58,7 +60,7 @@ async function run() {
       try {
         const generated = variant === "baseline"
           ? await requestStructuredAI(z.object({ items: ItemsSchema, summary: z.string(), assumptions: z.array(z.string()), warnings: z.array(z.string()) }),
-            '只为已确认课程生成事项，不得增加或改变课程。返回items,summary,assumptions,warnings。每项包含id(唯一),course_id(已确认课程id),title(可执行标题),description(学习范围),completion_criteria(可验证标准),estimated_minutes(30到100000整数分钟),earliest_date(YYYY-MM-DD),deadline(YYYY-MM-DD),deadline_kind(deadline表示真实截止日期，plan_end表示本期安排边界),priority(1到3整数)。最多500项。事项标题具体，练习复习实践按场景决定。日期不得早于本次plan_start_date且开始不得晚于截止。没有真实截止日期使用plan_end，真实截止可以晚于本期结束。target_date可以为空。', session, { timeoutMs: 65_000, label: "eval-items" })
+            '直接生成事项，不要求先创建课程。返回items,summary,assumptions,warnings。每项包含id、可选tag_names、title、description、completion_criteria、estimated_minutes、earliest_date、deadline、deadline_kind和priority。标签只返回名称，不返回数据库ID。', session, { timeoutMs: 65_000, label: "eval-items" })
           : await generateItems(session, "", 65_000);
         const candidate = { ...session, ...generated };
         const repaired = repair && variant === "upgrade" ? await checkAndRepair(candidate) : null;

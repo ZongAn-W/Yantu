@@ -17,8 +17,37 @@ import '../support/http_adapter.dart';
 /// 期望值补齐这些文档化默认后做全等比较，而不是放宽成子集断言。
 Map<String, dynamic> legacyExportWithModelDefaults(Map source) {
   final expected = Map<String, dynamic>.from(source);
+  final subjects = expected.remove('subjects') as List? ?? const [];
+  final tags = [
+    for (final value in subjects)
+      if (value is Map)
+        {
+          'id': value['id'],
+          'user_id': value['user_id'] ?? value['userId'],
+          'name': (value['name'] as String).trim(),
+          if (value['color'] != null) 'color': value['color'],
+          'created_at': value['created_at'] ?? value['createdAt'] ?? '',
+          'updated_at': value['updated_at'] ?? value['updatedAt'] ?? '',
+        },
+  ];
+  expected['tags'] = tags;
+  final tagIds = {for (final tag in tags) tag['id']: tag['id']};
+  expected['tasks'] = [
+    for (final value in expected['tasks'] as List)
+      if (value is Map)
+        () {
+          final task = Map<String, dynamic>.from(value);
+          final subjectId =
+              task.remove('subject_id') ?? task.remove('subjectId');
+          task['tag_ids'] = subjectId is String && tagIds.containsKey(subjectId)
+              ? [tagIds[subjectId]]
+              : <String>[];
+          return task;
+        }(),
+  ];
   expected.putIfAbsent('ad_hoc_learnings', () => <dynamic>[]);
   expected['profile'] = Map<String, dynamic>.from(expected['profile'] as Map)
+    ..remove('subject_limit_minutes')
     ..putIfAbsent('capacity_basis', () => 'gross_buffer');
   expected['logs'] = [
     for (final row in expected['logs'] as List)
@@ -36,9 +65,9 @@ void main() {
   );
 
   test('snapshot parses a complete existing TypeScript export', () async {
-    final json = jsonDecode(
-      File('test/fixtures/planner_v1.json').readAsStringSync(),
-    ) as Map;
+    final json =
+        jsonDecode(File('test/fixtures/planner_v1.json').readAsStringSync())
+            as Map;
     final http = client((_) async => jsonResponse({'data': json}));
     addTearDown(http.close);
     final data = await PlannerApi(http).snapshot();
@@ -74,13 +103,10 @@ void main() {
         return jsonResponse({
           'id': 'draft-1',
           'draft': {
-            'courses': [
-              {'id': 'math', 'name': '数学'},
-            ],
             'items': [
               {
                 'id': 'item-1',
-                'course_id': 'math',
+                'tag_names': ['数学', '薄弱项'],
                 'title': '基础一轮',
                 'estimated_minutes': 120,
                 'deadline': '2027-12-25',
@@ -101,7 +127,7 @@ void main() {
         ),
         requestId: 'request-1',
       );
-      expect(draft.draft.items.single.courseId, 'math');
+      expect(draft.draft.items.single.tagNames, ['数学', '薄弱项']);
       expect(draft.draft.warnings, isEmpty);
     },
   );

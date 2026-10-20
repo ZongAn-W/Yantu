@@ -24,7 +24,7 @@ final _today = shanghaiToday();
 
 PlannerData _emptyPlan() => plannerFixture().copyWith(
   planning: null,
-  subjects: const [],
+  tags: const [],
   tasks: const [],
   blocks: const [],
   logs: const [],
@@ -164,31 +164,41 @@ Future<({_RecordingSession session, GoRouter router})> _mount(
 }
 
 void main() {
-  for (final missing in ['planning', 'subjects', 'tasks']) {
+  for (final missing in ['tasks']) {
     testWidgets(
       'empty plan keeps AI planning and the all-items entry when $missing is empty',
       (tester) async {
         final complete = _plannedPlan();
-        final data = switch (missing) {
-          'planning' => complete.copyWith(planning: null),
-          'subjects' => complete.copyWith(subjects: const []),
-          _ => complete.copyWith(tasks: const []),
-        };
+        final data = complete.copyWith(tasks: const []);
         await _mount(tester, _snapshot(data: data));
         expect(find.text(_emptyTitle), findsOneWidget);
         expect(find.byKey(const Key('dashboard-empty-plan')), findsOneWidget);
         expect(find.byKey(_aiPlanning), findsOneWidget);
         expect(find.text('AI 长期规划'), findsOneWidget);
-        // 合并页下半部分始终可以直接新建课程、添加事项。
+        // The directory remains directly usable without a task prerequisite.
         expect(find.text('全部事项'), findsOneWidget);
-        expect(find.byKey(const Key('new-course-button')), findsOneWidget);
-        expect(find.text('新建课程'), findsWidgets);
+        expect(find.byKey(const Key('new-task-button')), findsOneWidget);
         // 旧的「开始计时」快捷入口与临时学习入口已下线。
         expect(find.byKey(const Key('dashboard-quick-start')), findsNothing);
         expect(find.text('今天想学什么？'), findsNothing);
       },
     );
   }
+
+  testWidgets('manual tasks work without a planning document or tags', (
+    tester,
+  ) async {
+    final data = plannerFixture().copyWith(
+      planning: null,
+      tags: const [],
+      tasks: [plannerFixture().tasks.single.copyWith(tagIds: const [])],
+    );
+    await _mount(tester, _snapshot(data: data));
+    expect(find.byKey(const Key('dashboard-empty-plan')), findsNothing);
+    expect(find.text('全部事项'), findsOneWidget);
+    expect(find.byKey(const Key('new-task-button')), findsOneWidget);
+    expect(find.text(data.tasks.single.title), findsWidgets);
+  });
 
   testWidgets('empty plan AI planning action opens the interview route', (
     tester,
@@ -220,7 +230,7 @@ void main() {
       );
       expect(find.text(task.title), findsWidgets);
       expect(find.text('全部事项'), findsOneWidget);
-      expect(find.byKey(const Key('new-course-button')), findsOneWidget);
+      expect(find.byKey(const Key('new-task-button')), findsOneWidget);
       expect(find.byKey(Key('task-extra-timer-${task.id}')), findsOneWidget);
       // 今日饼图、净容量与临时学习区块都已从产品移除。
       expect(find.byKey(const Key('today-capacity-breakdown')), findsNothing);

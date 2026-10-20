@@ -20,17 +20,15 @@ PlannerData _data() => PlannerData(
     dailyLimitMinutes: 480,
     granularityMinutes: 30,
     bufferMinutes: 30,
-    subjectLimitMinutes: 240,
     studyStartMinute: 0,
     studyEndMinute: 1440,
     foundation: '',
   ),
-  subjects: const [],
+  tags: const [],
   tasks: [
     Task(
       id: 't',
       userId: 'u1',
-      subjectId: 's',
       title: '事项',
       estimatedMinutes: 600,
       completedMinutes: 0,
@@ -80,8 +78,7 @@ class _RecordingSession implements PlannerSession {
   }
 
   @override
-  dynamic noSuchMethod(Invocation invocation) =>
-      super.noSuchMethod(invocation);
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
 
 Future<void> _mount(
@@ -106,8 +103,7 @@ Future<void> _mount(
             conflicts: _snapshot.conflicts,
           ),
         ),
-        if (session != null)
-          plannerSessionProvider.overrideWithValue(session),
+        if (session != null) plannerSessionProvider.overrideWithValue(session),
       ],
       child: MaterialApp(
         theme: plannerTheme(),
@@ -197,10 +193,7 @@ void main() {
     expect(written.tasks, hasLength(1));
     expect(written.replanRuns, isEmpty);
     expect(find.text('容量假设与例外'), findsNothing);
-    expect(
-      find.textContaining('容量已保存；请到调整页使用一键调整后续计划重排未来安排'),
-      findsOneWidget,
-    );
+    expect(find.textContaining('容量已保存；请到调整页使用一键调整后续计划重排未来安排'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -218,8 +211,14 @@ void main() {
     // 启用周容量范围后填入下限大于上限，校验错误必须展示并禁用保存。
     await tester.tap(find.byType(Checkbox));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byKey(const ValueKey('capacity-range-min')), '600');
-    await tester.enterText(find.byKey(const ValueKey('capacity-range-max')), '300');
+    await tester.enterText(
+      find.byKey(const ValueKey('capacity-range-min')),
+      '600',
+    );
+    await tester.enterText(
+      find.byKey(const ValueKey('capacity-range-max')),
+      '300',
+    );
     await tester.pumpAndSettle();
     expect(find.text('周容量范围下限不能大于上限'), findsOneWidget);
     expect(

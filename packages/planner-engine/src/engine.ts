@@ -96,7 +96,6 @@ function limits(profile: Profile) {
       Math.min(480, finiteMinutes(profile.daily_limit_minutes)) -
         Math.max(30, finiteMinutes(profile.buffer_minutes)),
     ),
-    subject: Math.min(240, finiteMinutes(profile.subject_limit_minutes)),
     quantum: Math.max(30, finiteMinutes(profile.granularity_minutes)),
     start: Math.max(0, finiteMinutes(profile.study_start_minute)),
     end: Math.min(1440, finiteMinutes(profile.study_end_minute)),
@@ -226,29 +225,6 @@ function placementError(
     dailyStudyBudget(input.profile, candidate.date)
   )
     return "超出当天可用的学习时间（每日上限），须保留至少30分钟机动时间";
-  const subjectOccupied = occupiedDayMinutes(
-    input.profile,
-    [],
-    dayBlocks.filter(
-      (block) =>
-        input.tasks.find((item) => item.id === block.task_id)?.subject_id ===
-        task.subject_id,
-    ),
-    input.logs,
-    candidate.date,
-  );
-  const orphanSubjectLoad = orphanLogs
-    .filter(
-      (log) =>
-        input.tasks.find((item) => item.id === log.task_id)?.subject_id ===
-        task.subject_id,
-    )
-    .reduce((sum, log) => sum + finiteMinutes(log.minutes), 0);
-  if (
-    subjectOccupied + orphanSubjectLoad + candidate.duration_minutes >
-    capacity.subject
-  )
-    return "同一科目每天最多安排4小时";
   return null;
 }
 
@@ -706,7 +682,7 @@ export function generateReplanPreview(input: ReplanInput, runtime: PlannerRuntim
         reason:
           task.deadline <= input.today
             ? "截止日期已到，未来没有可安排的日期"
-            : "截止日期前或未来14天内容量不足；未突破每日上限、机动时间和科目上限",
+            : "截止日期前或未来14天内容量不足；未突破每日容量",
       });
   }
   return makePreview(input, after, conflicts, timestamp, runtime);

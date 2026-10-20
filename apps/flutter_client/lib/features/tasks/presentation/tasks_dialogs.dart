@@ -7,24 +7,15 @@ import '../../../shared/models/planner_models.dart';
 import '../../planner/application/planner_session.dart';
 import '../../planner/domain/planner_format.dart';
 
-/// Edits an item in the directory: only name, note and course are editable.
-/// Scheduling fields keep their existing values (or the domain defaults for a
-/// new item) and are intentionally not shown here.
 class TaskDirectoryEditorDialog extends ConsumerStatefulWidget {
-  const TaskDirectoryEditorDialog({this.task, this.subjectId, super.key});
-
+  const TaskDirectoryEditorDialog({this.task, super.key});
   final Task? task;
-  final String? subjectId;
 
-  static Future<bool?> show(
-    BuildContext context, {
-    Task? task,
-    String? subjectId,
-  }) => showDialog<bool>(
-    context: context,
-    builder: (context) =>
-        TaskDirectoryEditorDialog(task: task, subjectId: subjectId),
-  );
+  static Future<bool?> show(BuildContext context, {Task? task}) =>
+      showDialog<bool>(
+        context: context,
+        builder: (context) => TaskDirectoryEditorDialog(task: task),
+      );
 
   @override
   ConsumerState<TaskDirectoryEditorDialog> createState() =>
@@ -35,7 +26,8 @@ class _TaskDirectoryEditorDialogState
     extends ConsumerState<TaskDirectoryEditorDialog> {
   late final TextEditingController _title;
   late final TextEditingController _description;
-  late String _subjectId;
+  late final TextEditingController _newTag;
+  late final Set<String> _tagIds;
   String? _error;
   bool _saving = false;
 
@@ -44,22 +36,36 @@ class _TaskDirectoryEditorDialogState
   @override
   void initState() {
     super.initState();
-    final data = ref.read(plannerSessionProvider).data;
     _title = TextEditingController(text: widget.task?.title ?? '');
     _description = TextEditingController(text: widget.task?.description ?? '');
-    final requested = widget.subjectId ?? widget.task?.subjectId;
-    _subjectId = data.subjects.any((subject) => subject.id == requested)
-        ? requested!
-        : data.subjects.isEmpty
-        ? ''
-        : data.subjects.first.id;
+    _newTag = TextEditingController();
+    _tagIds = {...?widget.task?.tagIds};
   }
 
   @override
   void dispose() {
     _title.dispose();
     _description.dispose();
+    _newTag.dispose();
     super.dispose();
+  }
+
+  Future<void> _addTag() async {
+    try {
+      final id = await ref
+          .read(plannerSessionProvider)
+          .createTag(name: _newTag.text);
+      if (!mounted) return;
+      setState(() {
+        _tagIds.add(id);
+        _newTag.clear();
+        _error = null;
+      });
+    } catch (error) {
+      if (mounted) {
+        setState(() => _error = error is StateError ? error.message : '$error');
+      }
+    }
   }
 
   Future<void> _save() async {
@@ -68,45 +74,39 @@ class _TaskDirectoryEditorDialogState
       setState(() => _error = '请填写事项名称');
       return;
     }
-    if (_subjectId.isEmpty) {
-      setState(() => _error = '请选择所属课程');
-      return;
-    }
     setState(() {
       _saving = true;
       _error = null;
     });
     try {
       final session = ref.read(plannerSessionProvider);
-      final data = session.data;
       final base = widget.task == null
-          ? TaskDraft.blank(data, shanghaiToday())
+          ? TaskDraft.blank(session.data, shanghaiToday())
           : TaskDraft.from(widget.task!);
       final draft = base.copyWith(
         title: title,
         description: _description.text.trim(),
-        subjectId: _subjectId,
+        tagIds: _tagIds.toList(growable: false),
       );
       if (widget.task == null) {
         await session.createTask(draft);
       } else {
         await session.updateTask(widget.task!.id, draft);
       }
-      if (!mounted) return;
-      Navigator.pop(context, true);
+      if (mounted) Navigator.pop(context, true);
     } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _saving = false;
-        _error = error is StateError ? error.message : '保存失败：$error';
-      });
+      if (mounted) {
+        setState(() {
+          _saving = false;
+          _error = error is StateError ? error.message : '保存失败：$error';
+        });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final data = ref.watch(plannerSessionProvider).data;
-    final subjects = data.subjects;
     return AlertDialog(
       title: Text(_editing ? '编辑事项' : '新建事项'),
       content: SizedBox(
@@ -141,39 +141,76 @@ class _TaskDirectoryEditorDialogState
                 ),
               ),
               const SizedBox(height: 12),
-              DropdownButtonFormField<String>(
-                key: const Key('task-course-field'),
-                initialValue: _subjectId,
-                decoration: const InputDecoration(labelText: '所属课程'),
-                items: [
-                  for (final subject in subjects)
-                    DropdownMenuItem(
-                      value: subject.id,
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Container(
-                            width: 8,
-                            height: 8,
-                            decoration: BoxDecoration(
-                              color: subjectColor(subject.id, subject.color),
-                              shape: BoxShape.circle,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Flexible(
-                            child: Text(
-                              subject.name,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
+              Row(
+                children: [
+                  const Expanded(
+                    child: Text(
+                      '标签（选填）',
+                      style: TextStyle(fontWeight: FontWeight.w600),
+                    ),
+                  ),
+                  if (_tagIds.isNotEmpty)
+                    TextButton.icon(
+                      key: const Key('clear-task-tags-button'),
+                      onPressed: _saving ? null : () => setState(_tagIds.clear),
+                      icon: const Icon(Icons.close, size: 15),
+                      label: const Text('清除全部'),
                     ),
                 ],
-                onChanged: _saving
-                    ? null
-                    : (value) => setState(() => _subjectId = value ?? ''),
+              ),
+              if (data.tags.isEmpty)
+                const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    '暂无标签，可以直接保存未标记事项。',
+                    style: TextStyle(color: PlannerColors.muted, fontSize: 12),
+                  ),
+                )
+              else
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 4,
+                  children: [
+                    for (final tag in data.tags)
+                      FilterChip(
+                        key: Key('task-tag-${tag.id}'),
+                        label: Text(tag.name),
+                        selected: _tagIds.contains(tag.id),
+                        avatar: _tagDot(tag),
+                        onSelected: _saving
+                            ? null
+                            : (selected) => setState(() {
+                                selected
+                                    ? _tagIds.add(tag.id)
+                                    : _tagIds.remove(tag.id);
+                              }),
+                      ),
+                  ],
+                ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      key: const Key('new-task-tag-field'),
+                      controller: _newTag,
+                      enabled: !_saving,
+                      maxLength: 24,
+                      decoration: const InputDecoration(
+                        labelText: '新标签名称',
+                        counterText: '',
+                      ),
+                      onSubmitted: (_) => _addTag(),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  IconButton(
+                    key: const Key('add-task-tag-button'),
+                    tooltip: '创建并添加标签',
+                    onPressed: _saving ? null : _addTag,
+                    icon: const Icon(Icons.add_circle_outline),
+                  ),
+                ],
               ),
               if (_error != null) ...[
                 const SizedBox(height: 12),
@@ -203,196 +240,233 @@ class _TaskDirectoryEditorDialogState
   }
 }
 
-/// One available course accent for the create-course dialog.
-class _CourseColor {
-  const _CourseColor(this.hex, this.name);
-
-  final String hex;
-  final String name;
-
-  Color get color => Color(0xff000000 | int.parse(hex.substring(1), radix: 16));
-}
-
-const _courseColors = [
-  _CourseColor('#4565c7', '靛蓝'),
-  _CourseColor('#1f7a5a', '松绿'),
-  _CourseColor('#c2761f', '琥珀'),
-  _CourseColor('#7a6bd0', '紫罗兰'),
-  _CourseColor('#2b7f9e', '青蓝'),
-  _CourseColor('#8a5a2b', '赭石'),
-];
-
-/// Creates an empty course folder from the directory page.
-class CourseEditorDialog extends ConsumerStatefulWidget {
-  const CourseEditorDialog({super.key});
-
-  static Future<bool?> show(BuildContext context) => showDialog<bool>(
+class TagManagementDialog extends ConsumerStatefulWidget {
+  const TagManagementDialog({super.key});
+  static Future<void> show(BuildContext context) => showDialog<void>(
     context: context,
-    builder: (context) => const CourseEditorDialog(),
+    builder: (context) => const TagManagementDialog(),
   );
 
   @override
-  ConsumerState<CourseEditorDialog> createState() => _CourseEditorDialogState();
+  ConsumerState<TagManagementDialog> createState() =>
+      _TagManagementDialogState();
 }
 
-class _CourseEditorDialogState extends ConsumerState<CourseEditorDialog> {
-  final _name = TextEditingController();
-  _CourseColor _color = _courseColors.first;
+class _TagManagementDialogState extends ConsumerState<TagManagementDialog> {
+  final _newName = TextEditingController();
   String? _error;
-  bool _saving = false;
+  bool _busy = false;
+  static const _colors = [
+    '#4565c7',
+    '#1f7a5a',
+    '#c2761f',
+    '#7a6bd0',
+    '#2b7f9e',
+    '#8a5a2b',
+  ];
 
   @override
   void dispose() {
-    _name.dispose();
+    _newName.dispose();
     super.dispose();
   }
 
-  Future<void> _save() async {
-    final name = _name.text.trim();
-    if (name.isEmpty) {
-      setState(() => _error = '请填写课程名称');
-      return;
-    }
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
+  Future<void> _create() async {
+    setState(() => _busy = true);
     try {
-      await ref
-          .read(plannerSessionProvider)
-          .createCourse(name: name, color: _color.hex);
-      if (!mounted) return;
-      Navigator.pop(context, true);
+      await ref.read(plannerSessionProvider).createTag(name: _newName.text);
+      if (mounted)
+        setState(() {
+          _newName.clear();
+          _error = null;
+          _busy = false;
+        });
     } catch (error) {
-      if (!mounted) return;
-      setState(() {
-        _saving = false;
-        _error = error is StateError ? error.message : '创建失败：$error';
-      });
+      if (mounted)
+        setState(() {
+          _error = error is StateError ? error.message : '$error';
+          _busy = false;
+        });
     }
+  }
+
+  Future<void> _rename(Tag tag) async {
+    final controller = TextEditingController(text: tag.name);
+    final name = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('重命名标签'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          maxLength: 24,
+          decoration: const InputDecoration(labelText: '标签名称', counterText: ''),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(context, controller.text),
+            child: const Text('保存'),
+          ),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (name == null) return;
+    try {
+      await ref.read(plannerSessionProvider).renameTag(tag.id, name);
+    } catch (error) {
+      if (mounted)
+        setState(() => _error = error is StateError ? error.message : '$error');
+    }
+  }
+
+  Future<void> _delete(Tag tag) async {
+    final count = ref
+        .read(plannerSessionProvider)
+        .data
+        .tasks
+        .where((task) => task.tagIds.contains(tag.id))
+        .length;
+    final confirmed = await confirmAction(
+      context,
+      title: '删除标签',
+      message: count == 0
+          ? '删除「${tag.name}」？'
+          : '「${tag.name}」当前用于 $count 个事项。删除后只会解除这个标签，事项、日程、学习记录和其他标签都会保留。',
+      confirmLabel: '删除标签',
+      destructive: true,
+    );
+    if (!confirmed) return;
+    await ref.read(plannerSessionProvider).deleteTag(tag.id);
+  }
+
+  Future<void> _recolor(Tag tag, String? color) async {
+    await ref.read(plannerSessionProvider).recolorTag(tag.id, color);
   }
 
   @override
   Widget build(BuildContext context) {
+    final tags = ref.watch(plannerSessionProvider).data.tags;
     return AlertDialog(
-      title: const Text('新建课程'),
+      title: const Text('标签管理'),
       content: SizedBox(
-        width: 420,
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                key: const Key('course-name-field'),
-                controller: _name,
-                autofocus: true,
-                enabled: !_saving,
-                maxLength: 24,
-                decoration: const InputDecoration(
-                  labelText: '课程名称',
-                  counterText: '',
-                  hintText: '例如：概率论与数理统计',
-                ),
-                onChanged: (_) => setState(() => _error = null),
-              ),
-              const SizedBox(height: 16),
-              Text(
-                '课程颜色',
-                style: Theme.of(
-                  context,
-                ).textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w600),
-              ),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 10,
-                runSpacing: 8,
-                children: [
-                  for (final option in _courseColors)
-                    Tooltip(
-                      message: option.name,
-                      child: Semantics(
-                        label: option.name,
-                        selected: option == _color,
-                        button: true,
-                        child: InkResponse(
-                          key: Key('course-color-${option.hex}'),
-                          onTap: _saving
-                              ? null
-                              : () => setState(() {
-                                  _color = option;
-                                  _error = null;
-                                }),
-                          radius: 24,
-                          child: Container(
-                            width: 30,
-                            height: 30,
-                            decoration: BoxDecoration(
-                              color: option.color,
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: option == _color
-                                    ? PlannerColors.text
-                                    : Colors.transparent,
-                                width: 2,
+        width: 460,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (tags.isEmpty)
+              const Padding(padding: EdgeInsets.all(12), child: Text('还没有标签'))
+            else
+              Flexible(
+                child: ListView(
+                  shrinkWrap: true,
+                  children: [
+                    for (final tag in tags)
+                      ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: _tagDot(tag, size: 14),
+                        title: Text(tag.name),
+                        trailing: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            PopupMenuButton<String?>(
+                              tooltip: '修改颜色',
+                              onSelected: (color) =>
+                                  _recolor(tag, color == 'none' ? null : color),
+                              itemBuilder: (context) => [
+                                const PopupMenuItem(
+                                  value: 'none',
+                                  child: Text('默认颜色'),
+                                ),
+                                for (final color in _colors)
+                                  PopupMenuItem(
+                                    value: color,
+                                    child: Row(
+                                      children: [
+                                        Container(
+                                          width: 12,
+                                          height: 12,
+                                          decoration: BoxDecoration(
+                                            color: _color(color),
+                                            shape: BoxShape.circle,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(color),
+                                      ],
+                                    ),
+                                  ),
+                              ],
+                              icon: const Icon(Icons.palette_outlined),
+                            ),
+                            IconButton(
+                              tooltip: '重命名',
+                              onPressed: () => _rename(tag),
+                              icon: const Icon(Icons.edit_outlined),
+                            ),
+                            IconButton(
+                              tooltip: '删除标签',
+                              onPressed: () => _delete(tag),
+                              icon: const Icon(
+                                Icons.delete_outline,
+                                color: PlannerColors.danger,
                               ),
                             ),
-                            child: option == _color
-                                ? const Icon(
-                                    Icons.check,
-                                    color: Colors.white,
-                                    size: 17,
-                                  )
-                                : null,
-                          ),
+                          ],
                         ),
                       ),
-                    ),
-                ],
+                  ],
+                ),
               ),
-              const SizedBox(height: 10),
-              Row(
-                children: [
-                  const Icon(
-                    Icons.folder_outlined,
-                    size: 16,
-                    color: PlannerColors.muted,
-                  ),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      '创建后会得到一个空课程文件夹，可继续添加事项',
-                      style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                        color: PlannerColors.muted,
-                      ),
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    key: const Key('new-managed-tag-field'),
+                    controller: _newName,
+                    enabled: !_busy,
+                    maxLength: 24,
+                    decoration: const InputDecoration(
+                      labelText: '新标签',
+                      counterText: '',
                     ),
+                    onSubmitted: (_) => _create(),
                   ),
-                ],
-              ),
-              if (_error != null) ...[
-                const SizedBox(height: 12),
-                PlannerNotice(_error!, tone: PlannerNoticeTone.error),
+                ),
+                IconButton(
+                  tooltip: '创建标签',
+                  onPressed: _busy ? null : _create,
+                  icon: const Icon(Icons.add_circle_outline),
+                ),
               ],
-            ],
-          ),
+            ),
+            if (_error != null)
+              PlannerNotice(_error!, tone: PlannerNoticeTone.error),
+          ],
         ),
       ),
       actions: [
         TextButton(
-          onPressed: _saving ? null : () => Navigator.pop(context),
-          child: const Text('取消'),
-        ),
-        FilledButton(
-          key: const Key('course-save-button'),
-          onPressed: _saving ? null : _save,
-          child: _saving
-              ? const SizedBox.square(
-                  dimension: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('创建课程'),
+          onPressed: () => Navigator.pop(context),
+          child: const Text('完成'),
         ),
       ],
     );
   }
 }
+
+Widget _tagDot(Tag tag, {double size = 10}) {
+  final color = tag.color == null ? PlannerColors.blue : _color(tag.color!);
+  return Container(
+    width: size,
+    height: size,
+    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+  );
+}
+
+Color _color(String hex) =>
+    Color(0xff000000 | int.parse(hex.substring(1), radix: 16));

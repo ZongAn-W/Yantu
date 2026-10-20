@@ -48,7 +48,7 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(find.text('你的长期目标是什么？'), findsOneWidget);
-      expect(find.text('根据当前回答生成科目'), findsNothing);
+      expect(find.text('根据当前回答生成事项'), findsNothing);
       final input = find.byKey(const ValueKey('interview-answer-input'));
       for (var i = 0; i < 5; i++) {
         await tester.enterText(input, '回答$i');
@@ -59,7 +59,7 @@ void main() {
       expect(find.text('信息已记录'), findsNothing);
       expect(find.text('继续完善信息'), findsNothing);
       expect(find.text('第 6 问'), findsOneWidget);
-      expect(find.text('根据当前回答生成科目'), findsOneWidget);
+      expect(find.text('根据当前回答生成事项'), findsOneWidget);
       expect(
         actions.where((action) => action['type'] == 'answer'),
         hasLength(5),
@@ -70,7 +70,7 @@ void main() {
       await tester.tap(find.text('发送'));
       await tester.pumpAndSettle();
       expect(find.text('第 7 问'), findsOneWidget);
-      expect(find.text('根据当前回答生成科目'), findsOneWidget);
+      expect(find.text('根据当前回答生成事项'), findsOneWidget);
 
       failure = true;
       await tester.enterText(input, '保留我的回答');
@@ -86,12 +86,18 @@ void main() {
     },
   );
 
-  testWidgets('manual course changes are included when asking AI to revise', (
+  testWidgets('manual item changes are included when asking AI to revise', (
     tester,
   ) async {
-    var session = onboardingFixture(stage: 'courses', answers: 5);
-    session['courses'] = [
-      {'id': 'math', 'name': '高数', 'description': '', 'priority': 2},
+    var session = onboardingFixture(stage: 'items', answers: 5);
+    session['items'] = [
+      {
+        'id': 'math-foundation',
+        'title': '高数基础',
+        'estimated_minutes': 120,
+        'deadline': '2026-11-01',
+        'tag_names': ['数学'],
+      },
     ];
     Map? sent;
     final api = ApiClient(
@@ -103,7 +109,7 @@ void main() {
             sent =
                 jsonDecode(jsonEncode((request.data as Map)['action'])) as Map;
             session['revision'] = (session['revision'] as int) + 1;
-            session['courses'] = sent!['courses'];
+            session['items'] = sent!['items'];
           }
           return jsonResponse({'session': session});
         }),
@@ -116,26 +122,26 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('确认课程，设置时间条件'), findsOneWidget);
-    expect(find.text('确认学习事项'), findsNothing);
-    await tester.tap(find.byTooltip('编辑 高数'));
+    expect(find.text('确认学习事项'), findsOneWidget);
+    await tester.tap(find.byTooltip('编辑 高数基础'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextFormField).at(1), '线性代数');
+    await tester.enterText(find.byKey(const Key('draft-item-title')), '线性代数');
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pumpAndSettle();
     expect(find.text('线性代数'), findsOneWidget);
-    await tester.enterText(find.byType(TextFormField), '增加英语');
+    await tester.enterText(find.byType(TextFormField).last, '增加英语');
     await tester.tap(find.text('按要求修改'));
     await tester.pumpAndSettle();
-    expect(sent!['type'], 'revise_courses');
+    expect(sent!['type'], 'revise_items');
     expect(sent!['instruction'], '增加英语');
-    expect((sent!['courses'] as List).single['name'], '线性代数');
+    expect((sent!['items'] as List).single['title'], '线性代数');
+    expect((sent!['items'] as List).single['tag_names'], ['数学']);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('mobile renders long courses and item details without overflow', (
+  testWidgets('mobile renders long item details without overflow', (
     tester,
   ) async {
     tester.view.physicalSize = const Size(360, 780);
@@ -143,14 +149,11 @@ void main() {
     addTearDown(tester.view.resetPhysicalSize);
     addTearDown(tester.view.resetDevicePixelRatio);
     final session = onboardingFixture(stage: 'items', answers: 5);
-    session['courses'] = [
-      {'id': 'math', 'name': '计算机组成原理与计算机网络基础专项训练'},
-    ];
     session['items'] = [
       {
         'id': 'task',
-        'course_id': 'math',
         'title': '一轮基础知识梳理与典型例题训练',
+        'tag_names': ['数据结构', '薄弱项'],
         'description': '学习内容与完成标准需要完整显示，不能被操作按钮遮住。',
         'estimated_minutes': 600,
         'deadline': '2027-12-25',

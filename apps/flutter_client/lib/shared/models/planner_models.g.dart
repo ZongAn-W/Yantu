@@ -16,11 +16,13 @@ _PlannerData _$PlannerDataFromJson(Map<String, dynamic> json) => $checkedCreate(
         'profile',
         (v) => Profile.fromJson(v as Map<String, dynamic>),
       ),
-      subjects: $checkedConvert(
-        'subjects',
-        (v) => (v as List<dynamic>)
-            .map((e) => Subject.fromJson(e as Map<String, dynamic>))
-            .toList(),
+      tags: $checkedConvert(
+        'tags',
+        (v) =>
+            (v as List<dynamic>?)
+                ?.map((e) => Tag.fromJson(e as Map<String, dynamic>))
+                .toList() ??
+            const [],
       ),
       tasks: $checkedConvert(
         'tasks',
@@ -89,7 +91,7 @@ Map<String, dynamic> _$PlannerDataToJson(
 ) => <String, dynamic>{
   'version': instance.version,
   'profile': instance.profile.toJson(),
-  'subjects': instance.subjects.map((e) => e.toJson()).toList(),
+  'tags': instance.tags.map((e) => e.toJson()).toList(),
   'tasks': instance.tasks.map((e) => e.toJson()).toList(),
   'blocks': instance.blocks.map((e) => e.toJson()).toList(),
   'logs': instance.logs.map((e) => e.toJson()).toList(),
@@ -151,10 +153,6 @@ _Profile _$ProfileFromJson(Map<String, dynamic> json) => $checkedCreate(
       ),
       bufferMinutes: $checkedConvert(
         'buffer_minutes',
-        (v) => (v as num).toInt(),
-      ),
-      subjectLimitMinutes: $checkedConvert(
-        'subject_limit_minutes',
         (v) => (v as num).toInt(),
       ),
       studyStartMinute: $checkedConvert(
@@ -220,7 +218,6 @@ _Profile _$ProfileFromJson(Map<String, dynamic> json) => $checkedCreate(
     'dailyLimitMinutes': 'daily_limit_minutes',
     'granularityMinutes': 'granularity_minutes',
     'bufferMinutes': 'buffer_minutes',
-    'subjectLimitMinutes': 'subject_limit_minutes',
     'studyStartMinute': 'study_start_minute',
     'studyEndMinute': 'study_end_minute',
     'capacityBasis': 'capacity_basis',
@@ -251,7 +248,6 @@ Map<String, dynamic> _$ProfileToJson(_Profile instance) => <String, dynamic>{
   'daily_limit_minutes': instance.dailyLimitMinutes,
   'granularity_minutes': instance.granularityMinutes,
   'buffer_minutes': instance.bufferMinutes,
-  'subject_limit_minutes': instance.subjectLimitMinutes,
   'study_start_minute': instance.studyStartMinute,
   'study_end_minute': instance.studyEndMinute,
   'foundation': instance.foundation,
@@ -283,24 +279,34 @@ const _$CapacityBasisEnumMap = {
   CapacityBasis.net: 'net',
 };
 
-_Subject _$SubjectFromJson(Map<String, dynamic> json) =>
-    $checkedCreate('_Subject', json, ($checkedConvert) {
-      final val = _Subject(
-        id: $checkedConvert('id', (v) => v as String),
-        userId: $checkedConvert('user_id', (v) => v as String),
-        name: $checkedConvert('name', (v) => v as String),
-        color: $checkedConvert('color', (v) => v as String),
-        priority: $checkedConvert('priority', (v) => _priority(v)),
-      );
-      return val;
-    }, fieldKeyMap: const {'userId': 'user_id'});
+_Tag _$TagFromJson(Map<String, dynamic> json) => $checkedCreate(
+  '_Tag',
+  json,
+  ($checkedConvert) {
+    final val = _Tag(
+      id: $checkedConvert('id', (v) => v as String),
+      userId: $checkedConvert('user_id', (v) => v as String),
+      name: $checkedConvert('name', (v) => v as String),
+      color: $checkedConvert('color', (v) => v as String?),
+      createdAt: $checkedConvert('created_at', (v) => v as String? ?? ''),
+      updatedAt: $checkedConvert('updated_at', (v) => v as String? ?? ''),
+    );
+    return val;
+  },
+  fieldKeyMap: const {
+    'userId': 'user_id',
+    'createdAt': 'created_at',
+    'updatedAt': 'updated_at',
+  },
+);
 
-Map<String, dynamic> _$SubjectToJson(_Subject instance) => <String, dynamic>{
+Map<String, dynamic> _$TagToJson(_Tag instance) => <String, dynamic>{
   'id': instance.id,
   'user_id': instance.userId,
   'name': instance.name,
-  'color': instance.color,
-  'priority': instance.priority,
+  'color': ?instance.color,
+  'created_at': instance.createdAt,
+  'updated_at': instance.updatedAt,
 };
 
 _Task _$TaskFromJson(Map<String, dynamic> json) => $checkedCreate(
@@ -310,7 +316,11 @@ _Task _$TaskFromJson(Map<String, dynamic> json) => $checkedCreate(
     final val = _Task(
       id: $checkedConvert('id', (v) => v as String),
       userId: $checkedConvert('user_id', (v) => v as String),
-      subjectId: $checkedConvert('subject_id', (v) => v as String),
+      tagIds: $checkedConvert(
+        'tag_ids',
+        (v) =>
+            (v as List<dynamic>?)?.map((e) => e as String).toList() ?? const [],
+      ),
       title: $checkedConvert('title', (v) => v as String),
       description: $checkedConvert('description', (v) => v as String?),
       estimatedMinutes: $checkedConvert(
@@ -343,7 +353,7 @@ _Task _$TaskFromJson(Map<String, dynamic> json) => $checkedCreate(
   },
   fieldKeyMap: const {
     'userId': 'user_id',
-    'subjectId': 'subject_id',
+    'tagIds': 'tag_ids',
     'estimatedMinutes': 'estimated_minutes',
     'completedMinutes': 'completed_minutes',
     'deadlineKind': 'deadline_kind',
@@ -357,7 +367,7 @@ _Task _$TaskFromJson(Map<String, dynamic> json) => $checkedCreate(
 Map<String, dynamic> _$TaskToJson(_Task instance) => <String, dynamic>{
   'id': instance.id,
   'user_id': instance.userId,
-  'subject_id': instance.subjectId,
+  'tag_ids': instance.tagIds,
   'title': instance.title,
   'description': ?instance.description,
   'estimated_minutes': instance.estimatedMinutes,
@@ -585,7 +595,6 @@ _AdHocLearning _$AdHocLearningFromJson(Map<String, dynamic> json) =>
           id: $checkedConvert('id', (v) => v as String),
           userId: $checkedConvert('user_id', (v) => v as String),
           title: $checkedConvert('title', (v) => v as String),
-          subjectId: $checkedConvert('subject_id', (v) => v as String?),
           createdAt: $checkedConvert('created_at', (v) => v as String),
           updatedAt: $checkedConvert('updated_at', (v) => v as String),
           archived: $checkedConvert('archived', (v) => v as bool? ?? false),
@@ -598,7 +607,6 @@ _AdHocLearning _$AdHocLearningFromJson(Map<String, dynamic> json) =>
       },
       fieldKeyMap: const {
         'userId': 'user_id',
-        'subjectId': 'subject_id',
         'createdAt': 'created_at',
         'updatedAt': 'updated_at',
         'convertedTaskId': 'converted_task_id',
@@ -610,7 +618,6 @@ Map<String, dynamic> _$AdHocLearningToJson(_AdHocLearning instance) =>
       'id': instance.id,
       'user_id': instance.userId,
       'title': instance.title,
-      'subject_id': ?instance.subjectId,
       'created_at': instance.createdAt,
       'updated_at': instance.updatedAt,
       'archived': instance.archived,

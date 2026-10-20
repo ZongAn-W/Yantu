@@ -98,8 +98,8 @@ int _displayedActual(PlannerData data, String date) => data.logs
     )
     .fold(0, (sum, log) => sum + log.minutes);
 
-/// Every week total must reconcile with the existing daily domain statistics,
-/// the shared layers and the course legend. This is the contract both week
+/// Every week total must reconcile with the existing daily domain statistics
+/// and shared layers. This is the contract both week
 /// charts and the detail panel consume. Historical ad-hoc records are the only
 /// rows deliberately missing from the displayed actual minutes.
 void _expectWeekReconciles(PlannerData data, CalendarWeekData week) {
@@ -162,15 +162,6 @@ void _expectWeekReconciles(PlannerData data, CalendarWeekData week) {
   expect(week.plannedMinutes, planned);
   expect(week.actualMinutes, actual);
   expect(week.scaleMinutes, math.max(1, maximum));
-  // Course legend totals and layer totals are the same facts.
-  expect(
-    week.courses.fold<int>(0, (sum, course) => sum + course.plannedMinutes),
-    planned,
-  );
-  expect(
-    week.courses.fold<int>(0, (sum, course) => sum + course.actualMinutes),
-    actual,
-  );
   expect(
     week.layers.fold<int>(0, (sum, layer) => sum + layer.totalMinutes),
     actual,
@@ -181,16 +172,6 @@ void _expectWeekReconciles(PlannerData data, CalendarWeekData week) {
           .where((layer) => layer.kind == entry.key)
           .fold<int>(0, (sum, layer) => sum + layer.totalMinutes),
       entry.value,
-    );
-  }
-  // A course's actual minutes equal its layer totals, so area stacking and the
-  // mirror's item segments cannot disagree about ownership.
-  for (final course in week.courses) {
-    expect(
-      week.layers
-          .where((layer) => layer.subjectId == course.subjectId)
-          .fold<int>(0, (sum, layer) => sum + layer.totalMinutes),
-      course.actualMinutes,
     );
   }
 }
@@ -264,7 +245,6 @@ void main() {
       expect(week.isEmpty, isTrue);
       expect(week.scaleMinutes, 1);
       expect(week.layers, isEmpty);
-      expect(week.courses, isEmpty);
       expect(week.plannedMinutes, 0);
       expect(week.actualMinutes, 0);
       expect(week.days, hasLength(7));
@@ -751,23 +731,21 @@ void main() {
       },
     );
 
-    test('course and layer order is stable for reversed input data', () {
+    test('task and effort layers are stable for reversed input data', () {
       final base = plannerFixture();
       final task = base.tasks.single;
+      final secondTag = Tag(
+        id: 'english',
+        userId: base.profile.userId,
+        name: '英语',
+      );
       final english = task.copyWith(
         id: 'english-task',
-        subjectId: 'english',
+        tagIds: [secondTag.id],
         title: '英语阅读',
       );
       final data = base.copyWith(
-        subjects: [
-          base.subjects.single,
-          base.subjects.single.copyWith(
-            id: 'english',
-            name: '英语',
-            color: '#1f7a5a',
-          ),
-        ],
+        tags: [...base.tags, secondTag],
         tasks: [task, english],
         blocks: [
           _block(base, id: 'b1', taskId: task.id, date: _monday, minutes: 60),
@@ -809,20 +787,54 @@ void main() {
         _monday,
       );
       expect(
-        first.courses.map((course) => course.subjectId),
-        reversed.courses.map((course) => course.subjectId),
-      );
-      expect(
-        first.layers.map((layer) => '${layer.subjectId}/${layer.kind.name}'),
-        reversed.layers.map((layer) => '${layer.subjectId}/${layer.kind.name}'),
+        first.layers.map((layer) => layer.kind),
+        reversed.layers.map((layer) => layer.kind),
       );
       expect(
         first.itemsFor(_monday).map((item) => item.id),
         reversed.itemsFor(_monday).map((item) => item.id),
       );
       expect(first.layers, isNotEmpty);
+      expect(
+        first.layers.fold<int>(0, (sum, layer) => sum + layer.totalMinutes),
+        first.actualMinutes,
+      );
       expect(() => first.layers.clear(), throwsUnsupportedError);
       expect(() => first.days.clear(), throwsUnsupportedError);
+    });
+
+    test('multi-tag task remains one calendar item and one set of minutes', () {
+      final base = plannerFixture();
+      final task = base.tasks.single;
+      final secondTag = Tag(
+        id: 'weak-point',
+        userId: base.profile.userId,
+        name: '薄弱项',
+      );
+      final activeWeek = base.copyWith(
+        blocks: [base.blocks.single.copyWith(date: _friday)],
+        logs: [base.logs.single.copyWith(date: _friday)],
+      );
+      final tagged = activeWeek.copyWith(
+        tags: [...base.tags, secondTag],
+        tasks: [
+          task.copyWith(tagIds: [...task.tagIds, secondTag.id]),
+        ],
+      );
+      final original = buildCalendarWeekData(activeWeek, _monday);
+      final multiTagged = buildCalendarWeekData(tagged, _monday);
+      final item = multiTagged.itemsFor(_friday).single;
+      expect(item.tagNames, hasLength(2));
+      expect(multiTagged.itemsFor(_friday), hasLength(1));
+      expect(multiTagged.plannedMinutes, original.plannedMinutes);
+      expect(multiTagged.actualMinutes, original.actualMinutes);
+      expect(
+        multiTagged.layers.fold<int>(
+          0,
+          (sum, layer) => sum + layer.totalMinutes,
+        ),
+        original.actualMinutes,
+      );
     });
   });
 

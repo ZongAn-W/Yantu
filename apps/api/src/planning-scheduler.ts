@@ -33,7 +33,7 @@ export {
 } from "./capacity.js";
 
 export interface StrategyTask {
-  id: string; user_id: string; subject_id: string; title: string;
+  id: string; user_id: string; title: string;
   estimated_minutes: number; completed_minutes: number; priority: number;
   deadline: string; earliest_date?: string; is_fixed: boolean; status: string;
   planning?: {
@@ -50,7 +50,7 @@ export interface StrategyBlock {
 }
 export interface StrategyInput {
   profile: CapacityProfile & { user_id: string; planning_mode?: "daily" | "timed"; weekly_minutes?: Record<string, number>;
-    daily_limit_minutes: number; buffer_minutes: number; subject_limit_minutes: number; granularity_minutes: number;
+    daily_limit_minutes: number; buffer_minutes: number; granularity_minutes: number;
     study_start_minute: number; study_end_minute: number; plan_start_date?: string; plan_end_date?: string };
   tasks: StrategyTask[]; blocks: StrategyBlock[];
   logs: Array<{ task_id: string | null; block_id: string | null; date: string; minutes: number }>;
@@ -193,18 +193,14 @@ export function scheduleStrategy(input: StrategyInput, from: string, to: string,
   function room(task: StrategyTask, date: string) {
     const day = blocks.filter(block => block.date === date);
     const orphanLogs = input.logs.filter(log => log.date === date && (!log.block_id || !day.some(block => block.id === log.block_id)));
-    const courseBlocks = day.filter(block => byId.get(block.task_id)?.subject_id === task.subject_id);
     // The same occupancy accounting is used by manual placement; timed records
     // that overlap each other count once and are clipped to the study window.
     const dailyOccupied = occupiedDayMinutes(input.profile, input.fixed_events, day, input.logs, date);
-    const courseOccupied = occupiedDayMinutes(input.profile, [], courseBlocks, input.logs, date);
     // One shared capacity resolution: gross keeps its single buffer deduction, net is the
     // study budget itself, and weekly/date overrides always win over the default template.
     const daily = resolveDayCapacity(input.profile, date).minutes - dailyOccupied
       - orphanLogs.reduce((sum, log) => sum + minutes(log.minutes), 0);
-    const course = Math.min(240, minutes(input.profile.subject_limit_minutes)) - courseOccupied
-      - orphanLogs.filter(log => log.task_id !== null && byId.get(log.task_id)?.subject_id === task.subject_id).reduce((sum, log) => sum + minutes(log.minutes), 0);
-    return Math.max(0, Math.min(daily, course));
+    return Math.max(0, daily);
   }
   function add(task: StrategyTask, date: string, duration: number, instance?: string) {
     if (room(task, date) < duration) return false;

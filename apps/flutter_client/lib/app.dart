@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'core/theme.dart';
+import 'core/widgets.dart';
 import 'router/app_router.dart';
 
 class PlannerApp extends ConsumerWidget {
@@ -13,6 +14,7 @@ class PlannerApp extends ConsumerWidget {
       title: '不白学 · 学习执行台',
       debugShowCheckedModeBanner: false,
       theme: plannerTheme(),
+      scrollBehavior: const PlannerScrollBehavior(),
       routerConfig: ref.watch(appRouterProvider),
     );
   }
