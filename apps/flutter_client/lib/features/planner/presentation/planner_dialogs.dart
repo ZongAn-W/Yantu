@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../core/planner_date_picker.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets.dart';
 import '../../../shared/models/planner_models.dart';
@@ -138,9 +139,9 @@ class _MoveTaskDayDialogState extends ConsumerState<MoveTaskDayDialog> {
               onChanged: (value) => setState(() => _date = value),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               '只调整日期，不指定学习开始时间。',
-              style: TextStyle(color: PlannerColors.muted, fontSize: 12),
+              style: TextStyle(color: context.tokens.muted, fontSize: 12),
             ),
             if (missing) ...[
               const SizedBox(height: 8),
@@ -156,9 +157,9 @@ class _MoveTaskDayDialogState extends ConsumerState<MoveTaskDayDialog> {
               ),
             ] else if (!movable) ...[
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 '计时中、已有学习用时、已完成或固定的计划保留在原日期。',
-                style: TextStyle(color: PlannerColors.muted, fontSize: 12),
+                style: TextStyle(color: context.tokens.muted, fontSize: 12),
               ),
             ],
             if (_error != null) ...[
@@ -214,15 +215,15 @@ class DateField extends StatelessWidget {
           ? null
           : () async {
               final now = DateTime.now();
-              final picked = await showDatePicker(
-                context: context,
+              final picked = await showPlannerDatePicker(
+                context,
                 initialDate: parsed ?? now,
                 firstDate:
                     DateTime.tryParse(firstDate ?? '') ??
                     DateTime(now.year - 2),
                 lastDate:
                     DateTime.tryParse(lastDate ?? '') ?? DateTime(now.year + 5),
-                helpText: label,
+                title: label,
               );
               if (picked != null) {
                 onChanged(dateOnly(picked));
@@ -517,6 +518,9 @@ class _TaskEditorDialogState extends ConsumerState<TaskEditorDialog> {
               DropdownButtonFormField<int>(
                 initialValue: _draft.priority,
                 decoration: const InputDecoration(labelText: '优先级'),
+                dropdownColor: context.tokens.surface,
+                borderRadius: BorderRadius.circular(PlannerRadius.control),
+                iconEnabledColor: context.tokens.muted,
                 items: [
                   for (final priority in const [3, 2, 1])
                     DropdownMenuItem(
@@ -569,6 +573,9 @@ class _TaskEditorDialogState extends ConsumerState<TaskEditorDialog> {
                   labelText: '日期含义',
                   helperText: '本期安排边界会随新的规划周期延展，真实截止日期保持不变',
                 ),
+                dropdownColor: context.tokens.surface,
+                borderRadius: BorderRadius.circular(PlannerRadius.control),
+                iconEnabledColor: context.tokens.muted,
                 items: [
                   for (final kind in ItemDateKind.values)
                     DropdownMenuItem(
@@ -588,6 +595,9 @@ class _TaskEditorDialogState extends ConsumerState<TaskEditorDialog> {
               DropdownButtonFormField<TaskStatus>(
                 initialValue: _draft.status,
                 decoration: const InputDecoration(labelText: '状态'),
+                dropdownColor: context.tokens.surface,
+                borderRadius: BorderRadius.circular(PlannerRadius.control),
+                iconEnabledColor: context.tokens.muted,
                 items: [
                   for (final status in statuses)
                     DropdownMenuItem(
@@ -629,10 +639,7 @@ class _TaskEditorDialogState extends ConsumerState<TaskEditorDialog> {
         FilledButton.icon(
           onPressed: _saving ? null : _save,
           icon: _saving
-              ? const SizedBox.square(
-                  dimension: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+              ? const PlannerSpinner(size: 15)
               : const Icon(Icons.save_outlined, size: 18),
           label: const Text('保存事项'),
         ),
@@ -756,12 +763,12 @@ class _ScheduleTaskDialogState extends ConsumerState<ScheduleTaskDialog> {
             const SizedBox(height: 8),
             Text(
               '当前可安排 ${duration(remaining)}',
-              style: const TextStyle(color: PlannerColors.muted, fontSize: 12),
+              style: TextStyle(color: context.tokens.muted, fontSize: 12),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               '按30分钟拆分计入当天计划，不指定开始时间；容量不足会显示冲突。',
-              style: TextStyle(color: PlannerColors.muted, fontSize: 12),
+              style: TextStyle(color: context.tokens.muted, fontSize: 12),
             ),
             if (_error != null) ...[
               const SizedBox(height: 12),
@@ -850,16 +857,13 @@ class _CompleteTaskDialogState extends ConsumerState<CompleteTaskDialog> {
               const SizedBox(height: 8),
               Text(
                 task!.description!,
-                style: const TextStyle(
-                  color: PlannerColors.muted,
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: context.tokens.muted, fontSize: 12),
               ),
             ],
             const SizedBox(height: 12),
-            const Text(
+            Text(
               '标记完成后，不再安排这项事项。已学时长保留计时记录。',
-              style: TextStyle(color: PlannerColors.muted, fontSize: 12),
+              style: TextStyle(color: context.tokens.muted, fontSize: 12),
             ),
             if (_error != null) ...[
               const SizedBox(height: 12),
@@ -1001,6 +1005,9 @@ class _ContentFeedbackDialogState extends ConsumerState<ContentFeedbackDialog> {
               DropdownButtonFormField<String>(
                 initialValue: _difficulty,
                 decoration: const InputDecoration(labelText: '当前难度'),
+                dropdownColor: context.tokens.surface,
+                borderRadius: BorderRadius.circular(PlannerRadius.control),
+                iconEnabledColor: context.tokens.muted,
                 items: const [
                   DropdownMenuItem(value: 'easy', child: Text('进展顺利')),
                   DropdownMenuItem(value: 'manageable', child: Text('按预期推进')),

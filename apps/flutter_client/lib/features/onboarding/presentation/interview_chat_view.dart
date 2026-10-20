@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
 import '../../../core/theme.dart';
@@ -13,16 +11,48 @@ import 'learning_context_view.dart';
 const maxInterviewAnswers = 50;
 const minAnswersToGenerate = 5;
 
-/// 微信聊天页配色：浅灰聊天背景、对方白色气泡、自己绿色气泡。
+/// 微信聊天页配色：从语义令牌派生。
+///
+/// 浅色下保持原微信配色（像素与旧版一致）；暗色下改用 surface / surfaceMuted /
+/// border / text 等语义角色，保证气泡、输入条与系统提示在 Dense Graphite 下可读。
 abstract final class InterviewChatColors {
-  static const page = Color(0xffededed);
-  static const receivedBubble = Color(0xffffffff);
-  static const sentBubble = Color(0xff95ec69);
-  static const inputBar = Color(0xfff7f7f7);
-  static const divider = Color(0xffe3e3e3);
-  static const sendEnabled = Color(0xff07c160);
-  static const sendDisabled = Color(0xffc8e6d2);
-  static const systemText = Color(0xff8a8a8a);
+  static Color page(PlannerTokens tokens) =>
+      tokens.isDark ? tokens.canvas : const Color(0xffededed);
+
+  static Color receivedBubble(PlannerTokens tokens) => tokens.surface;
+
+  static Color sentBubble(PlannerTokens tokens) =>
+      tokens.isDark ? tokens.accentSoft : const Color(0xff95ec69);
+
+  static Color inputBar(PlannerTokens tokens) =>
+      tokens.isDark ? tokens.surfaceMuted : const Color(0xfff7f7f7);
+
+  static Color divider(PlannerTokens tokens) =>
+      tokens.isDark ? tokens.border : const Color(0xffe3e3e3);
+
+  static Color sendEnabled(PlannerTokens tokens) =>
+      tokens.isDark ? tokens.success : const Color(0xff07c160);
+
+  static Color sendDisabled(PlannerTokens tokens) =>
+      tokens.isDark ? tokens.borderStrong : const Color(0xffc8e6d2);
+
+  static Color sendDisabledInk(PlannerTokens tokens) =>
+      tokens.isDark ? tokens.subtle : Colors.white;
+
+  static Color systemText(PlannerTokens tokens) =>
+      tokens.isDark ? tokens.subtle : const Color(0xff8a8a8a);
+
+  static Color bubbleInk(PlannerTokens tokens) =>
+      tokens.isDark ? tokens.text : const Color(0xff1a1a1a);
+
+  static Color bubbleBorder(PlannerTokens tokens) =>
+      tokens.isDark ? tokens.border : const Color(0xffe6e6e6);
+
+  static Color listeningFill(PlannerTokens tokens) =>
+      tokens.isDark ? tokens.accentSoft : const Color(0xffe4f4e8);
+
+  static Color avatarInk(PlannerTokens tokens) =>
+      tokens.isDark ? tokens.accentOn : Colors.white;
 }
 
 /// 目标访谈的微信聊天式页面：左侧是「对方」的提问，右侧是自己的回答，
@@ -231,10 +261,11 @@ class _InterviewChatViewState extends State<InterviewChatView> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     final answers = widget.session.answers;
     final reachedLimit = answers.length >= maxInterviewAnswers;
     return ColoredBox(
-      color: InterviewChatColors.page,
+      color: InterviewChatColors.page(tokens),
       child: SafeArea(
         child: Center(
           child: ConstrainedBox(
@@ -253,8 +284,9 @@ class _InterviewChatViewState extends State<InterviewChatView> {
   }
 
   Widget _header(int answerCount, bool reachedLimit) {
+    final tokens = context.tokens;
     return Container(
-      color: PlannerColors.surface,
+      color: tokens.surface,
       padding: const EdgeInsets.fromLTRB(14, 6, 6, 6),
       child: Row(
         children: [
@@ -284,9 +316,9 @@ class _InterviewChatViewState extends State<InterviewChatView> {
                             reachedLimit ? '访谈已达到上限' : '第 ${answerCount + 1} 问',
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: PlannerColors.muted,
-                              fontSize: 12,
+                            style: TextStyle(
+                              color: tokens.muted,
+                              fontSize: 12.5,
                             ),
                           ),
                         ),
@@ -296,9 +328,9 @@ class _InterviewChatViewState extends State<InterviewChatView> {
                               ' · 已答 $answerCount 问',
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(
-                                color: PlannerColors.muted,
-                                fontSize: 12,
+                              style: TextStyle(
+                                color: tokens.muted,
+                                fontSize: 12.5,
                               ),
                             ),
                           ),
@@ -369,6 +401,7 @@ class _InterviewChatViewState extends State<InterviewChatView> {
   }
 
   Widget? _researchMessage() {
+    final tokens = context.tokens;
     final research = widget.session.research;
     final status = research['status'] as String? ?? 'idle';
     final message = research['message'] as String? ?? '';
@@ -379,25 +412,21 @@ class _InterviewChatViewState extends State<InterviewChatView> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           if (status == 'pending')
-            const SizedBox(
-              width: 12,
-              height: 12,
-              child: CircularProgressIndicator(strokeWidth: 2),
-            )
+            const PlannerSpinner(size: 12)
           else
-            const Icon(
+            Icon(
               Icons.info_outline,
               size: 13,
-              color: InterviewChatColors.systemText,
+              color: InterviewChatColors.systemText(tokens),
             ),
           const SizedBox(width: 6),
           Flexible(
             child: Text(
               message,
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: InterviewChatColors.systemText,
-                fontSize: 12,
+              style: TextStyle(
+                color: InterviewChatColors.systemText(tokens),
+                fontSize: 12.5,
               ),
             ),
           ),
@@ -414,12 +443,15 @@ class _InterviewChatViewState extends State<InterviewChatView> {
   }
 
   Widget _composer(List<InterviewAnswer> answers, bool reachedLimit) {
+    final tokens = context.tokens;
     final showsGenerate =
         answers.length >= minAnswersToGenerate || reachedLimit;
     return Container(
-      decoration: const BoxDecoration(
-        color: InterviewChatColors.inputBar,
-        border: Border(top: BorderSide(color: InterviewChatColors.divider)),
+      decoration: BoxDecoration(
+        color: InterviewChatColors.inputBar(tokens),
+        border: Border(
+          top: BorderSide(color: InterviewChatColors.divider(tokens)),
+        ),
       ),
       padding: const EdgeInsets.fromLTRB(8, 6, 12, 10),
       child: Column(
@@ -458,12 +490,12 @@ class _InterviewChatViewState extends State<InterviewChatView> {
           if (!reachedLimit && (_listening || _interim.isNotEmpty))
             _estimatedVoiceHint(),
           if (reachedLimit)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 8),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
               child: Text(
                 '已达到 $maxInterviewAnswers 题上限，请先生成事项或重新访谈。',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: PlannerColors.muted),
+                style: TextStyle(color: tokens.muted),
               ),
             )
           else if (_voiceMode)
@@ -476,6 +508,7 @@ class _InterviewChatViewState extends State<InterviewChatView> {
   }
 
   Widget _textBar() {
+    final tokens = context.tokens;
     return Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
@@ -502,12 +535,12 @@ class _InterviewChatViewState extends State<InterviewChatView> {
               validator: (value) =>
                   value == null || value.trim().isEmpty ? '请先填写回答' : null,
               style: const TextStyle(fontSize: 15),
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 hintText: '输入你的回答…',
                 isDense: true,
                 counterText: '',
                 filled: true,
-                fillColor: Colors.white,
+                fillColor: tokens.surface,
                 contentPadding: EdgeInsets.symmetric(
                   horizontal: 12,
                   vertical: 10,
@@ -543,6 +576,7 @@ class _InterviewChatViewState extends State<InterviewChatView> {
   }
 
   Widget _voiceBar() {
+    final tokens = context.tokens;
     return Row(
       children: [
         IconButton(
@@ -564,11 +598,13 @@ class _InterviewChatViewState extends State<InterviewChatView> {
                 height: 42,
                 alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  color: _listening ? const Color(0xffe4f4e8) : Colors.white,
+                  color: _listening
+                      ? InterviewChatColors.listeningFill(tokens)
+                      : tokens.surface,
                   border: Border.all(
                     color: _listening
-                        ? InterviewChatColors.sendEnabled
-                        : InterviewChatColors.divider,
+                        ? InterviewChatColors.sendEnabled(tokens)
+                        : InterviewChatColors.divider(tokens),
                   ),
                   borderRadius: BorderRadius.circular(6),
                 ),
@@ -587,14 +623,15 @@ class _InterviewChatViewState extends State<InterviewChatView> {
   }
 
   Widget _sendButton() {
+    final tokens = context.tokens;
     final canSend = !widget.busy;
     return FilledButton(
       key: const ValueKey('interview-send'),
       onPressed: canSend ? _send : null,
       style: FilledButton.styleFrom(
-        backgroundColor: InterviewChatColors.sendEnabled,
-        disabledBackgroundColor: InterviewChatColors.sendDisabled,
-        disabledForegroundColor: Colors.white,
+        backgroundColor: InterviewChatColors.sendEnabled(tokens),
+        disabledBackgroundColor: InterviewChatColors.sendDisabled(tokens),
+        disabledForegroundColor: InterviewChatColors.sendDisabledInk(tokens),
         minimumSize: const Size(64, 40),
         padding: const EdgeInsets.symmetric(horizontal: 16),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
@@ -605,19 +642,20 @@ class _InterviewChatViewState extends State<InterviewChatView> {
 
   Widget _estimatedVoiceHint() {
     if (!_listening && _interim.isEmpty) return const SizedBox.shrink();
+    final tokens = context.tokens;
     return Container(
-      color: InterviewChatColors.inputBar,
+      color: InterviewChatColors.inputBar(tokens),
       padding: const EdgeInsets.fromLTRB(16, 6, 16, 0),
       child: Row(
         children: [
-          const Icon(Icons.graphic_eq, size: 16, color: PlannerColors.green),
+          Icon(Icons.graphic_eq, size: 16, color: tokens.success),
           const SizedBox(width: 8),
           Expanded(
             child: Text(
               _interim.isEmpty ? '正在听，请说话…' : _interim,
               maxLines: 2,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: PlannerColors.muted, fontSize: 13),
+              style: TextStyle(color: tokens.muted, fontSize: 13),
             ),
           ),
         ],
@@ -632,13 +670,14 @@ class _InterviewChatViewState extends State<InterviewChatView> {
       _bubble(key: key, text: text, mine: true);
 
   Widget _bubble({Key? key, required String text, required bool mine}) {
+    final tokens = context.tokens;
     final bubble = Container(
       constraints: const BoxConstraints(maxWidth: 520),
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
       decoration: BoxDecoration(
         color: mine
-            ? InterviewChatColors.sentBubble
-            : InterviewChatColors.receivedBubble,
+            ? InterviewChatColors.sentBubble(tokens)
+            : InterviewChatColors.receivedBubble(tokens),
         borderRadius: BorderRadius.only(
           topLeft: const Radius.circular(8),
           topRight: const Radius.circular(8),
@@ -647,12 +686,15 @@ class _InterviewChatViewState extends State<InterviewChatView> {
         ),
         border: mine
             ? null
-            : Border.all(color: const Color(0xffe6e6e6), width: 0.6),
+            : Border.all(
+                color: InterviewChatColors.bubbleBorder(tokens),
+                width: 0.6,
+              ),
       ),
       child: Text(
         text,
-        style: const TextStyle(
-          color: Color(0xff1a1a1a),
+        style: TextStyle(
+          color: InterviewChatColors.bubbleInk(tokens),
           fontSize: 15,
           height: 1.4,
         ),
@@ -686,17 +728,20 @@ class _InterviewChatViewState extends State<InterviewChatView> {
     );
   }
 
-  Widget _systemText(String text) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 24),
-    child: Text(
-      text,
-      textAlign: TextAlign.center,
-      style: const TextStyle(
-        color: InterviewChatColors.systemText,
-        fontSize: 12,
+  Widget _systemText(String text) {
+    final tokens = context.tokens;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 24),
+      child: Text(
+        text,
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          color: InterviewChatColors.systemText(tokens),
+          fontSize: 12.5,
+        ),
       ),
-    ),
-  );
+    );
+  }
 }
 
 /// 头像：对方用应用图标，自己用「我」。
@@ -706,51 +751,37 @@ class _ChatAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     return Container(
       width: 36,
       height: 36,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: friend ? PlannerColors.green : PlannerColors.blue,
+        color: friend ? tokens.success : tokens.accent,
         borderRadius: BorderRadius.circular(5),
       ),
       child: Icon(
         friend ? Icons.auto_awesome : Icons.person,
         size: 20,
-        color: Colors.white,
+        color: InterviewChatColors.avatarInk(tokens),
       ),
     );
   }
 }
 
-/// 「对方正在输入中」气泡：三个跳动的圆点加文字。
-class _TypingBubble extends StatefulWidget {
+/// 「对方正在输入中」气泡：三个固定明暗的圆点加文字。
+///
+/// 这是「等待 AI 回复」的状态提示，不是装饰动画：圆点不再循环闪烁，避免
+/// 无限动画在 reduced-motion 下仍持续，并让测试的 pumpAndSettle 可以收敛。
+class _TypingBubble extends StatelessWidget {
   const _TypingBubble();
 
-  @override
-  State<_TypingBubble> createState() => _TypingBubbleState();
-}
-
-class _TypingBubbleState extends State<_TypingBubble>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller = AnimationController(
-    vsync: this,
-    duration: const Duration(milliseconds: 1100),
-  )..repeat();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  double _opacity(int index) {
-    final phase = (_controller.value + index * 0.22) % 1.0;
-    return 0.35 + 0.6 * (0.5 + 0.5 * math.sin(phase * 2 * math.pi));
-  }
+  /// 三个圆点保留 0.35/0.55/0.75 的固定透明度，静态下依然可区分。
+  static const List<double> _dotOpacities = [0.35, 0.55, 0.75];
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
@@ -761,8 +792,11 @@ class _TypingBubbleState extends State<_TypingBubble>
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
             decoration: BoxDecoration(
-              color: InterviewChatColors.receivedBubble,
-              border: Border.all(color: const Color(0xffe6e6e6), width: 0.6),
+              color: InterviewChatColors.receivedBubble(tokens),
+              border: Border.all(
+                color: InterviewChatColors.bubbleBorder(tokens),
+                width: 0.6,
+              ),
               borderRadius: const BorderRadius.only(
                 topLeft: Radius.circular(8),
                 topRight: Radius.circular(8),
@@ -776,35 +810,25 @@ class _TypingBubbleState extends State<_TypingBubble>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  AnimatedBuilder(
-                    animation: _controller,
-                    builder: (context, _) => Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        for (var i = 0; i < 3; i++)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 1.5,
-                            ),
-                            child: Opacity(
-                              opacity: _opacity(i),
-                              child: Container(
-                                width: 6,
-                                height: 6,
-                                decoration: const BoxDecoration(
-                                  color: PlannerColors.muted,
-                                  shape: BoxShape.circle,
-                                ),
-                              ),
-                            ),
+                  for (final opacity in _dotOpacities)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 1.5),
+                      child: Opacity(
+                        opacity: opacity,
+                        child: Container(
+                          width: 6,
+                          height: 6,
+                          decoration: BoxDecoration(
+                            color: tokens.muted,
+                            shape: BoxShape.circle,
                           ),
-                      ],
+                        ),
+                      ),
                     ),
-                  ),
                   const SizedBox(width: 8),
-                  const Text(
+                  Text(
                     '对方正在输入中',
-                    style: TextStyle(color: PlannerColors.muted, fontSize: 13),
+                    style: TextStyle(color: tokens.muted, fontSize: 13),
                   ),
                 ],
               ),

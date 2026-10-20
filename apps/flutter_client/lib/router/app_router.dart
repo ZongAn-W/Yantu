@@ -10,6 +10,7 @@ import '../features/dashboard/presentation/dashboard_page.dart';
 import '../features/onboarding/presentation/onboarding_page.dart';
 import '../features/planner/application/onboarding_controller.dart';
 import '../core/errors/app_failure.dart';
+import '../core/widgets.dart';
 import '../features/settings/presentation/settings_page.dart';
 import '../features/shell/app_shell.dart';
 
@@ -151,7 +152,7 @@ class _SessionLoadingPage extends ConsumerWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              if (error == null) const CircularProgressIndicator(),
+              if (error == null) const PlannerSpinner(size: 20),
               const SizedBox(height: 16),
               Text(
                 error == null

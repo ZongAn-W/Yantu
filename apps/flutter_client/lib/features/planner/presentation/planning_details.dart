@@ -107,9 +107,7 @@ class PlanningRouteView extends StatelessWidget {
     final full = isFullPeriodPlan(planning);
     final capacityLines = planningCapacityLines(planning);
     final subtitle = full
-        ? (until.isEmpty
-              ? '每日安排已覆盖整个规划周期'
-              : '每日安排已覆盖整个规划周期（至 $until）')
+        ? (until.isEmpty ? '每日安排已覆盖整个规划周期' : '每日安排已覆盖整个规划周期（至 $until）')
         : until.isEmpty
         ? '当前为滚动计划，每日安排会随周期逐步补齐'
         : '滚动计划：每日安排细化至 $until，可补全本周期安排';
@@ -156,7 +154,7 @@ class PlanningRouteView extends StatelessWidget {
                       ).isNotEmpty)
                     Text(
                       '${planningText(route['starts_on'] ?? route['start_date']).isEmpty ? '待定' : route['starts_on'] ?? route['start_date']} 至 ${planningText(route['ends_on'] ?? route['end_date']).isEmpty ? '待定' : route['ends_on'] ?? route['end_date']}',
-                      style: const TextStyle(color: PlannerColors.muted),
+                      style: TextStyle(color: context.tokens.muted),
                     ),
                   if (planningText(route['objective']).isNotEmpty)
                     Text(planningText(route['objective'])),
@@ -201,9 +199,7 @@ class PlanningRouteView extends StatelessWidget {
               padding: const EdgeInsets.only(bottom: 12),
               child: Align(
                 alignment: Alignment.centerLeft,
-                child: Text(
-                  '$label：${_entryLabels(planning![key] as List)}',
-                ),
+                child: Text('$label：${_entryLabels(planning![key] as List)}'),
               ),
             ),
       ],
@@ -314,7 +310,7 @@ class PlanningPreviewView extends StatelessWidget {
         if ((preview['protected_blocks'] as num? ?? 0) > 0)
           Text(
             '保留 ${(preview['protected_blocks'] as num).toInt()} 条历史、实际用时或固定安排。',
-            style: const TextStyle(color: PlannerColors.muted, fontSize: 12),
+            style: TextStyle(color: context.tokens.muted, fontSize: 12),
           ),
         if (capacity != null) _capacityAssumptions(context, capacity),
         if (impact != null) _capacityImpact(context, impact),
@@ -324,7 +320,8 @@ class PlanningPreviewView extends StatelessWidget {
             [
               planningText(issue['message']),
               if (planningText(issue['date']).isNotEmpty) '${issue['date']}',
-              if (planningText(issue['repair']).isNotEmpty) '${issue['repair']}',
+              if (planningText(issue['repair']).isNotEmpty)
+                '${issue['repair']}',
             ].join(' · '),
             tone: issue['severity'] == 'error'
                 ? PlannerNoticeTone.error
@@ -354,7 +351,9 @@ class PlanningPreviewView extends StatelessWidget {
                               )
                               .join('；'),
                         ),
-                  trailing: Text(duration((day['minutes'] as num? ?? 0).toInt())),
+                  trailing: Text(
+                    duration((day['minutes'] as num? ?? 0).toInt()),
+                  ),
                 ),
             ],
           ),
@@ -367,9 +366,7 @@ class PlanningPreviewView extends StatelessWidget {
     final basis = capacityText(capacity['basis']);
     if (basis.isNotEmpty) {
       lines.add(
-        basis == 'net'
-            ? '容量口径：净学习时间，不再机械扣除每天机动时间'
-            : '容量口径：总预算口径（每日先扣机动时间）',
+        basis == 'net' ? '容量口径：净学习时间，不再机械扣除每天机动时间' : '容量口径：总预算口径（每日先扣机动时间）',
       );
     }
     final adopted = capacity['adopted_weekly_minutes'];
@@ -415,7 +412,7 @@ class PlanningPreviewView extends StatelessWidget {
             padding: const EdgeInsets.only(top: 2),
             child: Text(
               line,
-              style: const TextStyle(color: PlannerColors.muted, fontSize: 12),
+              style: TextStyle(color: context.tokens.muted, fontSize: 12),
             ),
           ),
       ],

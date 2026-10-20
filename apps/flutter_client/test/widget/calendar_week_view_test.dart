@@ -650,7 +650,7 @@ void main() {
       // Date picker opens in week scope too; cancelling changes nothing.
       await tester.tap(find.byKey(const ValueKey('calendar-date-picker')));
       await _settle(tester);
-      expect(find.byType(DatePickerDialog), findsOneWidget);
+      expect(find.byKey(const ValueKey('planner-date-picker')), findsOneWidget);
       await tester.tap(find.text('取消'));
       await _settle(tester);
       expect(

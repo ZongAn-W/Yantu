@@ -121,7 +121,7 @@ class _ContinueCycleDialogState extends ConsumerState<ContinueCycleDialog> {
       PlannerStat(
         label: '仍未安排',
         value: duration(completion.unscheduledMinutes),
-        tone: completion.unscheduledMinutes > 0 ? PlannerColors.orange : null,
+        tone: completion.unscheduledMinutes > 0 ? context.tokens.warning : null,
       ),
       const SizedBox(height: 12),
       _capacityAssumptions(summary),
@@ -136,10 +136,10 @@ class _ContinueCycleDialogState extends ConsumerState<ContinueCycleDialog> {
           child: PlannerNotice(gap, tone: PlannerNoticeTone.warning),
         ),
       const SizedBox(height: 8),
-      const Text(
+      Text(
         '已有安排、历史学习记录和已完成事项保持不变；'
         '不会编造不存在的内容或改变真实截止日期。',
-        style: TextStyle(color: PlannerColors.muted, fontSize: 12),
+        style: TextStyle(color: context.tokens.muted, fontSize: 12),
       ),
     ];
     return _dialog(
@@ -233,7 +233,7 @@ class _ContinueCycleDialogState extends ConsumerState<ContinueCycleDialog> {
       PlannerStat(
         label: '仍未安排',
         value: duration(preview.unscheduledMinutes),
-        tone: preview.unscheduledMinutes > 0 ? PlannerColors.orange : null,
+        tone: preview.unscheduledMinutes > 0 ? context.tokens.warning : null,
       ),
       const SizedBox(height: 12),
       _capacityAssumptions(summary),
@@ -243,9 +243,9 @@ class _ContinueCycleDialogState extends ConsumerState<ContinueCycleDialog> {
           child: PlannerNotice(gap, tone: PlannerNoticeTone.warning),
         ),
       const SizedBox(height: 8),
-      const Text(
+      Text(
         '已有安排、历史学习记录和已完成事项保持不变。',
-        style: TextStyle(color: PlannerColors.muted, fontSize: 12),
+        style: TextStyle(color: context.tokens.muted, fontSize: 12),
       ),
     ];
     return _dialog(

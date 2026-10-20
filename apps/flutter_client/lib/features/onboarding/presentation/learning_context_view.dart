@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../../../core/theme.dart';
+import '../../../core/widgets.dart';
 import '../../../shared/models/planner_models.dart';
 import '../../planner/domain/planner_format.dart';
 import '../domain/onboarding_session.dart';
@@ -33,6 +34,7 @@ class LearningContextView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     final timing = session.learningContext['timing'] as Map? ?? const {};
     final facts = session.learningContext['facts'] as Map? ?? const {};
     final research = session.research;
@@ -46,11 +48,7 @@ class LearningContextView extends StatelessWidget {
         if (year != null)
           Row(
             children: [
-              const Icon(
-                Icons.event_outlined,
-                size: 18,
-                color: PlannerColors.blue,
-              ),
+              Icon(Icons.event_outlined, size: 18, color: tokens.accent),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -77,7 +75,7 @@ class LearningContextView extends StatelessWidget {
                     alignment: Alignment.centerLeft,
                     child: Text(
                       timing['reason'] as String? ?? '',
-                      style: const TextStyle(color: PlannerColors.muted),
+                      style: TextStyle(color: tokens.muted),
                     ),
                   ),
                 ),
@@ -98,18 +96,14 @@ class LearningContextView extends StatelessWidget {
           Row(
             children: [
               if (status == 'pending')
-                const SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
+                const PlannerSpinner(size: 16)
               else
                 Icon(
                   status == 'verified'
                       ? Icons.fact_check_outlined
                       : Icons.info_outline,
                   size: 18,
-                  color: PlannerColors.muted,
+                  color: tokens.muted,
                 ),
               const SizedBox(width: 8),
               Expanded(
@@ -117,7 +111,7 @@ class LearningContextView extends StatelessWidget {
                   liveRegion: true,
                   child: Text(
                     research['message'] as String? ?? '',
-                    style: const TextStyle(color: PlannerColors.muted),
+                    style: TextStyle(color: tokens.muted),
                   ),
                 ),
               ),
@@ -197,6 +191,9 @@ class LearningContextView extends StatelessWidget {
             child: DropdownButtonFormField<int>(
               initialValue: selected,
               isExpanded: true,
+              dropdownColor: context.tokens.surface,
+              borderRadius: BorderRadius.circular(PlannerRadius.control),
+              iconEnabledColor: context.tokens.muted,
               decoration: const InputDecoration(labelText: '参加初试的年份'),
               items: [
                 for (var i = currentYear; i <= currentYear + 10; i++)

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:planner_ui_vendor/planner_ui_vendor.dart';
 
 import '../../../core/theme.dart';
 import '../../../core/widgets.dart';
@@ -25,11 +27,62 @@ class TaskDirectory extends ConsumerStatefulWidget {
 class _TaskDirectoryState extends ConsumerState<TaskDirectory> {
   final Set<String> _selectedTagIds = {};
 
+  /// One focus node per tag-filter chip so ArrowLeft/ArrowRight can move the
+  /// chip focus without changing the filter itself.
+  final Map<String, FocusNode> _tagFocusNodes = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _pruneTagFocusNodes();
+  }
+
+  @override
+  void dispose() {
+    for (final node in _tagFocusNodes.values) {
+      node.dispose();
+    }
+    super.dispose();
+  }
+
   @override
   void didUpdateWidget(covariant TaskDirectory oldWidget) {
     super.didUpdateWidget(oldWidget);
     final existing = widget.data.tags.map((tag) => tag.id).toSet();
     _selectedTagIds.removeWhere((id) => !existing.contains(id));
+    _pruneTagFocusNodes();
+  }
+
+  /// Drops focus nodes for tags that no longer exist.
+  void _pruneTagFocusNodes() {
+    final existing = {for (final tag in widget.data.tags) tag.id};
+    final stale = [
+      for (final id in _tagFocusNodes.keys)
+        if (!existing.contains(id)) id,
+    ];
+    for (final id in stale) {
+      _tagFocusNodes.remove(id)?.dispose();
+    }
+  }
+
+  FocusNode _tagFocusNode(String id) => _tagFocusNodes.putIfAbsent(
+    id,
+    () => FocusNode(debugLabel: 'task-filter-tag-$id'),
+  );
+
+  /// Moves the chip focus by [delta] positions, clamped at both ends so the
+  /// arrow keys never wrap and never steal the filter selection.
+  void _moveTagFilterFocus(int delta) {
+    final nodes = [for (final tag in widget.data.tags) _tagFocusNode(tag.id)];
+    if (nodes.isEmpty) return;
+    final focused = FocusManager.instance.primaryFocus;
+    final index = focused == null ? -1 : nodes.indexOf(focused);
+    if (index < 0) {
+      nodes[delta > 0 ? 0 : nodes.length - 1].requestFocus();
+      return;
+    }
+    final target = (index + delta).clamp(0, nodes.length - 1);
+    if (target != index) nodes[target].requestFocus();
   }
 
   Future<void> _editTask({Task? task}) async {
@@ -68,6 +121,7 @@ class _TaskDirectoryState extends ConsumerState<TaskDirectory> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     final tagsById = {for (final tag in widget.data.tags) tag.id: tag};
     final filtered =
         widget.data.tasks.where((task) {
@@ -89,14 +143,14 @@ class _TaskDirectoryState extends ConsumerState<TaskDirectory> {
               PlannerIconAction(
                 key: const Key('manage-tags-button'),
                 tooltip: '管理标签',
-                icon: Icons.sell_outlined,
+                icon: LucideIcons.tags,
                 onPressed: widget.editable ? _manageTags : null,
               ),
               const SizedBox(width: PlannerSpace.sm),
               FilledButton.icon(
                 key: const Key('new-task-button'),
                 onPressed: widget.editable ? () => _editTask() : null,
-                icon: const Icon(Icons.add, size: 16),
+                icon: const Icon(LucideIcons.plus, size: 16),
                 label: const Text('新建事项'),
               ),
             ],
@@ -104,49 +158,72 @@ class _TaskDirectoryState extends ConsumerState<TaskDirectory> {
         ),
         if (widget.data.tags.isNotEmpty) ...[
           const SizedBox(height: PlannerSpace.md),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            children: [
-              Text(
-                '标签',
-                style: Theme.of(
-                  context,
-                ).textTheme.labelMedium?.copyWith(color: PlannerColors.subtle),
+          FocusTraversalGroup(
+            policy: ReadingOrderTraversalPolicy(),
+            child: Shortcuts(
+              shortcuts: const <ShortcutActivator, Intent>{
+                SingleActivator(LogicalKeyboardKey.arrowLeft):
+                    _MoveTagFilterFocusIntent(-1),
+                SingleActivator(LogicalKeyboardKey.arrowRight):
+                    _MoveTagFilterFocusIntent(1),
+              },
+              child: Actions(
+                actions: <Type, Action<Intent>>{
+                  _MoveTagFilterFocusIntent:
+                      CallbackAction<_MoveTagFilterFocusIntent>(
+                        onInvoke: (intent) {
+                          _moveTagFilterFocus(intent.delta);
+                          return null;
+                        },
+                      ),
+                },
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  children: [
+                    Text(
+                      '标签',
+                      style: Theme.of(
+                        context,
+                      ).textTheme.labelMedium?.copyWith(color: tokens.subtle),
+                    ),
+                    for (final tag in widget.data.tags)
+                      PlannerTag(
+                        key: Key('task-filter-tag-${tag.id}'),
+                        focusNode: _tagFocusNode(tag.id),
+                        label: tag.name,
+                        color: _tagColor(tag.color, tokens),
+                        selected: _selectedTagIds.contains(tag.id),
+                        onTap: () => setState(() {
+                          _selectedTagIds.contains(tag.id)
+                              ? _selectedTagIds.remove(tag.id)
+                              : _selectedTagIds.add(tag.id);
+                        }),
+                      ),
+                    if (_selectedTagIds.isNotEmpty)
+                      TextButton.icon(
+                        key: const Key('clear-tag-filter-button'),
+                        onPressed: () => setState(_selectedTagIds.clear),
+                        style: TextButton.styleFrom(
+                          minimumSize: const Size(0, 26),
+                          padding: const EdgeInsets.symmetric(horizontal: 8),
+                        ),
+                        icon: const Icon(LucideIcons.x, size: 13),
+                        label: const Text('清除', style: TextStyle(fontSize: 12)),
+                      ),
+                  ],
+                ),
               ),
-              for (final tag in widget.data.tags)
-                PlannerTag(
-                  key: Key('task-filter-tag-${tag.id}'),
-                  label: tag.name,
-                  color: _tagColor(tag.color),
-                  selected: _selectedTagIds.contains(tag.id),
-                  onTap: () => setState(() {
-                    _selectedTagIds.contains(tag.id)
-                        ? _selectedTagIds.remove(tag.id)
-                        : _selectedTagIds.add(tag.id);
-                  }),
-                ),
-              if (_selectedTagIds.isNotEmpty)
-                TextButton.icon(
-                  key: const Key('clear-tag-filter-button'),
-                  onPressed: () => setState(_selectedTagIds.clear),
-                  style: TextButton.styleFrom(
-                    minimumSize: const Size(0, 26),
-                    padding: const EdgeInsets.symmetric(horizontal: 8),
-                  ),
-                  icon: const Icon(Icons.close, size: 13),
-                  label: const Text('清除', style: TextStyle(fontSize: 12)),
-                ),
-            ],
+            ),
           ),
         ],
         const SizedBox(height: PlannerSpace.md),
         if (filtered.isEmpty)
           _EmptyDirectory(
             icon: _selectedTagIds.isNotEmpty
-                ? Icons.filter_alt_off_outlined
-                : Icons.checklist_outlined,
+                ? LucideIcons.funnelX
+                : LucideIcons.listChecks,
             title: _selectedTagIds.isNotEmpty ? '没有匹配事项' : '还没有事项',
             hint: _selectedTagIds.isNotEmpty
                 ? '清除标签筛选，或为事项添加所选标签。'
@@ -164,15 +241,18 @@ class _TaskDirectoryState extends ConsumerState<TaskDirectory> {
               children: [
                 for (var i = 0; i < filtered.length; i++) ...[
                   if (i > 0) const Divider(height: 1),
-                  _TaskRow(
-                    task: filtered[i],
-                    tags: [
-                      for (final id in filtered[i].tagIds)
-                        if (tagsById[id] case final tag?) tag,
-                    ],
-                    editable: widget.editable,
-                    onEdit: () => _editTask(task: filtered[i]),
-                    onDelete: () => _deleteTask(filtered[i]),
+                  // W7: per-row repaint isolation.
+                  RepaintBoundary(
+                    child: _TaskRow(
+                      task: filtered[i],
+                      tags: [
+                        for (final id in filtered[i].tagIds)
+                          if (tagsById[id] case final tag?) tag,
+                      ],
+                      editable: widget.editable,
+                      onEdit: () => _editTask(task: filtered[i]),
+                      onDelete: () => _deleteTask(filtered[i]),
+                    ),
                   ),
                 ],
               ],
@@ -202,11 +282,12 @@ class _TaskRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final archived = task.status == TaskStatus.archived;
     final completed = task.status == TaskStatus.completed;
+    final tokens = context.tokens;
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: editable ? onEdit : null,
-        hoverColor: PlannerColors.hover,
+        hoverColor: tokens.hover,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(
             PlannerSpace.lg,
@@ -229,22 +310,22 @@ class _TaskRow extends StatelessWidget {
                           height: 1.5,
                           fontWeight: FontWeight.w500,
                           color: archived || completed
-                              ? PlannerColors.subtle
-                              : PlannerColors.text,
+                              ? tokens.subtle
+                              : tokens.text,
                           decoration: completed
                               ? TextDecoration.lineThrough
                               : null,
-                          decorationColor: PlannerColors.subtle,
+                          decorationColor: tokens.subtle,
                         ),
                       ),
                     ),
                     if (completed)
-                      const Padding(
-                        padding: EdgeInsets.only(left: 5),
+                      Padding(
+                        padding: const EdgeInsets.only(left: 5),
                         child: Icon(
-                          Icons.check_circle_outline,
+                          LucideIcons.circleCheck,
                           size: 13,
-                          color: PlannerColors.green,
+                          color: tokens.success,
                         ),
                       ),
                     if (archived)
@@ -259,7 +340,7 @@ class _TaskRow extends StatelessWidget {
                           padding: const EdgeInsets.only(right: 4),
                           child: PlannerTag(
                             label: tag.name,
-                            color: _tagColor(tag.color),
+                            color: _tagColor(tag.color, tokens),
                             dense: true,
                           ),
                         ),
@@ -277,18 +358,14 @@ class _TaskRow extends StatelessWidget {
                 enabled: editable,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 150),
-                icon: const Icon(
-                  Icons.more_horiz,
-                  size: 18,
-                  color: PlannerColors.muted,
-                ),
-                itemBuilder: (context) => const [
-                  PopupMenuItem(
+                icon: Icon(LucideIcons.ellipsis, size: 18, color: tokens.muted),
+                itemBuilder: (context) => [
+                  const PopupMenuItem(
                     value: _TaskMenuAction.edit,
                     height: 38,
                     child: Row(
                       children: [
-                        Icon(Icons.edit_outlined, size: 16),
+                        Icon(LucideIcons.squarePen, size: 16),
                         SizedBox(width: 10),
                         Text('编辑事项'),
                       ],
@@ -300,15 +377,12 @@ class _TaskRow extends StatelessWidget {
                     child: Row(
                       children: [
                         Icon(
-                          Icons.delete_outline,
+                          LucideIcons.trash2,
                           size: 16,
-                          color: PlannerColors.danger,
+                          color: tokens.danger,
                         ),
-                        SizedBox(width: 10),
-                        Text(
-                          '删除事项',
-                          style: TextStyle(color: PlannerColors.danger),
-                        ),
+                        const SizedBox(width: 10),
+                        Text('删除事项', style: TextStyle(color: tokens.danger)),
                       ],
                     ),
                   ),
@@ -324,10 +398,13 @@ class _TaskRow extends StatelessWidget {
   }
 }
 
-Color _tagColor(String? hex) {
-  if (hex == null || hex.length < 7) return PlannerColors.muted;
+/// Explicit tag colours keep their hue; dark mode lifts them through dataTone
+/// so a user palette stays readable on the graphite surface.
+Color _tagColor(String? hex, PlannerTokens tokens) {
+  if (hex == null || hex.length < 7) return tokens.muted;
   final value = int.tryParse(hex.substring(1), radix: 16);
-  return value == null ? PlannerColors.muted : Color(0xff000000 | value);
+  if (value == null) return tokens.muted;
+  return tokens.dataTone(Color(0xff000000 | value));
 }
 
 class _TaskExtraTimerButton extends ConsumerWidget {
@@ -338,6 +415,7 @@ class _TaskExtraTimerButton extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     if (task.status == TaskStatus.archived) return const SizedBox.shrink();
+    final tokens = context.tokens;
     final timer = ref.watch(studyTimerProvider);
     final date = shanghaiToday();
     final active = timer.activeTaskId == task.id;
@@ -355,7 +433,7 @@ class _TaskExtraTimerButton extends ConsumerWidget {
       tooltip: tooltip,
       icon: active ? Icons.pause : Icons.alarm,
       iconSize: 17,
-      tone: active ? PlannerColors.orange : PlannerColors.muted,
+      tone: active ? tokens.warning : tokens.muted,
       onPressed: enabled
           ? () async {
               try {
@@ -407,4 +485,11 @@ class _EmptyDirectory extends StatelessWidget {
       action: OutlinedButton(onPressed: onAction, child: Text(actionLabel)),
     ),
   );
+}
+
+/// Moves keyboard focus between the tag filter chips by [delta], clamped.
+class _MoveTagFilterFocusIntent extends Intent {
+  const _MoveTagFilterFocusIntent(this.delta);
+
+  final int delta;
 }

@@ -1,0 +1,17 @@
+name: planner_ui_vendor
+description: Vendored third-party UI source for the planner client.
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  sdk: ">=3.12.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  fonts:
+    - family: Lucide
+      fonts:
+        - asset: lucide/lucide.ttf

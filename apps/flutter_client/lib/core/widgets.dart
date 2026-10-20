@@ -1,6 +1,9 @@
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:planner_ui_vendor/planner_ui_vendor.dart';
 
+import 'motion.dart';
 import 'theme.dart';
 
 /// Page scaffold used by every workbench route: one heading row plus a scrollable
@@ -101,7 +104,7 @@ class PageHeader extends StatelessWidget {
                   Text(
                     eyebrow,
                     style: text.labelMedium?.copyWith(
-                      color: PlannerColors.subtle,
+                      color: context.tokens.subtle,
                       letterSpacing: 0.4,
                     ),
                   ),
@@ -113,7 +116,7 @@ class PageHeader extends StatelessWidget {
                   Text(
                     subtitle,
                     style: text.bodyMedium?.copyWith(
-                      color: PlannerColors.muted,
+                      color: context.tokens.muted,
                     ),
                   ),
                 ],
@@ -155,46 +158,49 @@ class PlannerPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final hasHeader = title != null || leading != null || trailing != null;
-    return Card(
-      child: Padding(
-        padding: padding,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            if (hasHeader) ...[
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  if (leading != null) ...[
-                    leading!,
-                    const SizedBox(width: PlannerSpace.sm),
-                  ],
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        if (title != null)
-                          Text(title!, style: text.titleMedium),
-                        if (subtitle != null) ...[
-                          const SizedBox(height: 2),
-                          Text(
-                            subtitle!,
-                            style: text.bodySmall?.copyWith(
-                              color: PlannerColors.muted,
+    // W7: a panel is a long-lived section; page rebuilds must not repaint it.
+    return RepaintBoundary(
+      child: Card(
+        child: Padding(
+          padding: padding,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              if (hasHeader) ...[
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    if (leading != null) ...[
+                      leading!,
+                      const SizedBox(width: PlannerSpace.sm),
+                    ],
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (title != null)
+                            Text(title!, style: text.titleMedium),
+                          if (subtitle != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              subtitle!,
+                              style: text.bodySmall?.copyWith(
+                                color: context.tokens.muted,
+                              ),
                             ),
-                          ),
+                          ],
                         ],
-                      ],
+                      ),
                     ),
-                  ),
-                  ?trailing,
-                ],
-              ),
-              const SizedBox(height: PlannerSpace.md),
+                    ?trailing,
+                  ],
+                ),
+                const SizedBox(height: PlannerSpace.md),
+              ],
+              child,
             ],
-            child,
-          ],
+          ),
         ),
       ),
     );
@@ -239,13 +245,13 @@ class SectionHeader extends StatelessWidget {
                     vertical: 1,
                   ),
                   decoration: BoxDecoration(
-                    color: PlannerColors.surfaceMuted,
+                    color: context.tokens.surfaceMuted,
                     borderRadius: BorderRadius.circular(PlannerRadius.xs),
                   ),
                   child: Text(
                     '$count',
                     style: text.labelSmall?.copyWith(
-                      color: PlannerColors.muted,
+                      color: context.tokens.muted,
                       fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
@@ -253,7 +259,7 @@ class SectionHeader extends StatelessWidget {
               if (subtitle != null)
                 Text(
                   subtitle!,
-                  style: text.bodySmall?.copyWith(color: PlannerColors.muted),
+                  style: text.bodySmall?.copyWith(color: context.tokens.muted),
                 ),
             ],
           ),
@@ -282,28 +288,28 @@ class PlannerNotice extends StatelessWidget {
   Widget build(BuildContext context) {
     final (background, border, foreground, dot) = switch (tone) {
       PlannerNoticeTone.info => (
-        PlannerColors.surface,
-        PlannerColors.border,
-        PlannerColors.text,
-        PlannerColors.subtle,
+        context.tokens.surface,
+        context.tokens.border,
+        context.tokens.text,
+        context.tokens.subtle,
       ),
       PlannerNoticeTone.success => (
-        const Color(0xffeef7f2),
-        const Color(0xffcfe7db),
-        const Color(0xff1f5f4a),
-        PlannerColors.green,
+        context.tokens.noticeSuccessBackground,
+        context.tokens.noticeSuccessBorder,
+        context.tokens.noticeSuccessInk,
+        context.tokens.success,
       ),
       PlannerNoticeTone.warning => (
-        const Color(0xfffdf6e8),
-        const Color(0xffecd9b0),
-        const Color(0xff8a5a12),
-        PlannerColors.orange,
+        context.tokens.noticeWarningBackground,
+        context.tokens.noticeWarningBorder,
+        context.tokens.noticeWarningInk,
+        context.tokens.warning,
       ),
       PlannerNoticeTone.error => (
-        const Color(0xfffcefed),
-        const Color(0xfff0ccc7),
-        const Color(0xff8f3733),
-        PlannerColors.danger,
+        context.tokens.noticeErrorBackground,
+        context.tokens.noticeErrorBorder,
+        context.tokens.noticeErrorInk,
+        context.tokens.danger,
       ),
     };
     return Semantics(
@@ -370,7 +376,7 @@ class TimeProgressTrack extends StatelessWidget {
         child: LinearProgressIndicator(
           value: ratio,
           minHeight: height,
-          backgroundColor: PlannerColors.surfaceMuted,
+          backgroundColor: context.tokens.surfaceMuted,
           valueColor: AlwaysStoppedAnimation(color),
         ),
       ),
@@ -402,7 +408,7 @@ class PlannerStat extends StatelessWidget {
           Expanded(
             child: Text(
               label,
-              style: const TextStyle(color: PlannerColors.muted, fontSize: 13),
+              style: TextStyle(color: context.tokens.muted, fontSize: 13),
             ),
           ),
           Text(
@@ -411,7 +417,7 @@ class PlannerStat extends StatelessWidget {
             style: tabularFigures.copyWith(
               fontSize: 13.5,
               fontWeight: FontWeight.w600,
-              color: tone ?? PlannerColors.text,
+              color: tone ?? context.tokens.text,
             ),
           ),
         ],
@@ -453,7 +459,7 @@ class MetricTile extends StatelessWidget {
             fontSize: 21,
             height: 1.2,
             fontWeight: FontWeight.w600,
-            color: tone ?? PlannerColors.text,
+            color: tone ?? context.tokens.text,
             letterSpacing: -0.2,
           ),
         ),
@@ -470,7 +476,7 @@ class MetricTile extends StatelessWidget {
 class PlannerEmpty extends StatelessWidget {
   const PlannerEmpty({
     required this.message,
-    this.icon = Icons.inbox_outlined,
+    this.icon = LucideIcons.inbox,
     this.hint,
     this.action,
     super.key,
@@ -494,17 +500,17 @@ class PlannerEmpty extends StatelessWidget {
           Container(
             width: 44,
             height: 44,
-            decoration: const BoxDecoration(
-              color: PlannerColors.surfaceMuted,
+            decoration: BoxDecoration(
+              color: context.tokens.surfaceMuted,
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, size: 21, color: PlannerColors.muted),
+            child: Icon(icon, size: 21, color: context.tokens.muted),
           ),
           const SizedBox(height: PlannerSpace.md),
           Text(
             message,
             textAlign: TextAlign.center,
-            style: text.titleSmall?.copyWith(color: PlannerColors.text),
+            style: text.titleSmall?.copyWith(color: context.tokens.text),
           ),
           if (hint != null) ...[
             const SizedBox(height: PlannerSpace.xs),
@@ -513,7 +519,7 @@ class PlannerEmpty extends StatelessWidget {
               child: Text(
                 hint!,
                 textAlign: TextAlign.center,
-                style: text.bodySmall?.copyWith(color: PlannerColors.muted),
+                style: text.bodySmall?.copyWith(color: context.tokens.muted),
               ),
             ),
           ],
@@ -527,8 +533,69 @@ class PlannerEmpty extends StatelessWidget {
   }
 }
 
+/// Small token-coloured spinner used inside buttons and inline busy states.
+///
+/// Replaces the raw Material indicator so every waiting affordance shares the
+/// same accent colour, track colour and stroke weight in both themes.
+class PlannerSpinner extends StatelessWidget {
+  const PlannerSpinner({this.size = 15, super.key});
+
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => SizedBox.square(
+    dimension: size,
+    child: CircularProgressIndicator(
+      strokeWidth: 2,
+      color: context.tokens.accent,
+      backgroundColor: context.tokens.border,
+    ),
+  );
+}
+
+/// Shared page-level loading state: one spinner plus a live-region label.
+///
+/// Used by the router bootstrap and [PlannerPageState] so first paint, local
+/// database reads and profile reads look identical instead of falling back to
+/// the default centered Material spinner.
+class PlannerLoading extends StatelessWidget {
+  const PlannerLoading({this.message = '正在读取本机计划…', super.key});
+
+  final String message;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(PlannerSpace.xxl),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const PlannerSpinner(size: 20),
+          const SizedBox(height: PlannerSpace.md),
+          Semantics(
+            liveRegion: true,
+            child: Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12.5,
+                height: 1.5,
+                color: context.tokens.muted,
+              ),
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
 /// Small tinted tag. Used for labels, filters and subject marks.
-class PlannerTag extends StatelessWidget {
+///
+/// Only interactive filter chips pass a [focusNode]: that makes the chip one
+/// keyboard stop with a 2 px [context.tokens.focusRing] ring, while purely
+/// display tags (no [onTap]) never enter the tab order at all.
+class PlannerTag extends StatefulWidget {
   const PlannerTag({
     required this.label,
     this.color,
@@ -536,6 +603,7 @@ class PlannerTag extends StatelessWidget {
     this.onTap,
     this.icon,
     this.dense = false,
+    this.focusNode,
     super.key,
   });
 
@@ -545,33 +613,44 @@ class PlannerTag extends StatelessWidget {
   final VoidCallback? onTap;
   final IconData? icon;
   final bool dense;
+  final FocusNode? focusNode;
 
   @override
+  State<PlannerTag> createState() => _PlannerTagState();
+}
+
+class _PlannerTagState extends State<PlannerTag> {
+  @override
   Widget build(BuildContext context) {
-    final tone = color ?? PlannerColors.muted;
-    final foreground = selected ? PlannerColors.blue : tone;
-    final background = selected
-        ? PlannerColors.blueSoft
-        : Color.alphaBlend(tone.withValues(alpha: 0.08), PlannerColors.surface);
-    final borderColor = selected
-        ? const Color(0xffb8cfe4)
-        : (color == null ? PlannerColors.border : tone.withValues(alpha: 0.22));
+    final tone = widget.color ?? context.tokens.muted;
+    final foreground = widget.selected ? context.tokens.accent : tone;
+    final background = widget.selected
+        ? context.tokens.accentSoft
+        : Color.alphaBlend(
+            tone.withValues(alpha: 0.08),
+            context.tokens.surface,
+          );
+    final borderColor = widget.selected
+        ? context.tokens.accentBorder
+        : (widget.color == null
+              ? context.tokens.border
+              : tone.withValues(alpha: 0.22));
     final content = Padding(
       padding: EdgeInsets.symmetric(
-        horizontal: dense ? 6 : 7,
-        vertical: dense ? 1.5 : 2.5,
+        horizontal: widget.dense ? 6 : 7,
+        vertical: widget.dense ? 1.5 : 2.5,
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
-          if (icon != null) ...[
-            Icon(icon, size: 11, color: foreground),
+          if (widget.icon != null) ...[
+            Icon(widget.icon, size: 11, color: foreground),
             const SizedBox(width: 3),
           ],
           Text(
-            label,
+            widget.label,
             style: TextStyle(
-              fontSize: dense ? 11 : 11.5,
+              fontSize: widget.dense ? 11 : 11.5,
               height: 1.35,
               fontWeight: FontWeight.w500,
               color: foreground,
@@ -588,18 +667,48 @@ class PlannerTag extends StatelessWidget {
       ),
       child: content,
     );
+    final onTap = widget.onTap;
     if (onTap == null) return decorated;
+    final focusNode = widget.focusNode;
     return Semantics(
       button: true,
-      selected: selected,
+      selected: widget.selected,
       child: Material(
         color: Colors.transparent,
         child: InkWell(
-          onTap: onTap,
+          focusNode: focusNode,
+          focusColor: focusNode == null ? null : Colors.transparent,
+          onTap: () {
+            focusNode?.requestFocus();
+            onTap();
+          },
           borderRadius: BorderRadius.circular(PlannerRadius.xs),
-          child: decorated,
+          child: _focusRing(decorated),
         ),
       ),
+    );
+  }
+
+  /// 2 px ring painted inside the chip while it owns the keyboard focus. Tags
+  /// without a [FocusNode] keep their previous behaviour and never show a ring.
+  Widget _focusRing(Widget child) {
+    final node = widget.focusNode;
+    if (node == null) return child;
+    return ListenableBuilder(
+      listenable: node,
+      child: child,
+      builder: (context, child) {
+        if (!node.hasFocus) return child!;
+        return DecoratedBox(
+          key: const Key('planner-tag-focus-ring'),
+          position: DecorationPosition.foreground,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(PlannerRadius.xs),
+            border: Border.all(color: context.tokens.focusRing, width: 2),
+          ),
+          child: child,
+        );
+      },
     );
   }
 }
@@ -630,7 +739,13 @@ class StatusDot extends StatelessWidget {
 }
 
 /// Custom segmented control: 30 px tall, animated pill, no Material chrome.
-class PlannerSegmented<T> extends StatelessWidget {
+///
+/// The whole group is a single tab stop. While it owns the keyboard focus,
+/// ArrowLeft/ArrowRight move the selection by one item (clamped, no wrap),
+/// Home/End jump to the first/last item and Space/Enter keep the current value
+/// (already committed, like a native segmented control). The 2 px focus ring is
+/// painted only while focused, so resting visuals and sizes do not change.
+class PlannerSegmented<T> extends StatefulWidget {
   const PlannerSegmented({
     required this.value,
     required this.items,
@@ -647,86 +762,181 @@ class PlannerSegmented<T> extends StatelessWidget {
   final Key Function(T value, int index)? itemKey;
 
   @override
+  State<PlannerSegmented<T>> createState() => _PlannerSegmentedState<T>();
+}
+
+class _PlannerSegmentedState<T> extends State<PlannerSegmented<T>> {
+  final _focusNode = FocusNode(debugLabel: 'planner-segmented');
+  bool _focused = false;
+
+  @override
+  void dispose() {
+    _focusNode.dispose();
+    super.dispose();
+  }
+
+  int get _selectedIndex {
+    final index = widget.items.indexWhere((item) => item.$1 == widget.value);
+    return index < 0 ? 0 : index;
+  }
+
+  void _select(int index) {
+    if (index < 0 || index >= widget.items.length || index == _selectedIndex) {
+      return;
+    }
+    widget.onChanged(widget.items[index].$1);
+  }
+
+  KeyEventResult _handleKeyEvent(FocusNode node, KeyEvent event) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final key = event.logicalKey;
+    if (key == LogicalKeyboardKey.arrowLeft) {
+      _select(_selectedIndex - 1);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.arrowRight) {
+      _select(_selectedIndex + 1);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.home) {
+      _select(0);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.end) {
+      _select(widget.items.length - 1);
+      return KeyEventResult.handled;
+    }
+    if (key == LogicalKeyboardKey.space ||
+        key == LogicalKeyboardKey.enter ||
+        key == LogicalKeyboardKey.numpadEnter) {
+      // The current item is already committed; confirming never changes it.
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final index = items.indexWhere((item) => item.$1 == value);
-    final selectedIndex = index < 0 ? 0 : index;
-    final count = items.length;
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final width = constraints.maxWidth.isFinite
-            ? constraints.maxWidth
-            : 240.0;
-        final segmentWidth = (width - 4) / count;
-        return Container(
-          height: height,
-          width: constraints.maxWidth.isFinite ? null : count * 64.0,
-          padding: const EdgeInsets.all(2),
-          decoration: BoxDecoration(
-            color: PlannerColors.surfaceMuted,
-            borderRadius: BorderRadius.circular(PlannerRadius.small),
-            border: Border.all(color: PlannerColors.border),
-          ),
-          child: Stack(
+    final selectedIndex = _selectedIndex;
+    final count = widget.items.length;
+    return Focus(
+      focusNode: _focusNode,
+      onFocusChange: (focused) {
+        if (focused != _focused) setState(() => _focused = focused);
+      },
+      onKeyEvent: _handleKeyEvent,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final width = constraints.maxWidth.isFinite
+              ? constraints.maxWidth
+              : 240.0;
+          final segmentWidth = (width - 4) / count;
+          return Stack(
             children: [
-              AnimatedAlign(
-                duration: const Duration(milliseconds: 150),
-                curve: Curves.easeOutCubic,
-                alignment: Alignment(
-                  count == 1 ? 0 : -1 + 2 * selectedIndex / (count - 1),
-                  0,
+              Container(
+                height: widget.height,
+                width: constraints.maxWidth.isFinite ? null : count * 64.0,
+                padding: const EdgeInsets.all(2),
+                decoration: BoxDecoration(
+                  color: context.tokens.surfaceMuted,
+                  borderRadius: BorderRadius.circular(PlannerRadius.small),
+                  border: Border.all(color: context.tokens.border),
                 ),
-                child: Container(
-                  width: segmentWidth,
-                  height: height - 4,
-                  decoration: BoxDecoration(
-                    color: PlannerColors.surface,
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(color: PlannerColors.borderStrong),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x0a0f172a),
-                        blurRadius: 2,
-                        offset: Offset(0, 1),
+                child: Stack(
+                  children: [
+                    AnimatedAlign(
+                      duration: PlannerMotion.duration(
+                        context,
+                        preferred: PlannerDurations.fast,
                       ),
-                    ],
-                  ),
-                ),
-              ),
-              Row(
-                children: [
-                  for (var i = 0; i < count; i++)
-                    Expanded(
-                      child: Semantics(
-                        button: true,
-                        selected: i == selectedIndex,
-                        child: GestureDetector(
-                          key: itemKey?.call(items[i].$1, i),
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () => onChanged(items[i].$1),
-                          child: Center(
-                            child: Text(
-                              items[i].$2,
-                              style: TextStyle(
-                                fontSize: 12.5,
-                                height: 1.4,
-                                fontWeight: i == selectedIndex
-                                    ? FontWeight.w600
-                                    : FontWeight.w400,
-                                color: i == selectedIndex
-                                    ? PlannerColors.text
-                                    : PlannerColors.muted,
-                              ),
-                            ),
+                      curve: PlannerMotion.curve(context),
+                      alignment: Alignment(
+                        count == 1 ? 0 : -1 + 2 * selectedIndex / (count - 1),
+                        0,
+                      ),
+                      child: Container(
+                        width: segmentWidth,
+                        height: widget.height - 4,
+                        decoration: BoxDecoration(
+                          color: context.tokens.surface,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: context.tokens.borderStrong,
                           ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: context.tokens.floatingShadow,
+                              blurRadius: 2,
+                              offset: Offset(0, 1),
+                            ),
+                          ],
                         ),
                       ),
                     ),
-                ],
+                    Row(
+                      children: [
+                        for (var i = 0; i < count; i++)
+                          Expanded(
+                            child: Semantics(
+                              button: true,
+                              selected: i == selectedIndex,
+                              child: GestureDetector(
+                                key: widget.itemKey?.call(
+                                  widget.items[i].$1,
+                                  i,
+                                ),
+                                behavior: HitTestBehavior.opaque,
+                                onTap: () {
+                                  _focusNode.requestFocus();
+                                  widget.onChanged(widget.items[i].$1);
+                                },
+                                child: Center(
+                                  child: Text(
+                                    widget.items[i].$2,
+                                    style: TextStyle(
+                                      fontSize: 12.5,
+                                      height: 1.4,
+                                      fontWeight: i == selectedIndex
+                                          ? FontWeight.w600
+                                          : FontWeight.w400,
+                                      color: i == selectedIndex
+                                          ? context.tokens.text
+                                          : context.tokens.muted,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ],
+                ),
               ),
+              if (_focused)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      key: const Key('planner-segmented-focus-ring'),
+                      position: DecorationPosition.foreground,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(
+                          PlannerRadius.small,
+                        ),
+                        border: Border.all(
+                          color: context.tokens.focusRing,
+                          width: 2,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
             ],
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
@@ -754,8 +964,8 @@ class PlannerIconAction extends StatelessWidget {
   Widget build(BuildContext context) {
     final enabled = onPressed != null;
     final color = enabled
-        ? (tone ?? PlannerColors.muted)
-        : PlannerColors.subtle;
+        ? (tone ?? context.tokens.muted)
+        : context.tokens.subtle;
     return Tooltip(
       message: tooltip,
       child: Material(
@@ -763,7 +973,7 @@ class PlannerIconAction extends StatelessWidget {
         child: InkWell(
           onTap: onPressed,
           borderRadius: BorderRadius.circular(PlannerRadius.xs),
-          hoverColor: PlannerColors.hover,
+          hoverColor: context.tokens.hover,
           child: SizedBox.square(
             dimension: size,
             child: Icon(icon, size: iconSize, color: color),
@@ -824,7 +1034,7 @@ Future<bool> confirmAction(
         FilledButton(
           onPressed: () => Navigator.pop(context, true),
           style: destructive
-              ? FilledButton.styleFrom(backgroundColor: PlannerColors.danger)
+              ? FilledButton.styleFrom(backgroundColor: context.tokens.danger)
               : null,
           child: Text(confirmLabel),
         ),
@@ -846,9 +1056,9 @@ void showPlannerMessage(
       SnackBar(
         content: Text(message),
         backgroundColor: tone == PlannerNoticeTone.error
-            ? PlannerColors.danger
+            ? context.tokens.danger
             : tone == PlannerNoticeTone.success
-            ? PlannerColors.green
+            ? context.tokens.success
             : null,
       ),
     );
@@ -906,10 +1116,7 @@ class _AsyncActionButtonState extends State<AsyncActionButton> {
   @override
   Widget build(BuildContext context) {
     final child = _running
-        ? const SizedBox.square(
-            dimension: 15,
-            child: CircularProgressIndicator(strokeWidth: 2),
-          )
+        ? const PlannerSpinner()
         : widget.icon == null
         ? const SizedBox.shrink()
         : Icon(widget.icon, size: 17);

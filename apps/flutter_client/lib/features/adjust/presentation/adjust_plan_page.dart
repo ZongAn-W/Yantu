@@ -35,25 +35,16 @@ class AdjustPlanPage extends ConsumerStatefulWidget {
 }
 
 /// 页面正文级说明：13 / 1.6，不再用 11–12px 密集小字。
-const _bodyStyle = TextStyle(
-  fontSize: 13,
-  height: 1.6,
-  color: PlannerColors.muted,
-);
+TextStyle _bodyStyle(PlannerTokens tokens) =>
+    TextStyle(fontSize: 13, height: 1.6, color: tokens.muted);
 
 /// 辅助说明 / 元信息：12.5 / 1.5。
-const _metaStyle = TextStyle(
-  fontSize: 12.5,
-  height: 1.5,
-  color: PlannerColors.muted,
-);
+TextStyle _metaStyle(PlannerTokens tokens) =>
+    TextStyle(fontSize: 12.5, height: 1.5, color: tokens.muted);
 
 /// 表单字段标签：12.5 muted，和值形成弱对比。
-const _labelStyle = TextStyle(
-  fontSize: 12.5,
-  height: 1.4,
-  color: PlannerColors.muted,
-);
+TextStyle _labelStyle(PlannerTokens tokens) =>
+    TextStyle(fontSize: 12.5, height: 1.4, color: tokens.muted);
 
 class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
   bool _applying = false;
@@ -265,12 +256,12 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
                 style: text.titleSmall?.copyWith(fontSize: 14.5, height: 1.45),
               ),
               if (goalTypeLabel != null)
-                PlannerTag(label: goalTypeLabel, color: PlannerColors.blue),
+                PlannerTag(label: goalTypeLabel, color: context.tokens.accent),
               Text(
                 goalStatusLine(profile, today),
-                style: _metaStyle.copyWith(
-                  fontFeatures: const [FontFeature.tabularFigures()],
-                ),
+                style: _metaStyle(
+                  context.tokens,
+                ).copyWith(fontFeatures: const [FontFeature.tabularFigures()]),
               ),
             ],
           ),
@@ -321,6 +312,7 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
     PlannerData data,
     ProgressMetrics metrics,
   ) {
+    final tokens = context.tokens;
     final tagNames = {for (final tag in data.tags) tag.id: tag.name};
     final tasks =
         [
@@ -338,10 +330,10 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
         ? '记录学习后可估算节奏'
         : '按当前节奏推进';
     final tone = metrics.lagging
-        ? PlannerColors.orange
+        ? tokens.warning
         : metrics.forecast == null
         ? null
-        : PlannerColors.green;
+        : tokens.success;
     return PlannerPanel(
       key: const Key('adjust-progress'),
       title: '学习进度',
@@ -394,7 +386,7 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
               const SizedBox(height: PlannerSpace.sm),
               Text(
                 '另有 ${tasks.length - shown.length} 个事项未展示，可在今日页「全部事项」中查看。',
-                style: _metaStyle,
+                style: _metaStyle(context.tokens),
               ),
             ],
           ],
@@ -475,7 +467,10 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
           if (assumption.isNotEmpty)
             Padding(
               padding: const EdgeInsets.only(top: PlannerSpace.xs),
-              child: Text('容量口径：$assumption', style: _metaStyle),
+              child: Text(
+                '容量口径：$assumption',
+                style: _metaStyle(context.tokens),
+              ),
             ),
           const SizedBox(height: PlannerSpace.md),
           Align(
@@ -546,11 +541,11 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
           const SizedBox(height: PlannerSpace.md),
           const _PanelDivider(),
           const SizedBox(height: PlannerSpace.md),
-          const Text(
+          Text(
             'AI 会审查目标所需时长与当前计划是否匹配，必要时调整周期、强度和工作量，'
             '可能需要 1–2 分钟。历史日期、已完成安排和有实际用时的记录'
             '保持不变；事项范围与真实截止日期不会被改写。',
-            style: _bodyStyle,
+            style: _bodyStyle(context.tokens),
           ),
           const SizedBox(height: PlannerSpace.lg),
           SizedBox(
@@ -579,7 +574,7 @@ class _PanelDivider extends StatelessWidget {
   Widget build(BuildContext context) => Divider(
     height: 1,
     thickness: plannerHairline(context),
-    color: PlannerColors.border,
+    color: context.tokens.border,
   );
 }
 
@@ -596,7 +591,7 @@ class _ProfileField extends StatelessWidget {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(label, style: _labelStyle),
+        Text(label, style: _labelStyle(context.tokens)),
         const SizedBox(height: 3),
         Text(
           value,
@@ -628,7 +623,7 @@ class _DayCapacityStat extends StatelessWidget {
   Widget build(BuildContext context) => PlannerStat(
     label: '${monthDayLabel(date)} ${weekdayLabel(date)}',
     value: '可排 ${duration(available)} · 已排 ${duration(scheduled)}',
-    tone: scheduled > available ? PlannerColors.orange : null,
+    tone: scheduled > available ? context.tokens.warning : null,
   );
 }
 
@@ -678,14 +673,14 @@ class _TaskProgressRow extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              Text(meta, style: _metaStyle),
+              Text(meta, style: _metaStyle(context.tokens)),
             ],
           ),
           const SizedBox(height: 6),
           TimeProgressTrack(
             planned: estimated,
             actual: completed,
-            color: PlannerColors.blue,
+            color: context.tokens.accent,
             semanticsLabel: '${task.title}完成度',
           ),
           const SizedBox(height: 5),
@@ -698,7 +693,7 @@ class _TaskProgressRow extends StatelessWidget {
                 '$percent%',
                 style: tabularFigures.copyWith(fontSize: 12.5),
               ),
-              Text(deadline, style: _metaStyle),
+              Text(deadline, style: _metaStyle(context.tokens)),
             ],
           ),
         ],

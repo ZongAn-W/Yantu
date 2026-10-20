@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/theme.dart';
 import '../../../shared/models/api_models.dart';
 import '../../planner/presentation/planner_dialogs.dart' show DateField;
 
@@ -158,16 +159,20 @@ Future<ItemDraft?> editItemDraft(BuildContext context, ItemDraft item) async {
 String? _required(String? value) =>
     value == null || value.trim().isEmpty ? '名称不能为空' : null;
 
-Widget priorityField(int value, ValueChanged<int> onChanged) =>
-    DropdownButtonFormField<int>(
-      initialValue: value,
-      decoration: const InputDecoration(labelText: '优先级'),
-      items: const [
-        DropdownMenuItem(value: 1, child: Text('低')),
-        DropdownMenuItem(value: 2, child: Text('中')),
-        DropdownMenuItem(value: 3, child: Text('高')),
-      ],
-      onChanged: (next) {
-        if (next != null) onChanged(next);
-      },
-    );
+Widget priorityField(int value, ValueChanged<int> onChanged) => Builder(
+  builder: (context) => DropdownButtonFormField<int>(
+    initialValue: value,
+    decoration: const InputDecoration(labelText: '优先级'),
+    dropdownColor: context.tokens.surface,
+    borderRadius: BorderRadius.circular(PlannerRadius.control),
+    iconEnabledColor: context.tokens.muted,
+    items: const [
+      DropdownMenuItem(value: 1, child: Text('低')),
+      DropdownMenuItem(value: 2, child: Text('中')),
+      DropdownMenuItem(value: 3, child: Text('高')),
+    ],
+    onChanged: (next) {
+      if (next != null) onChanged(next);
+    },
+  ),
+);

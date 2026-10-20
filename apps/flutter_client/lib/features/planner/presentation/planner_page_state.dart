@@ -18,22 +18,7 @@ class PlannerPageState extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final snapshot = ref.watch(plannerDataProvider);
     if (!snapshot.ready) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.all(32),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const CircularProgressIndicator(),
-              const SizedBox(height: 16),
-              Semantics(
-                liveRegion: true,
-                child: const Text('正在读取本机计划…'),
-              ),
-            ],
-          ),
-        ),
-      );
+      return const PlannerLoading();
     }
     if (snapshot.blocked) {
       return Center(
@@ -54,8 +39,7 @@ class PlannerPageState extends ConsumerWidget {
                 const Text('请重新读取数据，或从 JSON 备份恢复；两种操作都在设置页。'),
                 const SizedBox(height: 16),
                 OutlinedButton.icon(
-                  onPressed: () =>
-                      ref.read(plannerSessionProvider).reload(),
+                  onPressed: () => ref.read(plannerSessionProvider).reload(),
                   icon: const Icon(Icons.refresh),
                   label: const Text('重新读取本机数据'),
                 ),

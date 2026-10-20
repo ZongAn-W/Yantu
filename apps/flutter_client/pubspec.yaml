@@ -25,6 +25,13 @@ dependencies:
   sembast_web: ^2.4.0
   share_plus: ^11.0.0
   url_launcher: ^6.3.2
+  # UI borrow round (W1): calendar grid / charts, plus the vendored Lucide
+  # icon subset in packages/ui_vendor. Licenses and upstream versions:
+  # THIRD_PARTY_NOTICES.md §2.
+  fl_chart: ^1.2.0
+  planner_ui_vendor:
+    path: ../../packages/ui_vendor
+  table_calendar: ^3.3.0
 
 dev_dependencies:
   build_runner: ^2.4.15

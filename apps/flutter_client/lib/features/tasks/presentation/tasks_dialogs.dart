@@ -159,11 +159,11 @@ class _TaskDirectoryEditorDialogState
                 ],
               ),
               if (data.tags.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 8),
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
                   child: Text(
                     '暂无标签，可以直接保存未标记事项。',
-                    style: TextStyle(color: PlannerColors.muted, fontSize: 12),
+                    style: TextStyle(color: context.tokens.muted, fontSize: 12),
                   ),
                 )
               else
@@ -171,12 +171,12 @@ class _TaskDirectoryEditorDialogState
                   spacing: 6,
                   runSpacing: 4,
                   children: [
-                    for (final tag in data.tags)
+                    for (final (index, tag) in data.tags.indexed)
                       FilterChip(
                         key: Key('task-tag-${tag.id}'),
                         label: Text(tag.name),
                         selected: _tagIds.contains(tag.id),
-                        avatar: _tagDot(tag),
+                        avatar: _tagDot(context, index, tag),
                         onSelected: _saving
                             ? null
                             : (selected) => setState(() {
@@ -228,12 +228,7 @@ class _TaskDirectoryEditorDialogState
         FilledButton(
           key: const Key('task-save-button'),
           onPressed: _saving ? null : _save,
-          child: _saving
-              ? const SizedBox.square(
-                  dimension: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                )
-              : const Text('保存'),
+          child: _saving ? const PlannerSpinner(size: 15) : const Text('保存'),
         ),
       ],
     );
@@ -365,10 +360,10 @@ class _TagManagementDialogState extends ConsumerState<TagManagementDialog> {
                 child: ListView(
                   shrinkWrap: true,
                   children: [
-                    for (final tag in tags)
+                    for (final (index, tag) in tags.indexed)
                       ListTile(
                         contentPadding: EdgeInsets.zero,
-                        leading: _tagDot(tag, size: 14),
+                        leading: _tagDot(context, index, tag, size: 14),
                         title: Text(tag.name),
                         trailing: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -391,7 +386,9 @@ class _TagManagementDialogState extends ConsumerState<TagManagementDialog> {
                                           width: 12,
                                           height: 12,
                                           decoration: BoxDecoration(
-                                            color: _color(color),
+                                            color: context.tokens.dataTone(
+                                              _color(color),
+                                            ),
                                             shape: BoxShape.circle,
                                           ),
                                         ),
@@ -411,9 +408,9 @@ class _TagManagementDialogState extends ConsumerState<TagManagementDialog> {
                             IconButton(
                               tooltip: '删除标签',
                               onPressed: () => _delete(tag),
-                              icon: const Icon(
+                              icon: Icon(
                                 Icons.delete_outline,
-                                color: PlannerColors.danger,
+                                color: context.tokens.danger,
                               ),
                             ),
                           ],
@@ -459,8 +456,11 @@ class _TagManagementDialogState extends ConsumerState<TagManagementDialog> {
   }
 }
 
-Widget _tagDot(Tag tag, {double size = 10}) {
-  final color = tag.color == null ? PlannerColors.blue : _color(tag.color!);
+Widget _tagDot(BuildContext context, int index, Tag tag, {double size = 10}) {
+  final tokens = context.tokens;
+  final color = tag.color == null
+      ? tokens.tagFallbackColors[index % tokens.tagFallbackColors.length]
+      : tokens.dataTone(_color(tag.color!));
   return Container(
     width: size,
     height: size,

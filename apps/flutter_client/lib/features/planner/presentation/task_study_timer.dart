@@ -9,6 +9,12 @@ import '../application/study_timer.dart';
 import '../domain/planner_format.dart';
 import 'planner_dialogs.dart';
 
+String _formatElapsed(Duration value) => [
+  value.inHours,
+  value.inMinutes % 60,
+  value.inSeconds % 60,
+].map((part) => part.toString().padLeft(2, '0')).join(':');
+
 /// The same read-only clock and timer action on today's list and the calendar.
 ///
 /// The widget also renders extra-study rows (a study item without a block on
@@ -42,12 +48,6 @@ class TaskStudyTimer extends ConsumerWidget {
 
   String get _ownerKey => taskId;
 
-  String _elapsed(Duration value) => [
-    value.inHours,
-    value.inMinutes % 60,
-    value.inSeconds % 60,
-  ].map((part) => part.toString().padLeft(2, '0')).join(':');
-
   String _time(DateTime value) {
     final local = value.toUtc().add(const Duration(hours: 8));
     return '${dateOnlyOf(local)} '
@@ -56,20 +56,19 @@ class TaskStudyTimer extends ConsumerWidget {
         '${local.second.toString().padLeft(2, '0')}';
   }
 
-  Future<void> _discard(
-    BuildContext context,
-    StudyTimer timer,
-    StudyTimerSession session,
-  ) async {
+  Future<void> _discard(BuildContext context, WidgetRef ref) async {
+    final timer = ref.read(studyTimerProvider);
+    final session = timer.lastSessionFor(taskId, date);
+    if (session == null) return;
     final label = session.isLegacy ? '删除历史计时累计' : '撤销上一段计时';
     final confirmed = await confirmAction(
       context,
       title: label,
       message: session.isLegacy
           ? '旧版将同一天的计时合并保存，无法拆分到每次开始和暂停。'
-                '\n删除这条历史计时累计（${_elapsed(session.elapsed)}）？其他记录将保留。'
+                '\n删除这条历史计时累计（${_formatElapsed(session.elapsed)}）？其他记录将保留。'
           : '${_time(session.startedAt)} 至 ${_time(session.endedAt)}'
-                '\n计时 ${_elapsed(session.elapsed)}。撤销后会从累计用时中扣除这段时间。',
+                '\n计时 ${_formatElapsed(session.elapsed)}。撤销后会从累计用时中扣除这段时间。',
       confirmLabel: session.isLegacy ? '删除累计' : '撤销这段',
       destructive: true,
     );
@@ -81,7 +80,10 @@ class TaskStudyTimer extends ConsumerWidget {
         expectedSessionId: session.id,
       );
       if (context.mounted) {
-        showPlannerMessage(context, '已撤销 ${_elapsed(session.elapsed)} 的计时');
+        showPlannerMessage(
+          context,
+          '已撤销 ${_formatElapsed(session.elapsed)} 的计时',
+        );
       }
     } catch (_) {
       // The timer exposes failed saves inline and retains them for retry.
@@ -98,11 +100,8 @@ class TaskStudyTimer extends ConsumerWidget {
     showExtraStudyPauseFollowUp(context, ref, taskId);
   }
 
-  Future<void> _toggle(
-    BuildContext context,
-    WidgetRef ref,
-    StudyTimer timer,
-  ) async {
+  Future<void> _toggle(BuildContext context, WidgetRef ref) async {
+    final timer = ref.read(studyTimerProvider);
     try {
       if (timer.activeTaskId == taskId) {
         await timer.pause();
@@ -119,100 +118,44 @@ class TaskStudyTimer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final timer = ref.watch(studyTimerProvider);
-    final elapsed = timer.elapsedFor(taskId, date);
-    final running = timer.activeTaskId == taskId;
-    final clock = _elapsed(elapsed);
-    final last = running ? null : timer.lastSessionFor(taskId, date);
-    final targetSeconds = plannedMinutes * 60;
-    final ratio = targetSeconds <= 0
-        ? 0.0
-        : (elapsed.inMilliseconds / (targetSeconds * 1000)).clamp(0.0, 1.0);
+    final tokens = context.tokens;
+    // A one-second tick must not rebuild the whole card: this widget watches
+    // only the timer fields that do not change per second, while _StudyClock
+    // below follows the elapsed time inside its own RepaintBoundary.
+    final card = ref.watch(
+      studyTimerProvider.select((timer) {
+        final last = timer.activeTaskId == taskId
+            ? null
+            : timer.lastSessionFor(taskId, date);
+        return (
+          running: timer.activeTaskId == taskId,
+          ready: timer.ready,
+          busy: timer.busy,
+          error: timer.error,
+          hasElapsed: timer.elapsedFor(taskId, date) > Duration.zero,
+          lastElapsed: last?.elapsed,
+          lastIsLegacy: last?.isLegacy,
+          lastStartedAt: last?.startedAt,
+          lastEndedAt: last?.endedAt,
+        );
+      }),
+    );
+    final running = card.running;
+    final hasLast = card.lastElapsed != null;
     final action = running
         ? '暂停计时'
-        : elapsed > Duration.zero
+        : card.hasElapsed
         ? '继续计时'
         : extraOnly
         ? '开始加学'
         : '开始计时';
-    final targetLabel = extraOnly ? '加学计时' : '目标 ${duration(plannedMinutes)}';
-    final ring = Semantics(
-      key: Key('study-progress-$_ownerKey-$date'),
-      label: '学习用时',
-      value: '已学 $clock，$targetLabel',
-      child: ExcludeSemantics(
-        child: SizedBox.square(
-          dimension: 104,
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              border: Border.all(
-                color: running
-                    ? color.withValues(alpha: 0.28)
-                    : PlannerColors.border,
-              ),
-              boxShadow: running
-                  ? [
-                      BoxShadow(
-                        color: color.withValues(alpha: 0.10),
-                        blurRadius: 0,
-                        spreadRadius: 3,
-                      ),
-                    ]
-                  : null,
-            ),
-            child: Stack(
-              fit: StackFit.expand,
-              alignment: Alignment.center,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.all(4),
-                  child: CircularProgressIndicator(
-                    value: ratio,
-                    strokeWidth: 3.5,
-                    strokeCap: StrokeCap.round,
-                    backgroundColor: PlannerColors.surfaceMuted,
-                    color: color,
-                  ),
-                ),
-                Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Text(
-                        '已学',
-                        style: TextStyle(
-                          fontSize: 9.5,
-                          height: 1.3,
-                          color: PlannerColors.subtle,
-                        ),
-                      ),
-                      Text(
-                        clock,
-                        key: Key('study-clock-$_ownerKey-$date'),
-                        style: tabularFigures.copyWith(
-                          fontSize: 14.5,
-                          height: 1.35,
-                          fontWeight: FontWeight.w600,
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                      Text(
-                        targetLabel,
-                        style: const TextStyle(
-                          fontSize: 9.5,
-                          height: 1.3,
-                          color: PlannerColors.subtle,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ),
+    final ring = _StudyClock(
+      taskId: taskId,
+      date: date,
+      plannedMinutes: plannedMinutes,
+      color: color,
+      extraOnly: extraOnly,
+      ownerKey: _ownerKey,
     );
     final controls = Column(
       mainAxisSize: MainAxisSize.min,
@@ -222,8 +165,7 @@ class TaskStudyTimer extends ConsumerWidget {
           builder: (context, constraints) {
             // 今日加学卡只是加学计时的展示与控制：没有进行中的计时会话时
             // 不再提供“开始加学”，入口统一在下方事项行的闹钟。
-            final showPrimaryAction =
-                !extraOnly || running || elapsed > Duration.zero;
+            final showPrimaryAction = !extraOnly || running || card.hasElapsed;
             final actions = <Widget>[
               if (showPrimaryAction)
                 FilledButton.icon(
@@ -235,10 +177,9 @@ class TaskStudyTimer extends ConsumerWidget {
                       borderRadius: BorderRadius.circular(PlannerRadius.small),
                     ),
                   ),
-                  onPressed:
-                      !timer.ready || timer.busy || (!running && !canStart)
+                  onPressed: !card.ready || card.busy || (!running && !canStart)
                       ? null
-                      : () => _toggle(context, ref, timer),
+                      : () => _toggle(context, ref),
                   icon: Icon(
                     running ? Icons.pause : Icons.play_arrow,
                     size: 16,
@@ -252,16 +193,16 @@ class TaskStudyTimer extends ConsumerWidget {
                     minimumSize: const Size(0, 34),
                     padding: const EdgeInsets.symmetric(horizontal: 10),
                   ),
-                  onPressed: !timer.ready || timer.busy
+                  onPressed: !card.ready || card.busy
                       ? null
-                      : () => _toggle(context, ref, timer),
+                      : () => _toggle(context, ref),
                   icon: const Icon(Icons.stop, size: 15),
                   label: const Text('结束计时'),
                 ),
-              if (last != null)
+              if (hasLast)
                 IconButton(
                   key: Key('undo-study-session-$_ownerKey-$date'),
-                  tooltip: last.isLegacy ? '删除历史计时累计' : '撤销上一段计时',
+                  tooltip: card.lastIsLegacy! ? '删除历史计时累计' : '撤销上一段计时',
                   icon: const Icon(Icons.undo, size: 16),
                   constraints: const BoxConstraints.tightFor(
                     width: 30,
@@ -269,11 +210,11 @@ class TaskStudyTimer extends ConsumerWidget {
                   ),
                   padding: EdgeInsets.zero,
                   onPressed:
-                      timer.ready &&
-                          !timer.busy &&
+                      card.ready &&
+                          !card.busy &&
                           canDiscard &&
-                          timer.error == null
-                      ? () => _discard(context, timer, last)
+                          card.error == null
+                      ? () => _discard(context, ref)
                       : null,
                 ),
               ?secondaryAction,
@@ -298,16 +239,15 @@ class TaskStudyTimer extends ConsumerWidget {
             );
           },
         ),
-        if (last != null) ...[
+        if (hasLast) ...[
           const SizedBox(height: 4),
           Tooltip(
-            message: '${_time(last.startedAt)} 至 ${_time(last.endedAt)}',
+            message:
+                '${_time(card.lastStartedAt!)} 至 ${_time(card.lastEndedAt!)}',
             child: Text(
-              '${last.isLegacy ? '历史计时累计' : '上一段'} ${_elapsed(last.elapsed)}',
-              style: tabularFigures.copyWith(
-                fontSize: 11,
-                color: PlannerColors.muted,
-              ),
+              '${card.lastIsLegacy! ? '历史计时累计' : '上一段'} '
+              '${_formatElapsed(card.lastElapsed!)}',
+              style: tabularFigures.copyWith(fontSize: 11, color: tokens.muted),
             ),
           ),
         ],
@@ -355,25 +295,23 @@ class TaskStudyTimer extends ConsumerWidget {
             );
           },
         ),
-        if (timer.error != null) ...[
+        if (card.error != null) ...[
           const SizedBox(height: 8),
           Row(
             children: [
               Expanded(
                 child: Text(
-                  timer.error!,
-                  style: const TextStyle(
-                    color: PlannerColors.danger,
-                    fontSize: 12,
-                  ),
+                  card.error!,
+                  style: TextStyle(color: tokens.danger, fontSize: 12),
                 ),
               ),
               IconButton(
                 tooltip: '重试保存计时',
                 icon: const Icon(Icons.refresh, size: 19),
-                onPressed: timer.busy
+                onPressed: card.busy
                     ? null
                     : () async {
+                        final timer = ref.read(studyTimerProvider);
                         try {
                           if (timer.ready) {
                             await timer.checkpoint();
@@ -389,6 +327,123 @@ class TaskStudyTimer extends ConsumerWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// The only part of the card that follows the one-second tick: its own selects
+/// keep each tick inside this RepaintBoundary instead of rebuilding the card.
+class _StudyClock extends ConsumerWidget {
+  const _StudyClock({
+    required this.taskId,
+    required this.date,
+    required this.plannedMinutes,
+    required this.color,
+    required this.extraOnly,
+    required this.ownerKey,
+  });
+
+  final String taskId;
+  final String date;
+  final int plannedMinutes;
+  final Color color;
+  final bool extraOnly;
+  final String ownerKey;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tokens = context.tokens;
+    final elapsed = ref.watch(
+      studyTimerProvider.select((timer) => timer.elapsedFor(taskId, date)),
+    );
+    final running = ref.watch(
+      studyTimerProvider.select((timer) => timer.activeTaskId == taskId),
+    );
+    final clock = _formatElapsed(elapsed);
+    final targetSeconds = plannedMinutes * 60;
+    final ratio = targetSeconds <= 0
+        ? 0.0
+        : (elapsed.inMilliseconds / (targetSeconds * 1000)).clamp(0.0, 1.0);
+    final targetLabel = extraOnly ? '加学计时' : '目标 ${duration(plannedMinutes)}';
+    return RepaintBoundary(
+      child: Semantics(
+        key: Key('study-progress-$ownerKey-$date'),
+        label: '学习用时',
+        value: '已学 $clock，$targetLabel',
+        child: ExcludeSemantics(
+          child: SizedBox.square(
+            dimension: 104,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: running
+                      ? color.withValues(alpha: 0.28)
+                      : tokens.border,
+                ),
+                boxShadow: running
+                    ? [
+                        BoxShadow(
+                          color: color.withValues(alpha: 0.10),
+                          blurRadius: 0,
+                          spreadRadius: 3,
+                        ),
+                      ]
+                    : null,
+              ),
+              child: Stack(
+                fit: StackFit.expand,
+                alignment: Alignment.center,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.all(4),
+                    child: CircularProgressIndicator(
+                      value: ratio,
+                      strokeWidth: 3.5,
+                      strokeCap: StrokeCap.round,
+                      backgroundColor: tokens.surfaceMuted,
+                      color: color,
+                    ),
+                  ),
+                  Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          '已学',
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            height: 1.3,
+                            color: tokens.subtle,
+                          ),
+                        ),
+                        Text(
+                          clock,
+                          key: Key('study-clock-$ownerKey-$date'),
+                          style: tabularFigures.copyWith(
+                            fontSize: 14.5,
+                            height: 1.35,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: -0.2,
+                          ),
+                        ),
+                        Text(
+                          targetLabel,
+                          style: TextStyle(
+                            fontSize: 9.5,
+                            height: 1.3,
+                            color: tokens.subtle,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

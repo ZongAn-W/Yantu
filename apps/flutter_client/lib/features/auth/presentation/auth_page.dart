@@ -56,13 +56,10 @@ class _AuthPageState extends ConsumerState<AuthPage> {
     final busy = auth.loading || auth.codeSending || auth.restoring;
     final editingEnabled = !auth.loading && !auth.restoring;
     if (auth.restoring) {
-      return Scaffold(
-        body: Center(
-          child: Semantics(liveRegion: true, child: const Text('正在检查登录状态…')),
-        ),
-      );
+      return const Scaffold(body: PlannerLoading(message: '正在检查登录状态…'));
     }
     final text = Theme.of(context).textTheme;
+    final tokens = context.tokens;
     return Scaffold(
       body: Center(
         child: SingleChildScrollView(
@@ -72,8 +69,8 @@ class _AuthPageState extends ConsumerState<AuthPage> {
             child: Container(
               padding: const EdgeInsets.all(PlannerSpace.xl),
               decoration: BoxDecoration(
-                color: PlannerColors.surface,
-                border: Border.all(color: PlannerColors.border),
+                color: tokens.surface,
+                border: Border.all(color: tokens.border),
                 borderRadius: BorderRadius.circular(PlannerRadius.dialog),
               ),
               child: Form(
@@ -88,12 +85,12 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                             width: 34,
                             height: 34,
                             decoration: BoxDecoration(
-                              color: PlannerColors.blue,
+                              color: tokens.accent,
                               borderRadius: BorderRadius.circular(9),
                             ),
-                            child: const Icon(
+                            child: Icon(
                               Icons.auto_stories_outlined,
-                              color: Colors.white,
+                              color: tokens.accentOn,
                               size: 19,
                             ),
                           ),
@@ -109,7 +106,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                               Text(
                                 '学习执行台',
                                 style: text.labelSmall?.copyWith(
-                                  color: PlannerColors.subtle,
+                                  color: tokens.subtle,
                                 ),
                               ),
                             ],
@@ -127,7 +124,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                             ? '注册后开始记录每天的真实学习用时'
                             : '登录后多端同步；计时、事项与日历属于同一个学习计划。',
                         style: text.bodySmall?.copyWith(
-                          color: PlannerColors.muted,
+                          color: tokens.muted,
                           fontSize: 12.5,
                           height: 1.5,
                         ),
@@ -292,12 +289,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                         ),
                         onPressed: busy ? null : _submit,
                         icon: auth.loading
-                            ? const SizedBox.square(
-                                dimension: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                ),
-                              )
+                            ? const PlannerSpinner(size: 18)
                             : Icon(
                                 _register
                                     ? Icons.person_add_outlined
@@ -317,7 +309,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                         '计时、事项与日历都属于同一个学习计划；登录后自动同步。',
                         textAlign: TextAlign.center,
                         style: text.labelSmall?.copyWith(
-                          color: PlannerColors.subtle,
+                          color: tokens.subtle,
                           height: 1.5,
                         ),
                       ),

@@ -55,7 +55,7 @@ void main() {
       );
       await tester.tap(find.byKey(const ValueKey('calendar-date-picker')));
       await tester.pumpAndSettle();
-      expect(find.byType(DatePickerDialog), findsOneWidget);
+      expect(find.byKey(const ValueKey('planner-date-picker')), findsOneWidget);
       await tester.tap(find.text('取消'));
       await tester.pumpAndSettle();
       final sharedDate = addDate(shanghaiToday(), -1);

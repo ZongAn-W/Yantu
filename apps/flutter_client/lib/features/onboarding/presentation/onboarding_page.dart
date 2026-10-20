@@ -69,6 +69,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     final state = ref.watch(onboardingFlowProvider);
     final flow = ref.read(onboardingFlowProvider.notifier);
     final session = state.session;
@@ -199,18 +200,18 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                                     : Icons.radio_button_unchecked,
                                 size: 18,
                                 color: i < index
-                                    ? PlannerColors.green
+                                    ? tokens.success
                                     : i == index
-                                    ? PlannerColors.blue
-                                    : PlannerColors.muted,
+                                    ? tokens.accent
+                                    : tokens.muted,
                               ),
                               const SizedBox(width: 6),
                               Text(
                                 title,
                                 style: TextStyle(
                                   color: i == index
-                                      ? PlannerColors.blue
-                                      : PlannerColors.muted,
+                                      ? tokens.accent
+                                      : tokens.muted,
                                 ),
                               ),
                             ],
@@ -233,11 +234,8 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                   ],
                   if (state.loading) ...[
                     const SizedBox(height: 24),
-                    const LinearProgressIndicator(semanticsLabel: '正在处理学习规划'),
-                    const SizedBox(height: 8),
-                    Text(
-                      session == null ? '正在读取规划进度…' : '正在处理，请稍候…',
-                      style: const TextStyle(color: PlannerColors.muted),
+                    PlannerLoading(
+                      message: session == null ? '正在读取规划进度…' : '正在处理，请稍候…',
                     ),
                   ],
                   if (state.error != null) ...[
@@ -335,7 +333,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               : '暂未设置目标日期',
           '已记录 ${session.answers.length} 个回答',
         ].where((value) => value.isNotEmpty).join(' · '),
-        style: const TextStyle(color: PlannerColors.muted),
+        style: TextStyle(color: context.tokens.muted),
       ),
       const SizedBox(height: 24),
       Wrap(
@@ -401,6 +399,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
   }
 
   Widget _draft(OnboardingSession session, OnboardingFlow flow, bool busy) {
+    final tokens = context.tokens;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -411,10 +410,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
         for (final note in session.assumptions)
           Padding(
             padding: const EdgeInsets.only(bottom: 6),
-            child: Text(
-              '待核对：$note',
-              style: const TextStyle(color: PlannerColors.muted),
-            ),
+            child: Text('待核对：$note', style: TextStyle(color: tokens.muted)),
           ),
         for (final warning in session.warnings)
           Padding(
@@ -665,6 +661,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
   String get _constraintsKey => jsonEncode(_constraintsPayload);
 
   Widget _schedule(OnboardingSession session, OnboardingFlow flow, bool busy) {
+    final tokens = context.tokens;
     final constraints = session.stage == 'constraints';
     final today = shanghaiToday();
     _start ??= session.startDate.isNotEmpty
@@ -751,9 +748,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                 ],
               ),
               const SizedBox(height: 8),
-              const Text(
+              Text(
                 '规划结束日期是本次排程的边界；目标日期是你希望达成结果的日期，可以不设置。',
-                style: TextStyle(color: PlannerColors.muted, fontSize: 12),
+                style: TextStyle(color: tokens.muted, fontSize: 12.5),
               ),
               const SizedBox(height: 12),
               if (session.recommendations.planEndDate.isNotEmpty)
@@ -762,7 +759,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                   children: [
                     Text(
                       '建议规划结束：${session.recommendations.planEndDate}。${session.recommendations.planEndDateReason}',
-                      style: const TextStyle(color: PlannerColors.muted),
+                      style: TextStyle(color: tokens.muted),
                     ),
                     TextButton.icon(
                       onPressed: busy
@@ -778,14 +775,14 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
               if (session.recommendations.targetDate.isNotEmpty) ...[
                 Text(
                   '${session.recommendations.targetDateEstimated ? '预计目标日期' : '目标日期'}：${session.recommendations.targetDate}。${session.recommendations.targetDateReason}',
-                  style: const TextStyle(color: PlannerColors.muted),
+                  style: TextStyle(color: tokens.muted),
                 ),
                 if (session.recommendations.targetDateEstimated)
-                  const Padding(
-                    padding: EdgeInsets.only(top: 4),
+                  Padding(
+                    padding: const EdgeInsets.only(top: 4),
                     child: Text(
                       '以正式通知为准，你也可以清空目标日期。',
-                      style: TextStyle(color: PlannerColors.muted),
+                      style: TextStyle(color: tokens.muted),
                     ),
                   ),
                 Align(
@@ -814,9 +811,9 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                   ),
                 ),
               ] else
-                const Text(
+                Text(
                   '暂不设置目标日期也可以生成计划，本次只安排一个有限的规划周期。',
-                  style: TextStyle(color: PlannerColors.muted),
+                  style: TextStyle(color: tokens.muted),
                 ),
               const SizedBox(height: 24),
               Text('每周可用时间', style: Theme.of(context).textTheme.titleMedium),
@@ -824,7 +821,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                 const SizedBox(height: 8),
                 Text(
                   '建议依据：${session.recommendations.weeklyMinutesReason}',
-                  style: const TextStyle(color: PlannerColors.muted),
+                  style: TextStyle(color: tokens.muted),
                 ),
               ],
               const SizedBox(height: 12),
@@ -850,10 +847,7 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                 _netCapacity
                     ? '按净学习时间填写：输入的就是真正能用于学习的净预算，程序不会再机械扣除七天机动。'
                     : '旧计划沿用总预算口径：安排前会先扣除每日机动时间。',
-                style: const TextStyle(
-                  color: PlannerColors.muted,
-                  fontSize: 12,
-                ),
+                style: TextStyle(color: tokens.muted, fontSize: 12.5),
               ),
               if (_useRange) ...[
                 const SizedBox(height: 12),
@@ -1007,12 +1001,12 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
           _netCapacity
               ? '只给周总量时，程序按模板比例生成每日建议，不会存成你逐日确认的分配。'
               : '旧计划沿用总预算口径，并在安排前扣除每日机动时间。',
-          style: const TextStyle(color: PlannerColors.muted),
+          style: TextStyle(color: tokens.muted),
         ),
         const SizedBox(height: 8),
         Text(
           '本次将一次生成 $_start 至 $_end 的全周期每日安排（含首尾），不会只生成近期窗口。',
-          style: const TextStyle(color: PlannerColors.muted),
+          style: TextStyle(color: tokens.muted),
         ),
         if (!constraints && _end!.isNotEmpty && budget > capacity) ...[
           const SizedBox(height: 12),

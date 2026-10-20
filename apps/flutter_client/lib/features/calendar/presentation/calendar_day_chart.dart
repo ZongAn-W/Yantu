@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/theme.dart';
@@ -44,6 +45,7 @@ class _CalendarDayChartState extends State<CalendarDayChart> {
   @override
   Widget build(BuildContext context) {
     final day = widget.day;
+    final tokens = context.tokens;
     return PlannerPanel(
       key: const ValueKey('calendar-day-chart'),
       title: widget.showTitle ? widget.view.label : null,
@@ -53,12 +55,12 @@ class _CalendarDayChartState extends State<CalendarDayChart> {
         children: [
           if (!widget.showTitle) CalendarDayTotals(day: day),
           if (day.items.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 44),
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 44),
               child: Text(
                 '当天没有学习计划或学习记录',
                 textAlign: TextAlign.center,
-                style: TextStyle(fontSize: 13, color: PlannerColors.muted),
+                style: TextStyle(fontSize: 13, color: tokens.muted),
               ),
             )
           else ...[
@@ -106,7 +108,7 @@ class CalendarDayTotals extends StatelessWidget {
           key: const ValueKey('calendar-planned-total'),
           style: tabularFigures.copyWith(
             fontSize: 12.5,
-            color: PlannerColors.muted,
+            color: context.tokens.muted,
           ),
         ),
         Text(
@@ -115,7 +117,7 @@ class CalendarDayTotals extends StatelessWidget {
           style: tabularFigures.copyWith(
             fontSize: 13,
             fontWeight: FontWeight.w600,
-            color: PlannerColors.text,
+            color: context.tokens.text,
           ),
         ),
         if (capacityMinutes != null)
@@ -124,7 +126,7 @@ class CalendarDayTotals extends StatelessWidget {
             key: const ValueKey('calendar-capacity-total'),
             style: tabularFigures.copyWith(
               fontSize: 12.5,
-              color: PlannerColors.subtle,
+              color: context.tokens.subtle,
             ),
           ),
       ],
@@ -174,9 +176,13 @@ class _EncodingSwatch extends StatelessWidget {
           height: 8,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: kind == null ? PlannerColors.blueSoft : _kindColor(kind!),
+            color: kind == null
+                ? context.tokens.accentSoft
+                : _kindColor(context.tokens, kind!),
             border: kind == null
-                ? Border.all(color: PlannerColors.blue.withValues(alpha: .55))
+                ? Border.all(
+                    color: context.tokens.accent.withValues(alpha: .55),
+                  )
                 : null,
           ),
         ),
@@ -184,10 +190,10 @@ class _EncodingSwatch extends StatelessWidget {
       const SizedBox(width: 5),
       Text(
         label,
-        style: const TextStyle(
-          fontSize: 11.5,
+        style: TextStyle(
+          fontSize: 11,
           height: 1.35,
-          color: PlannerColors.muted,
+          color: context.tokens.muted,
         ),
       ),
     ],
@@ -226,11 +232,12 @@ class _ChartItemLabelState extends State<_ChartItemLabel> {
   @override
   Widget build(BuildContext context) {
     final item = widget.item;
+    final tokens = context.tokens;
     final compact = widget.compact;
-    final accent = widget.foreground ?? _itemAccent(item);
+    final accent = widget.foreground ?? _itemAccent(tokens, item);
     final background =
         widget.background ??
-        Color.alphaBlend(accent.withValues(alpha: .07), PlannerColors.surface);
+        Color.alphaBlend(accent.withValues(alpha: .07), tokens.surface);
     void inspect() {
       widget.onSelect();
       WidgetsBinding.instance.addPostFrameCallback(
@@ -329,33 +336,312 @@ String _itemDescription(CalendarDayItem item) =>
 /// Semantic accent of one owner: planned work is ink-blue, study recorded
 /// without a plan is amber, and an owner with neither falls back to the muted
 /// line colour. Item identity no longer creates a rainbow palette.
-Color _itemAccent(CalendarDayItem item) {
+Color _itemAccent(PlannerTokens tokens, CalendarDayItem item) {
   if (item.plannedMinutes > 0 || item.scheduledMinutes > 0) {
-    return PlannerColors.blue;
+    return tokens.accent;
   }
-  if (item.actualMinutes > 0) return PlannerColors.orange;
-  return PlannerColors.subtle;
+  if (item.actualMinutes > 0) return tokens.warning;
+  return tokens.subtle;
 }
 
 /// Colour of one recorded-effort kind. The hatch pattern still separates
 /// "已有事项加学" from "当天未排程的事项"; colour alone never carries meaning.
-Color _kindColor(CalendarEffortKind kind) => switch (kind) {
-  CalendarEffortKind.scheduled => PlannerColors.blue,
-  CalendarEffortKind.extra => PlannerColors.orange,
-  CalendarEffortKind.unscheduled => PlannerColors.orange,
-  CalendarEffortKind.legacyUnknown => PlannerColors.subtle,
-};
+Color _kindColor(PlannerTokens tokens, CalendarEffortKind kind) =>
+    switch (kind) {
+      CalendarEffortKind.scheduled => tokens.accent,
+      CalendarEffortKind.extra => tokens.warning,
+      CalendarEffortKind.unscheduled => tokens.warning,
+      CalendarEffortKind.legacyUnknown => tokens.subtle,
+    };
 
 /// Fill under a planned reference block.
-Color _planFill() => PlannerColors.blueSoft;
+Color _planFill(PlannerTokens tokens) =>
+    tokens.isDark ? tokens.accent.withValues(alpha: 0.22) : tokens.accentSoft;
 
 /// Hairline-accent of an effort segment.
-Color _effortColor(CalendarEffortKind kind) => _kindColor(kind);
+Color _effortColor(PlannerTokens tokens, CalendarEffortKind kind) =>
+    _kindColor(tokens, kind);
 
 String _chartTitle(String title) {
   return title.replaceAll(RegExp(r'\s+'), ' ').trim();
 }
 
+/// Height of the shared minute axis; every tick is an 11 px tabular caption.
+const double _minuteAxisHeight = 22;
+
+/// Height of one growth lane. The planned reference band (26 px) and the
+/// recorded effort run (14 px) both live inside it, so 28 owners still fit a
+/// 320 px wide panel.
+const double _growthRowHeight = 40;
+const double _growthLabelWidth = 112;
+
+/// Vertical insets of one growth lane: the 26 px plan reference band and the
+/// 14 px recorded effort run are both centred on the lane.
+const double _growthPlanInset = 7;
+const double _growthEffortInset = 13;
+const double _growthEffortRunHeight = 14;
+
+/// Vertical geometry of the double river, in stack pixels. The label layout
+/// below shares these numbers, so callout leaders still meet their segments.
+const double _riverGraphicHeight = 226;
+const double _riverPlannedTop = 46;
+const double _riverPlannedBottom = 74;
+const double _riverActualTop = 164;
+const double _riverActualBottom = 192;
+const double _riverHandleY = 118;
+
+/// No title, no grid line, no border on the sides we do not use.
+const SideTitles _hiddenSideTitles = SideTitles(showTitles: false);
+
+/// One coordinate of a cubic Bezier whose control points are given separately.
+double _cubic(
+  double from,
+  double fromHandle,
+  double toHandle,
+  double to,
+  double t,
+) {
+  final u = 1 - t;
+  return u * u * u * from +
+      3 * u * u * t * fromHandle +
+      3 * u * t * t * toHandle +
+      t * t * t * to;
+}
+
+/// Tabular minute caption: decimals are trimmed and only the last tick spells
+/// the unit out, exactly like the old hand-painted axis.
+String _minuteTickLabel(double value, double scale) {
+  var text = value.toStringAsFixed(2);
+  while (text.contains('.') && text.endsWith('0')) {
+    text = text.substring(0, text.length - 1);
+  }
+  if (text.endsWith('.')) {
+    text = text.substring(0, text.length - 1);
+  }
+  return (value - scale).abs() < 1e-6 ? '$text 分钟' : text;
+}
+
+/// Shared minute tick: the old axis kept two labels below 220 px, three below
+/// 420 px and five on wider plots.
+Widget _minuteTitle(PlannerTokens tokens, double value, TitleMeta meta) {
+  final scale = meta.max;
+  return SideTitleWidget(
+    meta: meta,
+    space: 4,
+    fitInside: SideTitleFitInsideData.fromTitleMeta(meta, distanceFromEdge: 0),
+    child: Text(
+      _minuteTickLabel(value, scale),
+      style: tabularFigures.copyWith(fontSize: 11, color: tokens.subtle),
+    ),
+  );
+}
+
+SideTitles _minuteSideTitles(
+  PlannerTokens tokens, {
+  required double scale,
+  required double width,
+}) {
+  final interval = width < 220
+      ? scale
+      : width < 420
+      ? scale / 2
+      : scale / 4;
+  return SideTitles(
+    showTitles: true,
+    reservedSize: _minuteAxisHeight,
+    interval: interval > 0 ? interval : scale,
+    getTitlesWidget: (value, meta) => _minuteTitle(tokens, value, meta),
+  );
+}
+
+/// One fl_chart segment whose stroke width is the band thickness: a 26 px plan
+/// reference or a 14 px effort run stays a crisp rectangle without layers.
+LineChartBarData _bandLine(List<FlSpot> spots, Color color, double thickness) =>
+    LineChartBarData(
+      spots: spots,
+      color: color,
+      barWidth: thickness,
+      dotData: const FlDotData(show: false),
+    );
+
+LineChartBarData _strokeLine(
+  List<FlSpot> spots,
+  Color color,
+  double strokeWidth,
+) => LineChartBarData(
+  spots: spots,
+  color: color,
+  barWidth: strokeWidth,
+  dotData: const FlDotData(show: false),
+);
+
+/// Appends one horizontal segment; null spots keep fl_chart from joining two
+/// unrelated blocks into a single run.
+void _appendSegment(List<FlSpot> target, double start, double end, double y) {
+  if (end <= start) {
+    return;
+  }
+  if (target.isNotEmpty) {
+    target.add(FlSpot.nullSpot);
+  }
+  target
+    ..add(FlSpot(start, y))
+    ..add(FlSpot(end, y));
+}
+
+void _appendPolyline(
+  Map<bool, List<FlSpot>> target,
+  bool selected,
+  List<FlSpot> spots,
+) {
+  final group = target.putIfAbsent(selected, () => <FlSpot>[]);
+  if (group.isNotEmpty) {
+    group.add(FlSpot.nullSpot);
+  }
+  group.addAll(spots);
+}
+
+/// Re-applies the established effort-kind texture over the fl_chart bands.
+///
+/// fl_chart has no pattern fills, and the two amber kinds would otherwise be
+/// told apart by hue alone; the same seven-pixel hatch the old painter used is
+/// redrawn over the exact band rectangles, so classification never depends on
+/// colour (DESIGN.md). The overlay is pointer-transparent and decorative only.
+class _GrowthTexturePainter extends CustomPainter {
+  const _GrowthTexturePainter({
+    required this.tokens,
+    required this.day,
+    required this.width,
+    required this.scale,
+  });
+
+  final PlannerTokens tokens;
+  final CalendarDayData day;
+  final double width;
+  final double scale;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final plotWidth = width > 0 ? width : size.width;
+    final unit = scale > 0 ? plotWidth / scale : 0.0;
+    if (unit <= 0) return;
+    for (var index = 0; index < day.items.length; index++) {
+      final top =
+          _minuteAxisHeight + index * _growthRowHeight + _growthEffortInset;
+      var left = 0.0;
+      for (final effort in day.items[index].efforts) {
+        final runWidth = effort.minutes * unit;
+        if (effort.kind != CalendarEffortKind.scheduled && runWidth > 0) {
+          _paintEffortTexture(
+            canvas,
+            Rect.fromLTWH(left, top, runWidth, _growthEffortRunHeight),
+            effort.kind,
+            tokens.surface,
+          );
+        }
+        left += runWidth;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _GrowthTexturePainter oldDelegate) =>
+      tokens != oldDelegate.tokens ||
+      day != oldDelegate.day ||
+      width != oldDelegate.width ||
+      scale != oldDelegate.scale;
+}
+
+/// Re-applies the effort-kind texture on the actual river bank, using the same
+/// pixel mapping as the LineChart below it.
+class _RiverTexturePainter extends CustomPainter {
+  const _RiverTexturePainter({
+    required this.tokens,
+    required this.day,
+    required this.width,
+    required this.scale,
+    required this.topBand,
+  });
+
+  final PlannerTokens tokens;
+  final CalendarDayData day;
+  final double width;
+  final double scale;
+  final double topBand;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final plotWidth = width > 0 ? width : size.width;
+    final unit = scale > 0 ? plotWidth / scale : 0.0;
+    if (unit <= 0) return;
+    final top = topBand + _riverActualTop;
+    final height = _riverActualBottom - _riverActualTop;
+    var left = 0.0;
+    for (final item in day.items) {
+      for (final effort in item.efforts) {
+        final runWidth = effort.minutes * unit;
+        if (effort.kind != CalendarEffortKind.scheduled && runWidth > 0) {
+          _paintEffortTexture(
+            canvas,
+            Rect.fromLTWH(left, top, runWidth, height),
+            effort.kind,
+            tokens.surface,
+          );
+        }
+        left += runWidth;
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RiverTexturePainter oldDelegate) =>
+      tokens != oldDelegate.tokens ||
+      day != oldDelegate.day ||
+      width != oldDelegate.width ||
+      scale != oldDelegate.scale ||
+      topBand != oldDelegate.topBand;
+}
+
+/// White diagonal / dot texture of one recorded-effort run, clipped to its
+/// band: extra and unscheduled are mirrored hatches, legacy rows are dots.
+void _paintEffortTexture(
+  Canvas canvas,
+  Rect rect,
+  CalendarEffortKind kind,
+  Color patternColor,
+) {
+  if (rect.isEmpty) return;
+  final paint = Paint()
+    ..color = patternColor.withValues(alpha: .68)
+    ..strokeWidth = 1.15;
+  canvas.save();
+  canvas.clipRect(rect);
+  if (kind == CalendarEffortKind.legacyUnknown) {
+    for (var y = rect.top + 2; y < rect.bottom; y += 5) {
+      for (var x = rect.left + 2; x < rect.right; x += 5) {
+        canvas.drawCircle(Offset(x, y), .85, paint);
+      }
+    }
+  } else {
+    final reverse = kind == CalendarEffortKind.unscheduled;
+    for (
+      var x = rect.left - rect.height;
+      x < rect.right + rect.height;
+      x += 7
+    ) {
+      canvas.drawLine(
+        Offset(x, reverse ? rect.top : rect.bottom),
+        Offset(x + rect.height, reverse ? rect.bottom : rect.top),
+        paint,
+      );
+    }
+  }
+  canvas.restore();
+}
+
+/// The first day graphic: one shared fl_chart LineChart draws every owner's
+/// planned reference band and recorded effort run as a horizontal lane, while
+/// the labels stay real widgets next to their row.
 class _GrowthChart extends StatelessWidget {
   const _GrowthChart({
     required this.day,
@@ -367,209 +653,597 @@ class _GrowthChart extends StatelessWidget {
   final String? selectedId;
   final ValueChanged<CalendarDayItem> onSelect;
 
-  static const double _rowHeight = 40;
-  static const double _labelWidth = 112;
+  CalendarDayItem? _hit(Offset point) {
+    final dy = point.dy - _minuteAxisHeight;
+    if (dy < 0) return null;
+    final index = dy ~/ _growthRowHeight;
+    if (index >= day.items.length) return null;
+    return day.items[index];
+  }
 
   @override
-  Widget build(BuildContext context) => Column(
-    children: [
-      Padding(
-        padding: const EdgeInsets.only(left: _labelWidth, bottom: 2),
-        child: _MinuteAxis(scale: day.scaleMinutes),
-      ),
-      for (var index = 0; index < day.items.length; index++)
-        SizedBox(
-          height: _rowHeight,
-          child: Row(
-            children: [
-              SizedBox(
-                width: _labelWidth,
-                child: Align(
-                  alignment: Alignment.centerLeft,
-                  child: _ChartItemLabel(
-                    item: day.items[index],
-                    compact: true,
-                    onSelect: () => onSelect(day.items[index]),
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final items = day.items;
+      final tokens = context.tokens;
+      if (items.isEmpty) return const SizedBox.shrink();
+      final rowsHeight = items.length * _growthRowHeight;
+      final plotWidth = math.max(0.0, constraints.maxWidth - _growthLabelWidth);
+      final selectedIndex = selectedId == null
+          ? -1
+          : items.indexWhere((item) => item.id == selectedId);
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: _growthLabelWidth,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: _minuteAxisHeight),
+                for (final item in items)
+                  SizedBox(
+                    height: _growthRowHeight,
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: _ChartItemLabel(
+                        item: item,
+                        compact: true,
+                        onSelect: () => onSelect(item),
+                      ),
+                    ),
                   ),
-                ),
-              ),
-              Expanded(
-                child: _InteractiveGraphic(
-                  height: _rowHeight,
-                  hit: (_, _) => day.items[index],
-                  onSelect: onSelect,
-                  painter: _GrowthPainter(
-                    item: day.items[index],
-                    scale: day.scaleMinutes,
-                    selected: selectedId == day.items[index].id,
-                  ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-        ),
-    ],
+          Expanded(
+            child: SizedBox(
+              height: _minuteAxisHeight + rowsHeight,
+              child: Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Positioned.fill(
+                    child: _InteractiveGraphic(
+                      height: _minuteAxisHeight + rowsHeight,
+                      hit: (point, size) => _hit(point),
+                      onSelect: onSelect,
+                      // W7: isolate the static chart canvas from hover overlays.
+                      child: RepaintBoundary(
+                        child: LineChart(
+                          _growthChartData(
+                            tokens: tokens,
+                            day: day,
+                            width: plotWidth,
+                          ),
+                          duration: Duration.zero,
+                        ),
+                      ),
+                    ),
+                  ),
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: CustomPaint(
+                        painter: _GrowthTexturePainter(
+                          tokens: tokens,
+                          day: day,
+                          width: plotWidth,
+                          scale: day.scaleMinutes > 0 ? day.scaleMinutes : 1.0,
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (selectedIndex >= 0)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      top:
+                          _minuteAxisHeight +
+                          selectedIndex * _growthRowHeight +
+                          2,
+                      height: _growthRowHeight - 4,
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            border: Border.all(color: tokens.accent, width: 2),
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    },
   );
 }
 
-class _GrowthPainter extends CustomPainter {
-  const _GrowthPainter({
-    required this.item,
-    required this.scale,
-    required this.selected,
-  });
-  final CalendarDayItem item;
-  final double scale;
-  final bool selected;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final hairline = 1.0;
-    // One hairline baseline only: vertical gridlines would compete with the
-    // tracks and are intentionally gone.
-    canvas.drawLine(
-      Offset(0, size.height - hairline),
-      Offset(size.width, size.height - hairline),
-      Paint()..color = PlannerColors.border.withValues(alpha: .7),
+LineChartData _growthChartData({
+  required PlannerTokens tokens,
+  required CalendarDayData day,
+  required double width,
+}) {
+  final items = day.items;
+  final rowsHeight = items.length * _growthRowHeight;
+  final scale = day.scaleMinutes > 0 ? day.scaleMinutes : 1.0;
+  final planBands = <FlSpot>[];
+  final planEdges = <FlSpot>[];
+  final effortBands = <Color, List<FlSpot>>{};
+  final rowRules = <HorizontalLine>[];
+  for (var index = 0; index < items.length; index++) {
+    final item = items[index];
+    final base = (items.length - 1 - index) * _growthRowHeight;
+    rowRules.add(
+      HorizontalLine(
+        y: base,
+        color: tokens.border.withValues(alpha: .7),
+        strokeWidth: 1,
+      ),
     );
     if (item.plannedMinutes > 0) {
-      final rect = Rect.fromLTWH(
+      _appendSegment(
+        planBands,
         0,
-        7,
-        size.width * item.plannedMinutes / scale,
-        26,
+        item.plannedMinutes.toDouble(),
+        base + _growthRowHeight / 2,
       );
-      _fillRRect(canvas, rect, _planFill(), radius: 4);
-      _strokeRRect(
-        canvas,
-        rect,
-        PlannerColors.blue.withValues(alpha: .45),
-        radius: 4,
-        width: hairline,
+      _appendSegment(
+        planEdges,
+        0,
+        item.plannedMinutes.toDouble(),
+        base + _growthRowHeight - _growthPlanInset,
       );
     }
     var left = 0.0;
     for (final effort in item.efforts) {
-      final width = size.width * effort.minutes / scale;
-      _drawEffort(
-        canvas,
-        Rect.fromLTWH(left, 13, width, 14),
-        _effortColor(effort.kind),
-        effort.kind,
-        radius: 3,
-      );
-      left += width;
-    }
-    if (selected) {
-      canvas.drawRRect(
-        RRect.fromRectAndRadius(
-          Rect.fromLTWH(0, 2, size.width, size.height - 2),
-          const Radius.circular(5),
-        ),
-        Paint()
-          ..style = PaintingStyle.stroke
-          ..color = PlannerColors.blue
-          ..strokeWidth = 2,
-      );
+      final end = left + effort.minutes;
+      if (effort.minutes > 0) {
+        final band = effortBands.putIfAbsent(
+          _effortColor(tokens, effort.kind),
+          () => <FlSpot>[],
+        );
+        _appendSegment(band, left, end, base + _growthRowHeight / 2);
+      }
+      left = end;
     }
   }
-
-  @override
-  bool shouldRepaint(covariant _GrowthPainter oldDelegate) =>
-      item != oldDelegate.item ||
-      scale != oldDelegate.scale ||
-      selected != oldDelegate.selected;
+  final lines = <LineChartBarData>[
+    if (planBands.isNotEmpty)
+      _bandLine(
+        planBands,
+        _planFill(tokens),
+        _growthRowHeight - _growthPlanInset * 2,
+      ),
+    if (planEdges.isNotEmpty)
+      _strokeLine(planEdges, tokens.accent.withValues(alpha: .45), 1),
+    for (final entry in effortBands.entries)
+      _bandLine(entry.value, entry.key, _growthEffortRunHeight),
+  ];
+  return LineChartData(
+    minX: 0,
+    maxX: scale,
+    minY: 0,
+    maxY: rowsHeight,
+    lineBarsData: lines,
+    titlesData: FlTitlesData(
+      show: true,
+      topTitles: AxisTitles(
+        sideTitles: _minuteSideTitles(tokens, scale: scale, width: width),
+      ),
+      leftTitles: const AxisTitles(sideTitles: _hiddenSideTitles),
+      rightTitles: const AxisTitles(sideTitles: _hiddenSideTitles),
+      bottomTitles: const AxisTitles(sideTitles: _hiddenSideTitles),
+    ),
+    gridData: const FlGridData(show: false),
+    borderData: FlBorderData(show: false),
+    clipData: const FlClipData.none(),
+    lineTouchData: const LineTouchData(enabled: false),
+    extraLinesData: ExtraLinesData(
+      horizontalLines: rowRules,
+      extraLinesOnTop: false,
+    ),
+  );
 }
 
+/// The second day graphic: one fl_chart LineChart draws both river banks, the
+/// scheduled ribbons between them and the callout leaders, while the real item
+/// label widgets stay positioned by the shared river label layout.
 class _RiverChart extends StatelessWidget {
   const _RiverChart({
     required this.day,
     required this.selectedId,
     required this.onSelect,
   });
+
   final CalendarDayData day;
   final String? selectedId;
   final ValueChanged<CalendarDayItem> onSelect;
+
+  CalendarDayItem? _hit(Offset point, Size size, double topBand) {
+    final graphicY = point.dy - topBand;
+    if (graphicY < 0 || graphicY > _riverGraphicHeight) return null;
+    final planned = graphicY < 120;
+    final minutes = size.width <= 0
+        ? 0.0
+        : point.dx / size.width * day.riverScaleMinutes;
+    var sum = 0.0;
+    CalendarDayItem? nearest;
+    var distance = double.infinity;
+    for (final item in day.items) {
+      final amount = (planned ? item.plannedMinutes : item.actualMinutes)
+          .toDouble();
+      if (amount <= 0) continue;
+      if (minutes >= sum && minutes <= sum + amount) return item;
+      final middle = sum + amount / 2;
+      final delta = (minutes - middle).abs();
+      if (delta < distance) {
+        nearest = item;
+        distance = delta;
+      }
+      sum += amount;
+    }
+    return nearest;
+  }
 
   @override
   Widget build(BuildContext context) => LayoutBuilder(
     builder: (context, constraints) {
       final width = constraints.maxWidth;
+      final tokens = context.tokens;
       final layout = _riverLabelLayout(day, width);
-      final specs = _riverLabelSpecs(day, width, layout);
-      final graphicTop = layout.topBand;
-      const graphicHeight = 226.0;
-      final stackHeight = graphicHeight + layout.topBand + layout.bottomBand;
-      return Column(
-        children: [
-          SizedBox(
-            width: width,
-            height: stackHeight,
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Positioned(
-                  top: graphicTop,
-                  left: 0,
-                  right: 0,
-                  child: _InteractiveGraphic(
-                    height: graphicHeight,
-                    hit: (point, size) {
-                      final planned = point.dy < 120;
-                      final minutes =
-                          point.dx / size.width * day.riverScaleMinutes;
-                      var sum = 0;
-                      CalendarDayItem? nearest;
-                      var distance = double.infinity;
-                      for (final item in day.items) {
-                        final amount = planned
-                            ? item.plannedMinutes
-                            : item.actualMinutes;
-                        if (amount <= 0) continue;
-                        final middle = sum + amount / 2;
-                        if (minutes >= sum && minutes <= sum + amount) {
-                          return item;
-                        }
-                        if ((minutes - middle).abs() < distance) {
-                          nearest = item;
-                          distance = (minutes - middle).abs();
-                        }
-                        sum += amount;
-                      }
-                      return nearest;
-                    },
-                    onSelect: onSelect,
-                    painter: _RiverPainter(day: day, selectedId: selectedId),
-                  ),
-                ),
-                IgnorePointer(
-                  child: CustomPaint(
-                    size: Size(width, stackHeight),
-                    painter: _RiverLabelLeaderPainter(specs: specs, day: day),
-                  ),
-                ),
-                for (final spec in specs)
-                  Positioned(
-                    left: spec.left,
-                    top: spec.top,
-                    width: spec.width,
-                    height: spec.height,
-                    child: _ChartItemLabel(
-                      item: spec.item,
-                      maxLines: spec.callout ? 2 : 1,
-                      compact: !spec.callout,
-                      foreground: spec.foreground,
-                      background: spec.background,
-                      onSelect: () => onSelect(spec.item),
+      final specs = _riverLabelSpecs(tokens, day, width, layout);
+      final stackHeight =
+          _riverGraphicHeight + layout.topBand + layout.bottomBand;
+      final chartHeight = stackHeight + _minuteAxisHeight;
+      return SizedBox(
+        width: width,
+        height: chartHeight,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            Positioned.fill(
+              child: _InteractiveGraphic(
+                height: chartHeight,
+                hit: (point, size) => _hit(point, size, layout.topBand),
+                onSelect: onSelect,
+                // W7: isolate the static chart canvas from hover overlays.
+                child: RepaintBoundary(
+                  child: LineChart(
+                    _riverChartData(
+                      tokens: tokens,
+                      day: day,
+                      specs: specs,
+                      selectedId: selectedId,
+                      width: width,
+                      topBand: layout.topBand,
+                      stackHeight: stackHeight,
                     ),
+                    duration: Duration.zero,
                   ),
-              ],
+                ),
+              ),
             ),
-          ),
-          _MinuteAxis(scale: day.riverScaleMinutes),
-        ],
+            Positioned.fill(
+              child: IgnorePointer(
+                child: CustomPaint(
+                  painter: _RiverTexturePainter(
+                    tokens: tokens,
+                    day: day,
+                    width: width,
+                    scale: day.riverScaleMinutes > 0
+                        ? day.riverScaleMinutes
+                        : 1.0,
+                    topBand: layout.topBand,
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              top: layout.topBand + 25,
+              child: _riverCaption('计划', tokens),
+            ),
+            Positioned(
+              left: 0,
+              top: layout.topBand + 143,
+              child: _riverCaption('实学', tokens),
+            ),
+            if (day.plannedMinutes == 0)
+              Positioned(
+                left: 0,
+                top: layout.topBand + 52,
+                child: _riverCaption('无当日计划', tokens, color: tokens.muted),
+              ),
+            if (day.actualMinutes == 0)
+              Positioned(
+                left: 0,
+                top: layout.topBand + 170,
+                child: _riverCaption('尚无学习记录', tokens, color: tokens.muted),
+              ),
+            for (final spec in specs)
+              Positioned(
+                left: spec.left,
+                top: spec.top,
+                width: spec.width,
+                height: spec.height,
+                child: _ChartItemLabel(
+                  item: spec.item,
+                  maxLines: spec.callout ? 2 : 1,
+                  compact: !spec.callout,
+                  foreground: spec.foreground,
+                  background: spec.background,
+                  onSelect: () => onSelect(spec.item),
+                ),
+              ),
+          ],
+        ),
       );
     },
+  );
+}
+
+Widget _riverCaption(String text, PlannerTokens tokens, {Color? color}) =>
+    IgnorePointer(
+      child: ExcludeSemantics(
+        child: Text(
+          text,
+          style: tabularFigures.copyWith(
+            fontSize: 11,
+            color: color ?? tokens.subtle,
+          ),
+        ),
+      ),
+    );
+
+LineChartData _riverChartData({
+  required PlannerTokens tokens,
+  required CalendarDayData day,
+  required List<_RiverLabelSpec> specs,
+  required String? selectedId,
+  required double width,
+  required double topBand,
+  required double stackHeight,
+}) {
+  final scale = day.riverScaleMinutes > 0 ? day.riverScaleMinutes : 1.0;
+  final gap = width <= 0 ? 0.0 : 0.6 * scale / width;
+  double chartY(double canvasY) => stackHeight - canvasY;
+  final plannedTop = chartY(topBand + _riverPlannedTop);
+  final plannedBottom = chartY(topBand + _riverPlannedBottom);
+  final plannedCenter = chartY(
+    topBand + (_riverPlannedTop + _riverPlannedBottom) / 2,
+  );
+  final actualCenter = chartY(
+    topBand + (_riverActualTop + _riverActualBottom) / 2,
+  );
+  final planLefts = <double>[];
+  final actualLefts = <double>[];
+  var planLeft = 0.0;
+  var actualLeft = 0.0;
+  for (final item in day.items) {
+    planLefts.add(planLeft);
+    actualLefts.add(actualLeft);
+    planLeft += item.plannedMinutes;
+    actualLeft += item.actualMinutes;
+  }
+
+  final lines = <LineChartBarData>[];
+  final between = <BetweenBarsData>[];
+
+  // Ribbons: the old painter connected the planned bank to the actual bank
+  // with two cubics; sampling both sides and filling between them keeps the
+  // bend of the original ribbon without a custom painter.
+  final ribbonLeft = <bool, List<FlSpot>>{};
+  final ribbonRight = <bool, List<FlSpot>>{};
+  const ribbonSamples = 12;
+  for (var index = 0; index < day.items.length; index++) {
+    final item = day.items[index];
+    final original = math.min(item.scheduledMinutes, item.plannedMinutes);
+    if (original <= 0) continue;
+    final selected = item.id == selectedId;
+    final left = <FlSpot>[];
+    final right = <FlSpot>[];
+    for (var step = 0; step <= ribbonSamples; step++) {
+      final t = step / ribbonSamples;
+      final y = chartY(
+        _cubic(
+          topBand + _riverPlannedBottom,
+          topBand + _riverHandleY,
+          topBand + _riverHandleY,
+          topBand + _riverActualTop,
+          t,
+        ),
+      );
+      left.add(
+        FlSpot(
+          _cubic(
+            planLefts[index],
+            planLefts[index],
+            actualLefts[index],
+            actualLefts[index],
+            t,
+          ),
+          y,
+        ),
+      );
+      right.add(
+        FlSpot(
+          _cubic(
+            planLefts[index] + original,
+            planLefts[index] + original,
+            actualLefts[index] + original,
+            actualLefts[index] + original,
+            t,
+          ),
+          y,
+        ),
+      );
+    }
+    _appendPolyline(ribbonLeft, selected, left);
+    _appendPolyline(ribbonRight, selected, right);
+  }
+  for (final selected in const [false, true]) {
+    final left = ribbonLeft[selected];
+    final right = ribbonRight[selected];
+    if (left == null || right == null || left.isEmpty) continue;
+    final fromIndex = lines.length;
+    lines.add(LineChartBarData(spots: left, show: false));
+    final toIndex = lines.length;
+    lines.add(LineChartBarData(spots: right, show: false));
+    between.add(
+      BetweenBarsData(
+        fromIndex: fromIndex,
+        toIndex: toIndex,
+        color: tokens.accent.withValues(alpha: selected ? .16 : .07),
+      ),
+    );
+  }
+
+  final planBands = <FlSpot>[];
+  final planEdges = <FlSpot>[];
+  for (var index = 0; index < day.items.length; index++) {
+    final item = day.items[index];
+    if (item.plannedMinutes <= 0) continue;
+    final localGap = math.min(gap, item.plannedMinutes * .1);
+    final start = planLefts[index] + localGap;
+    final end = planLefts[index] + item.plannedMinutes - localGap;
+    _appendSegment(planBands, start, end, plannedCenter);
+    _appendSegment(planEdges, start, end, plannedTop);
+  }
+  if (planBands.isNotEmpty) {
+    lines.add(
+      _bandLine(
+        planBands,
+        _planFill(tokens),
+        _riverPlannedBottom - _riverPlannedTop,
+      ),
+    );
+    lines.add(_strokeLine(planEdges, tokens.accent.withValues(alpha: .45), 1));
+  }
+
+  final effortBands = <Color, List<FlSpot>>{};
+  for (var index = 0; index < day.items.length; index++) {
+    var offset = actualLefts[index];
+    for (final effort in day.items[index].efforts) {
+      final end = offset + effort.minutes;
+      if (effort.minutes > 0) {
+        final band = effortBands.putIfAbsent(
+          _effortColor(tokens, effort.kind),
+          () => <FlSpot>[],
+        );
+        final localGap = math.min(gap, effort.minutes * .1);
+        _appendSegment(band, offset + localGap, end - localGap, actualCenter);
+      }
+      offset = end;
+    }
+  }
+  for (final entry in effortBands.entries) {
+    lines.add(
+      _bandLine(entry.value, entry.key, _riverActualBottom - _riverActualTop),
+    );
+  }
+
+  final selectedIndex = selectedId == null
+      ? -1
+      : day.items.indexWhere((item) => item.id == selectedId);
+  if (selectedIndex >= 0) {
+    final item = day.items[selectedIndex];
+    final outline = <FlSpot>[];
+    void addOutline(double left, double right, double top, double bottom) {
+      if (outline.isNotEmpty) {
+        outline.add(FlSpot.nullSpot);
+      }
+      outline
+        ..add(FlSpot(left, top))
+        ..add(FlSpot(right, top))
+        ..add(FlSpot(right, bottom))
+        ..add(FlSpot(left, bottom))
+        ..add(FlSpot(left, top));
+    }
+
+    if (item.plannedMinutes > 0) {
+      addOutline(
+        planLefts[selectedIndex],
+        planLefts[selectedIndex] + item.plannedMinutes,
+        plannedTop,
+        plannedBottom,
+      );
+    }
+    if (item.actualMinutes > 0) {
+      addOutline(
+        actualLefts[selectedIndex],
+        actualLefts[selectedIndex] + item.actualMinutes,
+        chartY(topBand + _riverActualTop - 3),
+        chartY(topBand + _riverActualBottom + 6),
+      );
+    }
+    if (outline.isNotEmpty) {
+      lines.add(_strokeLine(outline, tokens.accent, 2));
+    }
+  }
+
+  final leaderGroups = <Color, List<FlSpot>>{};
+  for (final spec in specs) {
+    if (!spec.callout) continue;
+    final color = _itemAccent(tokens, spec.item).withValues(alpha: .45);
+    final labelX = spec.left + spec.width / 2;
+    final labelY = spec.lane == _RiverLabelLane.planned
+        ? spec.top + spec.height
+        : spec.top;
+    final segmentX = spec.segmentCenter;
+    final segmentY =
+        spec.segmentTop + (spec.lane == _RiverLabelLane.planned ? 0 : 28);
+    final bend = segmentY + (spec.lane == _RiverLabelLane.planned ? -7 : 7);
+    final group = leaderGroups.putIfAbsent(color, () => <FlSpot>[]);
+    if (group.isNotEmpty) {
+      group.add(FlSpot.nullSpot);
+    }
+    group
+      ..add(FlSpot(labelX, chartY(labelY)))
+      ..add(FlSpot(labelX, chartY(bend)))
+      ..add(FlSpot(segmentX, chartY(bend)))
+      ..add(FlSpot(segmentX, chartY(segmentY)));
+  }
+  for (final entry in leaderGroups.entries) {
+    lines.add(_strokeLine(entry.value, entry.key, 1));
+  }
+
+  return LineChartData(
+    minX: 0,
+    maxX: scale,
+    minY: 0,
+    maxY: stackHeight > 0 ? stackHeight : 1,
+    lineBarsData: lines,
+    betweenBarsData: between,
+    titlesData: FlTitlesData(
+      show: true,
+      bottomTitles: AxisTitles(
+        sideTitles: _minuteSideTitles(tokens, scale: scale, width: width),
+      ),
+      topTitles: const AxisTitles(sideTitles: _hiddenSideTitles),
+      leftTitles: const AxisTitles(sideTitles: _hiddenSideTitles),
+      rightTitles: const AxisTitles(sideTitles: _hiddenSideTitles),
+    ),
+    gridData: const FlGridData(show: false),
+    borderData: FlBorderData(show: false),
+    clipData: const FlClipData.none(),
+    lineTouchData: const LineTouchData(enabled: false),
+    extraLinesData: ExtraLinesData(
+      horizontalLines: [
+        HorizontalLine(
+          y: chartY(topBand + _riverPlannedTop),
+          color: tokens.border.withValues(alpha: .8),
+          strokeWidth: 1,
+        ),
+        HorizontalLine(
+          y: chartY(topBand + _riverActualBottom),
+          color: tokens.border.withValues(alpha: .8),
+          strokeWidth: 1,
+        ),
+      ],
+      extraLinesOnTop: false,
+    ),
   );
 }
 
@@ -646,6 +1320,7 @@ _RiverLabelLayout _riverLabelLayout(CalendarDayData day, double width) {
 }
 
 List<_RiverLabelSpec> _riverLabelSpecs(
+  PlannerTokens tokens,
   CalendarDayData day,
   double width,
   _RiverLabelLayout layout,
@@ -702,7 +1377,7 @@ List<_RiverLabelSpec> _riverLabelSpecs(
               layout.topBand + (lane == _RiverLabelLane.planned ? 46 : 164),
           lane: lane,
           callout: callout,
-          foreground: _itemAccent(item),
+          foreground: _itemAccent(tokens, item),
           background: null,
         ),
       );
@@ -713,214 +1388,23 @@ List<_RiverLabelSpec> _riverLabelSpecs(
   return specs;
 }
 
-class _RiverLabelLeaderPainter extends CustomPainter {
-  const _RiverLabelLeaderPainter({required this.specs, required this.day});
-
-  final List<_RiverLabelSpec> specs;
-  final CalendarDayData day;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1
-      ..color = PlannerColors.muted.withValues(alpha: .65);
-    for (final spec in specs) {
-      if (!spec.callout) continue;
-      final labelAnchor = Offset(
-        spec.left + spec.width / 2,
-        spec.lane == _RiverLabelLane.planned
-            ? spec.top + spec.height
-            : spec.top,
-      );
-      final segmentAnchor = Offset(
-        spec.segmentCenter,
-        spec.segmentTop + (spec.lane == _RiverLabelLane.planned ? 0 : 28),
-      );
-      final bend = spec.lane == _RiverLabelLane.planned
-          ? segmentAnchor.dy - 7
-          : segmentAnchor.dy + 7;
-      final path = Path()
-        ..moveTo(labelAnchor.dx, labelAnchor.dy)
-        ..lineTo(labelAnchor.dx, bend)
-        ..lineTo(segmentAnchor.dx, bend)
-        ..lineTo(segmentAnchor.dx, segmentAnchor.dy);
-      canvas.drawPath(
-        path,
-        paint..color = _itemAccent(spec.item).withValues(alpha: .45),
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _RiverLabelLeaderPainter oldDelegate) =>
-      specs != oldDelegate.specs || day != oldDelegate.day;
-}
-
-class _RiverPainter extends CustomPainter {
-  const _RiverPainter({required this.day, required this.selectedId});
-  final CalendarDayData day;
-  final String? selectedId;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final unit = size.width / day.riverScaleMinutes;
-    const top = 46.0;
-    const bottom = 164.0;
-    const height = 28.0;
-    const radius = 5.0;
-    // Two hairline section rules only: vertical gridlines are gone so the
-    // banks read as ink on paper, not as a screenshot of a spreadsheet.
-    final rule = Paint()..color = PlannerColors.border.withValues(alpha: .8);
-    canvas.drawLine(const Offset(0, top), Offset(size.width, top), rule);
-    canvas.drawLine(
-      Offset(0, bottom + height),
-      Offset(size.width, bottom + height),
-      rule,
-    );
-    var plannedLeft = 0.0;
-    var actualLeft = 0.0;
-    // Identical item order on both banks makes the original-study ribbons
-    // monotone. Other efforts never enter a ribbon or consume another plan.
-    for (final item in day.items) {
-      final original =
-          math.min(item.scheduledMinutes, item.plannedMinutes) * unit;
-      if (original > 0) {
-        final path = Path()
-          ..moveTo(plannedLeft, top + height)
-          ..cubicTo(plannedLeft, 118, actualLeft, 118, actualLeft, bottom)
-          ..lineTo(actualLeft + original, bottom)
-          ..cubicTo(
-            actualLeft + original,
-            118,
-            plannedLeft + original,
-            118,
-            plannedLeft + original,
-            top + height,
-          )
-          ..close();
-        canvas.drawPath(
-          path,
-          Paint()
-            ..color = PlannerColors.blue.withValues(
-              alpha: selectedId == item.id ? .16 : .07,
-            ),
-        );
-      }
-      plannedLeft += item.plannedMinutes * unit;
-      actualLeft += item.actualMinutes * unit;
-    }
-    plannedLeft = 0;
-    actualLeft = 0;
-    for (final item in day.items) {
-      final plannedWidth = item.plannedMinutes * unit;
-      if (plannedWidth > 0) {
-        final rect = Rect.fromLTWH(plannedLeft, top, plannedWidth, height);
-        _fillRRect(canvas, rect, _planFill(), radius: radius);
-        _strokeRRect(
-          canvas,
-          rect,
-          PlannerColors.blue.withValues(
-            alpha: selectedId == item.id ? .9 : .35,
-          ),
-          radius: radius,
-          width: selectedId == item.id ? 2 : 1,
-        );
-      }
-      var effortLeft = actualLeft;
-      for (final effort in item.efforts) {
-        final width = effort.minutes * unit;
-        _drawEffort(
-          canvas,
-          Rect.fromLTWH(effortLeft, bottom, width, height),
-          _effortColor(effort.kind),
-          effort.kind,
-          radius: radius,
-        );
-        effortLeft += width;
-      }
-      // A hairline gap keeps neighbouring owners readable even when they share
-      // the same semantic colour.
-      if (item.actualMinutes > 0 && actualLeft > 0) {
-        canvas.drawLine(
-          Offset(actualLeft, bottom + 1),
-          Offset(actualLeft, bottom + height - 1),
-          Paint()
-            ..color = Colors.white.withValues(alpha: .8)
-            ..strokeWidth = 1,
-        );
-      }
-      if (selectedId == item.id && item.actualMinutes > 0) {
-        _strokeRRect(
-          canvas,
-          Rect.fromLTWH(
-            actualLeft,
-            bottom - 3,
-            item.actualMinutes * unit,
-            height + 6,
-          ),
-          PlannerColors.blue,
-          radius: radius + 2,
-          width: 2,
-        );
-      }
-      plannedLeft += plannedWidth;
-      actualLeft += item.actualMinutes * unit;
-    }
-    _paintText(
-      canvas,
-      '计划',
-      const Offset(0, 25),
-      maxWidth: size.width,
-      fontSize: 11,
-      color: PlannerColors.subtle,
-    );
-    _paintText(
-      canvas,
-      '实学',
-      const Offset(0, 143),
-      maxWidth: size.width,
-      fontSize: 11,
-      color: PlannerColors.subtle,
-    );
-    if (day.plannedMinutes == 0) {
-      _paintText(
-        canvas,
-        '无当日计划',
-        const Offset(0, top + 6),
-        maxWidth: size.width,
-        color: PlannerColors.subtle,
-      );
-    }
-    if (day.actualMinutes == 0) {
-      _paintText(
-        canvas,
-        '尚无学习记录',
-        const Offset(0, bottom + 6),
-        maxWidth: size.width,
-        color: PlannerColors.subtle,
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _RiverPainter oldDelegate) =>
-      day != oldDelegate.day || selectedId != oldDelegate.selectedId;
-}
-
 typedef _GraphicHit = CalendarDayItem? Function(Offset point, Size size);
 
+/// Shared hover/tap surface for both day graphics. The chart itself is now a
+/// real fl_chart widget, but the hit mapping, the hover tooltip and the
+/// callback stay exactly the same as when it was a CustomPainter.
 class _InteractiveGraphic extends StatefulWidget {
   const _InteractiveGraphic({
     required this.height,
-    required this.painter,
     required this.hit,
     required this.onSelect,
+    required this.child,
   });
+
   final double height;
-  final CustomPainter painter;
   final _GraphicHit hit;
   final ValueChanged<CalendarDayItem> onSelect;
+  final Widget child;
 
   @override
   State<_InteractiveGraphic> createState() => _InteractiveGraphicState();
@@ -948,7 +1432,7 @@ class _InteractiveGraphicState extends State<_InteractiveGraphic> {
 
       // Named item keys below expose the same inspection to keyboard and
       // screen-reader users; the painted hit surface must not add unnamed taps.
-      final graphic = ExcludeSemantics(
+      return ExcludeSemantics(
         child: Tooltip(
           key: _tooltip,
           message: _hovered == null ? '' : _itemDescription(_hovered!),
@@ -969,167 +1453,12 @@ class _InteractiveGraphicState extends State<_InteractiveGraphic> {
               child: SizedBox(
                 width: size.width,
                 height: size.height,
-                child: CustomPaint(painter: widget.painter),
+                child: widget.child,
               ),
             ),
           ),
         ),
       );
-      return graphic;
     },
   );
-}
-
-class _MinuteAxis extends StatelessWidget {
-  const _MinuteAxis({required this.scale});
-  final double scale;
-
-  @override
-  Widget build(BuildContext context) => ExcludeSemantics(
-    child: SizedBox(
-      height: 22,
-      width: double.infinity,
-      child: CustomPaint(painter: _MinuteAxisPainter(scale)),
-    ),
-  );
-}
-
-class _MinuteAxisPainter extends CustomPainter {
-  const _MinuteAxisPainter(this.scale);
-  final double scale;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    // Narrow plots keep only the readable extremes; five labels collide below
-    // ~420 px, which is exactly the 320–390 px mobile range.
-    final fractions = size.width < 220
-        ? const [0.0, 1.0]
-        : size.width < 420
-        ? const [0.0, .5, 1.0]
-        : const [0.0, .25, .5, .75, 1.0];
-    for (final fraction in fractions) {
-      final value = (scale * fraction)
-          .toStringAsFixed(2)
-          .replaceFirst(RegExp(r'\.?0+$'), '');
-      final text = fraction == 1 ? '$value 分钟' : value;
-      final label = TextPainter(
-        text: TextSpan(
-          text: text,
-          style: tabularFigures.copyWith(
-            fontSize: 11,
-            color: PlannerColors.subtle,
-          ),
-        ),
-        textDirection: TextDirection.ltr,
-      )..layout(maxWidth: 70);
-      label.paint(
-        canvas,
-        Offset(
-          (fraction * size.width - label.width / 2).clamp(
-            0.0,
-            math.max(0, size.width - label.width),
-          ),
-          5,
-        ),
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _MinuteAxisPainter oldDelegate) =>
-      scale != oldDelegate.scale;
-}
-
-void _fillRRect(Canvas canvas, Rect rect, Color color, {double radius = 4}) {
-  if (rect.isEmpty) return;
-  canvas.drawRRect(
-    RRect.fromRectAndRadius(rect, Radius.circular(radius)),
-    Paint()..color = color,
-  );
-}
-
-void _strokeRRect(
-  Canvas canvas,
-  Rect rect,
-  Color color, {
-  double radius = 4,
-  double width = 1,
-}) {
-  if (rect.isEmpty) return;
-  canvas.drawRRect(
-    RRect.fromRectAndRadius(rect, Radius.circular(radius)),
-    Paint()
-      ..style = PaintingStyle.stroke
-      ..color = color
-      ..strokeWidth = width,
-  );
-}
-
-void _drawEffort(
-  Canvas canvas,
-  Rect rect,
-  Color color,
-  CalendarEffortKind kind, {
-  double radius = 4,
-}) {
-  if (rect.isEmpty) return;
-  _fillRRect(canvas, rect, color, radius: radius);
-  if (kind != CalendarEffortKind.scheduled) {
-    canvas.save();
-    canvas.clipRRect(RRect.fromRectAndRadius(rect, Radius.circular(radius)));
-    _drawPattern(canvas, rect, color, kind);
-    canvas.restore();
-  }
-}
-
-void _drawPattern(
-  Canvas canvas,
-  Rect rect,
-  Color color,
-  CalendarEffortKind kind,
-) {
-  final paint = Paint()
-    ..color = Colors.white.withValues(alpha: .68)
-    ..strokeWidth = 1.15;
-  final reverse = kind == CalendarEffortKind.unscheduled;
-  if (kind == CalendarEffortKind.legacyUnknown) {
-    for (var y = rect.top + 2; y < rect.bottom; y += 5) {
-      for (var x = rect.left + 2; x < rect.right; x += 5) {
-        canvas.drawCircle(Offset(x, y), .85, paint);
-      }
-    }
-    return;
-  }
-  for (var x = rect.left - rect.height; x < rect.right + rect.height; x += 7) {
-    canvas.drawLine(
-      Offset(x, reverse ? rect.top : rect.bottom),
-      Offset(x + rect.height, reverse ? rect.bottom : rect.top),
-      paint,
-    );
-  }
-}
-
-void _paintText(
-  Canvas canvas,
-  String text,
-  Offset offset, {
-  Color color = PlannerColors.muted,
-  double fontSize = 11,
-  double maxWidth = 200,
-  Color? background,
-}) {
-  final painter = TextPainter(
-    text: TextSpan(
-      text: text,
-      style: tabularFigures.copyWith(
-        fontSize: fontSize,
-        color: color,
-        backgroundColor: background,
-      ),
-    ),
-    textDirection: TextDirection.ltr,
-    maxLines: 1,
-    ellipsis: '…',
-  )..layout(maxWidth: math.max(0, maxWidth));
-  painter.paint(canvas, offset);
 }

@@ -70,7 +70,7 @@ class CalendarOverview extends StatelessWidget {
                         child: SizedBox(
                           width: hairline,
                           height: 46,
-                          child: const ColoredBox(color: PlannerColors.border),
+                          child: ColoredBox(color: context.tokens.border),
                         ),
                       ),
                     Expanded(child: _OverviewMetric(stat: stats[index])),
@@ -85,7 +85,7 @@ class CalendarOverview extends StatelessWidget {
                   if (index > 0)
                     SizedBox(
                       height: hairline,
-                      child: const ColoredBox(color: PlannerColors.border),
+                      child: ColoredBox(color: context.tokens.border),
                     ),
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 12),

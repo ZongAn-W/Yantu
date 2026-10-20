@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:planner_ui_vendor/planner_ui_vendor.dart';
 
 import '../../../core/sync/sync_state.dart';
 import '../../../core/theme.dart';
@@ -13,6 +14,7 @@ import '../../planner/domain/capacity.dart' as capacity;
 import '../../planner/domain/planner_format.dart';
 import '../../planner/presentation/planner_dialogs.dart';
 import '../../shell/app_shell.dart';
+import '../application/theme_preference.dart';
 import 'capacity_overrides_dialog.dart';
 import 'delete_account_dialog.dart';
 
@@ -45,34 +47,28 @@ const _weekDays = [
 const _granularityOptions = [30, 60];
 
 /// 正文强调值：13.5 / 1.5。
-const _strongStyle = TextStyle(
+TextStyle _strongStyle(PlannerTokens tokens) => TextStyle(
   fontSize: 13.5,
   height: 1.5,
   fontWeight: FontWeight.w600,
-  color: PlannerColors.text,
+  color: tokens.text,
 );
 
 /// 设置行主标签：13.5 / 1.5。
-const _rowLabelStyle = TextStyle(
+TextStyle _rowLabelStyle(PlannerTokens tokens) => TextStyle(
   fontSize: 13.5,
   height: 1.5,
   fontWeight: FontWeight.w500,
-  color: PlannerColors.text,
+  color: tokens.text,
 );
 
-/// 设置行辅助说明 / 元信息：12 muted。
-const _helperStyle = TextStyle(
-  fontSize: 12,
-  height: 1.5,
-  color: PlannerColors.muted,
-);
+/// 设置行辅助说明：12.5 / 1.5（W6 中文说明下限）。
+TextStyle _helperStyle(PlannerTokens tokens) =>
+    TextStyle(fontSize: 12.5, height: 1.5, color: tokens.muted);
 
 /// 成段说明：13 / 1.6。
-const _bodyStyle = TextStyle(
-  fontSize: 13,
-  height: 1.6,
-  color: PlannerColors.muted,
-);
+TextStyle _bodyStyle(PlannerTokens tokens) =>
+    TextStyle(fontSize: 13, height: 1.6, color: tokens.muted);
 
 class _SettingsPageState extends ConsumerState<SettingsPage> {
   final _goalText = TextEditingController();
@@ -269,6 +265,8 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         const SizedBox(height: PlannerSpace.lg),
         _dangerPanel(snapshot),
         const SizedBox(height: PlannerSpace.lg),
+        _appearancePanel(),
+        const SizedBox(height: PlannerSpace.lg),
         if (snapshot.ready && !snapshot.blocked && data != null) ...[
           _goalPanel(),
           const SizedBox(height: PlannerSpace.lg),
@@ -290,6 +288,54 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     );
   }
 
+  // ------------------------------------------------------------------- 外观
+
+  /// Appearance is a device preference (Sembast), not planner data: it never
+  /// syncs to the server and can be changed before an account exists.
+  Widget _appearancePanel() {
+    final mode = ref.watch(plannerThemeModeProvider);
+    final tokens = context.tokens;
+    return PlannerPanel(
+      title: '外观',
+      subtitle: '跟随系统，或固定浅色 / 深色；选择只保存在本机。',
+      padding: const EdgeInsets.all(20),
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final compact = constraints.maxWidth < 360;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SizedBox(
+                width: compact ? constraints.maxWidth : 260,
+                child: PlannerSegmented<PlannerThemeMode>(
+                  key: const ValueKey('settings-theme-mode'),
+                  value: mode,
+                  items: [
+                    for (final option in PlannerThemeMode.values)
+                      (option, option.label),
+                  ],
+                  onChanged: (next) =>
+                      ref.read(plannerThemeModeProvider.notifier).setMode(next),
+                ),
+              ),
+              const SizedBox(height: PlannerSpace.sm),
+              Text(
+                mode == PlannerThemeMode.system
+                    ? '当前跟随系统外观；系统切换深色时界面会同步。'
+                    : '已固定为${mode.label}；系统外观变化不会影响界面。',
+                style: TextStyle(
+                  fontSize: 12.5,
+                  height: 1.5,
+                  color: tokens.muted,
+                ),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
+
   // ------------------------------------------------------------- 账号 / 危险区
 
   Widget _accountPanel() {
@@ -303,7 +349,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           if (user == null)
-            const Text('未登录', style: _helperStyle)
+            Text('未登录', style: _helperStyle(context.tokens))
           else
             Row(
               children: [
@@ -313,9 +359,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(user.username, style: _strongStyle),
+                      Text(user.username, style: _strongStyle(context.tokens)),
                       const SizedBox(height: 2),
-                      Text(user.email, style: _helperStyle),
+                      Text(user.email, style: _helperStyle(context.tokens)),
                     ],
                   ),
                 ),
@@ -340,7 +386,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             trailing: AsyncActionButton(
               key: const ValueKey('settings-sign-out'),
               label: '退出登录',
-              icon: Icons.logout,
+              icon: LucideIcons.logOut,
               filled: false,
               enabled: user != null && !auth.loading,
               onPressed: () =>
@@ -356,6 +402,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
   Widget _dangerPanel(PlannerSnapshot snapshot) {
     final auth = ref.watch(authControllerProvider);
     final user = auth.user;
+    final tokens = context.tokens;
     return Card(
       child: Padding(
         padding: const EdgeInsets.all(20),
@@ -364,27 +411,27 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           children: [
             Row(
               children: [
-                const Icon(
-                  Icons.warning_amber_rounded,
+                Icon(
+                  LucideIcons.triangleAlert,
                   size: 18,
-                  color: PlannerColors.danger,
+                  color: context.tokens.danger,
                 ),
                 const SizedBox(width: PlannerSpace.sm),
                 Text(
                   '危险区域',
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 15,
                     height: 22 / 15,
                     fontWeight: FontWeight.w600,
-                    color: PlannerColors.danger,
+                    color: context.tokens.danger,
                   ),
                 ),
               ],
             ),
             const SizedBox(height: PlannerSpace.sm),
-            const Text(
+            Text(
               '注销后将永久删除账号和学习数据，且无法恢复。如需保留记录，请先在数据管理中导出本地数据。',
-              style: _bodyStyle,
+              style: _bodyStyle(context.tokens),
             ),
             const SizedBox(height: PlannerSpace.md),
             Align(
@@ -392,9 +439,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               child: OutlinedButton.icon(
                 key: const ValueKey('settings-delete-account'),
                 style: OutlinedButton.styleFrom(
-                  foregroundColor: PlannerColors.danger,
+                  foregroundColor: tokens.danger,
                   side: BorderSide(
-                    color: PlannerColors.danger.withValues(alpha: 0.45),
+                    color: tokens.danger.withValues(alpha: 0.45),
                   ),
                 ),
                 onPressed: user == null || auth.loading || auth.deletingAccount
@@ -406,7 +453,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                             : () =>
                                   ref.read(plannerSessionProvider).exportJson(),
                       ),
-                icon: const Icon(Icons.person_remove_outlined, size: 16),
+                icon: const Icon(LucideIcons.userRoundX, size: 16),
                 label: const Text('注销账号'),
               ),
             ),
@@ -444,6 +491,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           const SizedBox(height: PlannerSpace.md),
           DropdownButtonFormField<GoalType>(
             initialValue: goalTypeValue,
+            dropdownColor: context.tokens.surface,
+            borderRadius: BorderRadius.circular(PlannerRadius.control),
+            iconEnabledColor: context.tokens.muted,
             decoration: const InputDecoration(labelText: '目标类型'),
             items: [
               for (final entry in goalTypeLabels.entries)
@@ -481,7 +531,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                         _targetDate.clear();
                         _targetConfirmed = false;
                       }),
-                icon: const Icon(Icons.clear, size: 16),
+                icon: const Icon(LucideIcons.x, size: 16),
                 label: const Text('清空日期'),
               ),
             ],
@@ -495,9 +545,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 '这个日期已经确认',
                 style: TextStyle(fontSize: 13.5, height: 1.5),
               ),
-              subtitle: const Text(
+              subtitle: Text(
                 '未确认时按“预计目标日期”展示，以正式通知为准。',
-                style: _helperStyle,
+                style: _helperStyle(context.tokens),
               ),
               onChanged: (value) =>
                   setState(() => _targetConfirmed = value ?? false),
@@ -536,9 +586,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             },
           ),
           const SizedBox(height: PlannerSpace.sm),
-          const Text(
+          Text(
             '目标日期是希望达成结果的日期，可以不设置；规划结束日期是本次排程的边界。',
-            style: _helperStyle,
+            style: _helperStyle(context.tokens),
           ),
           const _FormSectionDivider(label: '当前基础'),
           TextField(
@@ -577,7 +627,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             alignment: Alignment.centerRight,
             child: AsyncActionButton(
               label: '保存学习目标与规划',
-              icon: Icons.save_outlined,
+              icon: LucideIcons.save,
               onPressed: _saveProfile,
               onError: (error) => setState(
                 () => _profileError = error is StateError
@@ -632,6 +682,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           const _FormSectionDivider(label: '排程粒度与时间窗口'),
           DropdownButtonFormField<int>(
             initialValue: granularity,
+            dropdownColor: context.tokens.surface,
+            borderRadius: BorderRadius.circular(PlannerRadius.control),
+            iconEnabledColor: context.tokens.muted,
             decoration: const InputDecoration(labelText: '时间粒度（分钟）'),
             items: [
               for (final option in _granularityOptions)
@@ -649,7 +702,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               child: Text(
                 '当前计划使用 $_unsupportedGranularity 分钟时间粒度，不在可选范围（30 / 60）内；'
                 '已归一到最近的 $granularity 分钟显示，保存后按新粒度排程。',
-                style: _helperStyle.copyWith(color: PlannerColors.orange),
+                style: _helperStyle(
+                  context.tokens,
+                ).copyWith(color: context.tokens.warning),
               ),
             ),
           if (!net) ...[
@@ -681,9 +736,9 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             ],
           ),
           const SizedBox(height: PlannerSpace.sm),
-          const Text(
+          Text(
             '每天只安排事项和时长，不指定学习开始时间。可用学习时间按每周模板与日期覆盖计算。',
-            style: _helperStyle,
+            style: _helperStyle(context.tokens),
           ),
           const Divider(height: PlannerSpace.xl),
           Row(
@@ -705,13 +760,13 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             Text(
               assumptions,
               key: const ValueKey('settings-capacity-assumptions'),
-              style: _helperStyle,
+              style: _helperStyle(context.tokens),
             )
           else
-            const Text(
+            Text(
               '当前按默认每周模板逐日计算容量。',
               key: ValueKey('settings-capacity-assumptions'),
-              style: _helperStyle,
+              style: _helperStyle(context.tokens),
             ),
           const SizedBox(height: PlannerSpace.md),
           Align(
@@ -719,7 +774,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             child: OutlinedButton.icon(
               key: const ValueKey('settings-capacity-editor'),
               onPressed: () => CapacityOverridesDialog.show(context),
-              icon: const Icon(Icons.tune_outlined, size: 16),
+              icon: const Icon(LucideIcons.slidersHorizontal, size: 16),
               label: const Text('管理特定周与日期容量'),
             ),
           ),
@@ -742,7 +797,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           description: '把本机计划保存为 JSON 文件，用于备份或迁移。',
           trailing: AsyncActionButton(
             label: '导出本地数据',
-            icon: Icons.download_outlined,
+            icon: LucideIcons.download,
             filled: false,
             enabled: snapshot.data != null,
             onPressed: () => _action(
@@ -757,7 +812,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           description: '用备份文件替换本机计划，当前有效数据会另存为最近备份。',
           trailing: AsyncActionButton(
             label: '从 JSON 恢复',
-            icon: Icons.upload_outlined,
+            icon: LucideIcons.upload,
             filled: false,
             enabled: !snapshot.busy,
             onPressed: () async {
@@ -781,7 +836,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           description: '回退到上一次自动备份的本机计划，当前记录会另存保留。',
           trailing: AsyncActionButton(
             label: '恢复最近备份',
-            icon: Icons.restore,
+            icon: LucideIcons.history,
             filled: false,
             enabled: !snapshot.busy,
             onPressed: () async {
@@ -806,7 +861,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             description: '本机数据读取失败，恢复后重新读取。',
             trailing: AsyncActionButton(
               label: '重新读取数据',
-              icon: Icons.refresh,
+              icon: LucideIcons.refreshCw,
               filled: false,
               onPressed: () => _action(
                 '已重新读取本机数据。',
@@ -832,7 +887,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           PlannerStat(
             label: '同步状态',
             value: syncLabels[snapshot.status] ?? '等待同步',
-            tone: syncTone(snapshot.status),
+            tone: syncTone(snapshot.status, context.tokens),
           ),
           PlannerStat(label: '云端版本', value: '${snapshot.revision}'),
           PlannerStat(label: '待同步修改', value: snapshot.pending ? '有' : '无'),
@@ -856,7 +911,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
             children: [
               AsyncActionButton(
                 label: '重试同步',
-                icon: Icons.sync,
+                icon: LucideIcons.refreshCw,
                 filled: false,
                 enabled: !snapshot.busy && !snapshot.blocked,
                 onPressed: () => _action(
@@ -866,7 +921,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               ),
               AsyncActionButton(
                 label: '重新读取学习目标',
-                icon: Icons.refresh,
+                icon: LucideIcons.refreshCw,
                 filled: false,
                 onPressed: () => _action(
                   '已重新读取学习目标。',
@@ -877,14 +932,14 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
           ),
           if (snapshot.conflicts.isNotEmpty) ...[
             const _FormSectionDivider(label: '同步冲突'),
-            const Text(
+            Text(
               '本机修改已保留。请选择同时修改内容的保留方式；其他独立修改会一并合并。',
-              style: _helperStyle,
+              style: _helperStyle(context.tokens),
             ),
             for (final conflict in snapshot.conflicts)
               Padding(
                 padding: const EdgeInsets.only(top: PlannerSpace.xs),
-                child: Text('• $conflict', style: _helperStyle),
+                child: Text('• $conflict', style: _helperStyle(context.tokens)),
               ),
             const SizedBox(height: PlannerSpace.md),
             Wrap(
@@ -893,7 +948,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
               children: [
                 AsyncActionButton(
                   label: '冲突项保留本机',
-                  icon: Icons.phone_android_outlined,
+                  icon: LucideIcons.smartphone,
                   enabled: !snapshot.busy,
                   onPressed: () => _action(
                     '已按本机版本合并并重新同步。',
@@ -904,7 +959,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
                 ),
                 AsyncActionButton(
                   label: '冲突项使用云端',
-                  icon: Icons.cloud_outlined,
+                  icon: LucideIcons.cloud,
                   filled: false,
                   enabled: !snapshot.busy,
                   onPressed: () => _action(
@@ -933,7 +988,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
         if (!snapshot.ready) ...[
           const LinearProgressIndicator(semanticsLabel: '正在读取本机计划'),
           const SizedBox(height: PlannerSpace.md),
-          const Text('正在读取本机计划…', style: _bodyStyle),
+          Text('正在读取本机计划…', style: _bodyStyle(context.tokens)),
         ] else
           PlannerNotice(
             snapshot.message.isNotEmpty
@@ -960,9 +1015,9 @@ class _SyncBadge extends StatelessWidget {
   Widget build(BuildContext context) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
     decoration: BoxDecoration(
-      color: PlannerColors.surface,
+      color: context.tokens.surface,
       border: Border.all(
-        color: PlannerColors.border,
+        color: context.tokens.border,
         width: plannerHairline(context),
       ),
       borderRadius: BorderRadius.circular(PlannerRadius.control),
@@ -970,14 +1025,14 @@ class _SyncBadge extends StatelessWidget {
     child: Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        StatusDot(color: syncTone(status), size: 6),
+        StatusDot(color: syncTone(status, context.tokens), size: 6),
         const SizedBox(width: 6),
         Text(
           syncLabels[status] ?? '等待同步',
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 12.5,
             height: 1.2,
-            color: PlannerColors.muted,
+            color: context.tokens.muted,
           ),
         ),
       ],
@@ -995,25 +1050,26 @@ class _AccountAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final trimmed = name.trim();
     final initial = trimmed.isEmpty ? '?' : trimmed.substring(0, 1);
+    final tokens = context.tokens;
     return Container(
       width: 38,
       height: 38,
       alignment: Alignment.center,
       decoration: BoxDecoration(
-        color: PlannerColors.blueSoft,
+        color: tokens.accentSoft,
         shape: BoxShape.circle,
         border: Border.all(
-          color: PlannerColors.border,
+          color: tokens.border,
           width: plannerHairline(context),
         ),
       ),
       child: Text(
         initial.toUpperCase(),
-        style: const TextStyle(
+        style: TextStyle(
           fontSize: 15,
           height: 1.2,
           fontWeight: FontWeight.w600,
-          color: PlannerColors.blue,
+          color: tokens.accent,
         ),
       ),
     );
@@ -1044,10 +1100,10 @@ class _SettingRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                Text(title, style: _rowLabelStyle),
+                Text(title, style: _rowLabelStyle(context.tokens)),
                 if (description != null) ...[
                   const SizedBox(height: 2),
-                  Text(description!, style: _helperStyle),
+                  Text(description!, style: _helperStyle(context.tokens)),
                 ],
               ],
             ),
@@ -1068,7 +1124,7 @@ class _PanelDivider extends StatelessWidget {
   Widget build(BuildContext context) => Divider(
     height: 1,
     thickness: plannerHairline(context),
-    color: PlannerColors.border,
+    color: context.tokens.border,
   );
 }
 
@@ -1088,11 +1144,11 @@ class _FormSectionDivider extends StatelessWidget {
       children: [
         Text(
           label,
-          style: const TextStyle(
+          style: TextStyle(
             fontSize: 12.5,
             height: 1.4,
             fontWeight: FontWeight.w600,
-            color: PlannerColors.subtle,
+            color: context.tokens.subtle,
             letterSpacing: 0.3,
           ),
         ),

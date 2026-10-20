@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../core/theme.dart';
@@ -103,108 +104,124 @@ class _DeleteAccountDialogState extends ConsumerState<DeleteAccountDialog> {
         : 460.0;
     return PopScope(
       canPop: !locked,
-      child: AlertDialog(
-        contentPadding: EdgeInsets.zero,
-        titlePadding: EdgeInsets.zero,
-        actionsPadding: EdgeInsets.zero,
-        insetPadding: const EdgeInsets.all(PlannerSpace.xl),
-        content: _DialogFrame(
-          width: width,
-          title: '永久注销账号？',
-          subtitle: '永久删除账号与数据前，请先确认已导出需要保留的内容。',
-          body: Form(
-            key: _formKey,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text(
-                  '注销会永久删除云端账号、学习目标、标签与事项、计划、学习记录和 AI 访谈数据，'
-                  '并清理本机此账号的数据及恢复备份。历史损坏文件若无法自动清理，会提示你手动处理。',
-                  style: _bodyStyle,
-                ),
-                const SizedBox(height: PlannerSpace.md),
-                const Text(
-                  '此操作无法撤销。如需保留记录，请先导出本地数据。其他设备已下载的数据需在对应设备上清理。',
-                  style: _bodyStyle,
-                ),
-                if (widget.onExport != null) ...[
-                  const SizedBox(height: PlannerSpace.sm),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      onPressed: locked ? null : _export,
-                      icon: const Icon(Icons.download_outlined, size: 17),
-                      label: Text(_exporting ? '正在导出…' : '导出本地数据'),
-                    ),
+      // barrierDismissible stays false (outside taps never discard the form),
+      // but Esc is an explicit keyboard cancel equivalent to the 取消 button.
+      child: Focus(
+        autofocus: true,
+        // Keep the keyboard-cancel surface out of Tab traversal: Tab must move
+        // between the real controls only.
+        skipTraversal: true,
+        onKeyEvent: (node, event) {
+          if (event is KeyDownEvent &&
+              event.logicalKey == LogicalKeyboardKey.escape) {
+            if (!locked) Navigator.of(context).pop(false);
+            return KeyEventResult.handled;
+          }
+          return KeyEventResult.ignored;
+        },
+        child: AlertDialog(
+          contentPadding: EdgeInsets.zero,
+          titlePadding: EdgeInsets.zero,
+          actionsPadding: EdgeInsets.zero,
+          insetPadding: const EdgeInsets.all(PlannerSpace.xl),
+          content: _DialogFrame(
+            width: width,
+            title: '永久注销账号？',
+            subtitle: '永久删除账号与数据前，请先确认已导出需要保留的内容。',
+            body: Form(
+              key: _formKey,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(
+                    '注销会永久删除云端账号、学习目标、标签与事项、计划、学习记录和 AI 访谈数据，'
+                    '并清理本机此账号的数据及恢复备份。历史损坏文件若无法自动清理，会提示你手动处理。',
+                    style: _bodyStyle(context),
                   ),
-                ],
-                if (_exportNotice != null) ...[
-                  const SizedBox(height: PlannerSpace.sm),
-                  PlannerNotice(
-                    _exportNotice!,
-                    tone: PlannerNoticeTone.success,
-                  ),
-                ],
-                const SizedBox(height: PlannerSpace.lg),
-                TextFormField(
-                  key: const ValueKey('delete-account-password'),
-                  controller: _password,
-                  obscureText: true,
-                  autocorrect: false,
-                  enableSuggestions: false,
-                  autofillHints: const [AutofillHints.password],
-                  enabled: !locked,
-                  decoration: const InputDecoration(labelText: '当前密码'),
-                  validator: (value) =>
-                      value == null || value.isEmpty ? '请输入当前密码以确认注销' : null,
-                ),
-                if (auth.deletionUncertain) ...[
                   const SizedBox(height: PlannerSpace.md),
-                  const PlannerNotice(
-                    '尚未确认服务器是否已完成注销。请保持联网，用相同密码重试以确认结果。',
-                    tone: PlannerNoticeTone.warning,
+                  Text(
+                    '此操作无法撤销。如需保留记录，请先导出本地数据。其他设备已下载的数据需在对应设备上清理。',
+                    style: _bodyStyle(context),
                   ),
-                ],
-                if (_error != null) ...[
-                  const SizedBox(height: PlannerSpace.md),
-                  Semantics(
-                    liveRegion: true,
-                    child: PlannerNotice(
-                      _error!,
-                      tone: PlannerNoticeTone.error,
+                  if (widget.onExport != null) ...[
+                    const SizedBox(height: PlannerSpace.sm),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: locked ? null : _export,
+                        icon: const Icon(Icons.download_outlined, size: 17),
+                        label: Text(_exporting ? '正在导出…' : '导出本地数据'),
+                      ),
                     ),
-                  ),
-                ],
-                if (busy) ...[
+                  ],
+                  if (_exportNotice != null) ...[
+                    const SizedBox(height: PlannerSpace.sm),
+                    PlannerNotice(
+                      _exportNotice!,
+                      tone: PlannerNoticeTone.success,
+                    ),
+                  ],
                   const SizedBox(height: PlannerSpace.lg),
-                  const LinearProgressIndicator(semanticsLabel: '正在注销账号，请稍候'),
-                  const SizedBox(height: PlannerSpace.sm),
-                  const Text('正在删除账号和数据，请稍候…', style: _bodyStyle),
+                  TextFormField(
+                    key: const ValueKey('delete-account-password'),
+                    controller: _password,
+                    obscureText: true,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    autofillHints: const [AutofillHints.password],
+                    enabled: !locked,
+                    decoration: const InputDecoration(labelText: '当前密码'),
+                    validator: (value) =>
+                        value == null || value.isEmpty ? '请输入当前密码以确认注销' : null,
+                  ),
+                  if (auth.deletionUncertain) ...[
+                    const SizedBox(height: PlannerSpace.md),
+                    const PlannerNotice(
+                      '尚未确认服务器是否已完成注销。请保持联网，用相同密码重试以确认结果。',
+                      tone: PlannerNoticeTone.warning,
+                    ),
+                  ],
+                  if (_error != null) ...[
+                    const SizedBox(height: PlannerSpace.md),
+                    Semantics(
+                      liveRegion: true,
+                      child: PlannerNotice(
+                        _error!,
+                        tone: PlannerNoticeTone.error,
+                      ),
+                    ),
+                  ],
+                  if (busy) ...[
+                    const SizedBox(height: PlannerSpace.lg),
+                    const LinearProgressIndicator(semanticsLabel: '正在注销账号，请稍候'),
+                    const SizedBox(height: PlannerSpace.sm),
+                    Text('正在删除账号和数据，请稍候…', style: _bodyStyle(context)),
+                  ],
                 ],
+              ),
+            ),
+            actions: Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                TextButton(
+                  onPressed: locked
+                      ? null
+                      : () => Navigator.of(context).pop(false),
+                  child: const Text('取消'),
+                ),
+                const SizedBox(width: PlannerSpace.sm),
+                FilledButton(
+                  key: const ValueKey('delete-account-confirm'),
+                  style: FilledButton.styleFrom(
+                    backgroundColor: context.tokens.danger,
+                    foregroundColor: context.tokens.inverseOn,
+                  ),
+                  onPressed: locked ? null : _delete,
+                  child: Text(busy ? '正在注销…' : '永久注销'),
+                ),
               ],
             ),
-          ),
-          actions: Row(
-            mainAxisAlignment: MainAxisAlignment.end,
-            children: [
-              TextButton(
-                onPressed: locked
-                    ? null
-                    : () => Navigator.of(context).pop(false),
-                child: const Text('取消'),
-              ),
-              const SizedBox(width: PlannerSpace.sm),
-              FilledButton(
-                key: const ValueKey('delete-account-confirm'),
-                style: FilledButton.styleFrom(
-                  backgroundColor: PlannerColors.danger,
-                  foregroundColor: Colors.white,
-                ),
-                onPressed: locked ? null : _delete,
-                child: Text(busy ? '正在注销…' : '永久注销'),
-              ),
-            ],
           ),
         ),
       ),
@@ -213,11 +230,8 @@ class _DeleteAccountDialogState extends ConsumerState<DeleteAccountDialog> {
 }
 
 /// 正文说明：13 / 1.6。
-const _bodyStyle = TextStyle(
-  fontSize: 13,
-  height: 1.6,
-  color: PlannerColors.muted,
-);
+TextStyle _bodyStyle(BuildContext context) =>
+    TextStyle(fontSize: 13, height: 1.6, color: context.tokens.muted);
 
 /// 统一对话框外壳：20–24 内边距、表头 / 表尾发丝分隔线、按钮右对齐。
 class _DialogFrame extends StatelessWidget {
@@ -261,17 +275,17 @@ class _DialogFrame extends StatelessWidget {
                   const SizedBox(height: 3),
                   Text(
                     subtitle!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12.5,
                       height: 1.5,
-                      color: PlannerColors.muted,
+                      color: context.tokens.muted,
                     ),
                   ),
                 ],
               ],
             ),
           ),
-          Container(height: hairline, color: PlannerColors.border),
+          Container(height: hairline, color: context.tokens.border),
           Flexible(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(
@@ -283,7 +297,7 @@ class _DialogFrame extends StatelessWidget {
               child: body,
             ),
           ),
-          Container(height: hairline, color: PlannerColors.border),
+          Container(height: hairline, color: context.tokens.border),
           Padding(
             padding: const EdgeInsets.fromLTRB(
               PlannerSpace.xl,

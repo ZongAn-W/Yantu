@@ -34,9 +34,9 @@ class PlanningFeedbackView extends ConsumerWidget {
             '${feedback['content_completed'] == true ? '内容已完成' : '内容尚未完成'}',
           ),
           if (!pace.sufficient)
-            const Text(
+            Text(
               '速度仍为估算，至少需要 3 段有效计时和内容进度。',
-              style: TextStyle(color: PlannerColors.muted, fontSize: 12),
+              style: TextStyle(color: context.tokens.muted, fontSize: 12.5),
             ),
         ],
         if (pace.deviates ||
@@ -128,6 +128,11 @@ class PlanningFeedbackView extends ConsumerWidget {
                     ),
                     DropdownButtonFormField<String>(
                       initialValue: difficulty,
+                      dropdownColor: context.tokens.surface,
+                      borderRadius: BorderRadius.circular(
+                        PlannerRadius.control,
+                      ),
+                      iconEnabledColor: context.tokens.muted,
                       decoration: const InputDecoration(labelText: '当前难度'),
                       items: const [
                         DropdownMenuItem(value: 'easy', child: Text('进展顺利')),

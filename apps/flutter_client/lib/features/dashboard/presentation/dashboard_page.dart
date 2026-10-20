@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:planner_ui_vendor/planner_ui_vendor.dart';
 
+import '../../../core/motion.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets.dart';
 import '../../../shared/models/planner_models.dart';
@@ -44,7 +46,10 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
       Scrollable.ensureVisible(
         target,
         alignment: 0,
-        duration: const Duration(milliseconds: 250),
+        duration: PlannerMotion.duration(
+          context,
+          preferred: PlannerDurations.slow,
+        ),
       );
     });
   }
@@ -115,7 +120,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       if (emptyPlan) ...[
                         PlannerEmpty(
                           key: const Key('dashboard-empty-plan'),
-                          icon: Icons.timer_outlined,
+                          icon: LucideIcons.timer,
                           message: '还没有长期计划，也没关系',
                           hint:
                               '可以先在下方「全部事项」新建事项直接学习；'
@@ -123,10 +128,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                           action: FilledButton.icon(
                             key: const Key('dashboard-ai-planning'),
                             onPressed: () => context.go('/interview'),
-                            icon: const Icon(
-                              Icons.auto_awesome_outlined,
-                              size: 17,
-                            ),
+                            icon: const Icon(LucideIcons.sparkles, size: 17),
                             label: const Text('AI 长期规划'),
                           ),
                         ),
@@ -148,7 +150,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                                 ? () =>
                                       ContinueCycleDialog.showNextCycle(context)
                                 : null,
-                            icon: const Icon(Icons.event_repeat, size: 16),
+                            icon: const Icon(LucideIcons.repeat, size: 16),
                             label: const Text('继续安排下一周期'),
                           ),
                         ),
@@ -164,7 +166,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                       ],
                       if (!emptyPlan && groups.isEmpty && extraTasks.isEmpty)
                         const PlannerEmpty(
-                          icon: Icons.list_alt_outlined,
+                          icon: LucideIcons.listChecks,
                           message: '今天没有安排学习内容',
                           hint: '可在下方「全部事项」中选择事项加学或新建事项。',
                         ),
@@ -190,12 +192,15 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
                         ),
                         const SizedBox(height: PlannerSpace.sm),
                         for (final task in extraTasks)
-                          _ExtraTaskRow(
-                            key: ValueKey('extra-task-${task.id}:$date'),
-                            task: task,
-                            data: data,
-                            date: date,
-                            editable: snapshot.editable,
+                          // W7: per-card repaint isolation.
+                          RepaintBoundary(
+                            child: _ExtraTaskRow(
+                              key: ValueKey('extra-task-${task.id}:$date'),
+                              task: task,
+                              data: data,
+                              date: date,
+                              editable: snapshot.editable,
+                            ),
                           ),
                       ],
                       const SizedBox(height: PlannerSpace.section),
@@ -237,6 +242,7 @@ class _TodayHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    final tokens = context.tokens;
     return Wrap(
       alignment: WrapAlignment.spaceBetween,
       crossAxisAlignment: WrapCrossAlignment.end,
@@ -250,7 +256,7 @@ class _TodayHeader extends StatelessWidget {
             Text(
               '今日学习',
               style: text.labelMedium?.copyWith(
-                color: PlannerColors.subtle,
+                color: tokens.subtle,
                 letterSpacing: 0.6,
               ),
             ),
@@ -265,7 +271,7 @@ class _TodayHeader extends StatelessWidget {
             Text(
               '今日原定 ${duration(planned)} · 已学 ${duration(actual)}',
               style: text.bodyMedium?.copyWith(
-                color: PlannerColors.muted,
+                color: tokens.muted,
                 fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
@@ -275,7 +281,7 @@ class _TodayHeader extends StatelessWidget {
           OutlinedButton.icon(
             key: const Key('dashboard-complete-cycle'),
             onPressed: onComplete,
-            icon: const Icon(Icons.event_note_outlined, size: 16),
+            icon: const Icon(LucideIcons.calendarClock, size: 16),
             label: const Text('补全本周期安排'),
           ),
       ],
@@ -290,7 +296,7 @@ class _PlannedHint extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
-      const StatusDot(color: PlannerColors.blue, size: 6),
+      StatusDot(color: context.tokens.accent, size: 6),
       const SizedBox(width: 6),
       Text(
         '开始计时后自动累计实际用时',
@@ -307,7 +313,7 @@ class _ExtraStudyHint extends StatelessWidget {
   Widget build(BuildContext context) => Row(
     mainAxisSize: MainAxisSize.min,
     children: [
-      const StatusDot(color: PlannerColors.orange, size: 6),
+      StatusDot(color: context.tokens.warning, size: 6),
       const SizedBox(width: 6),
       Text(
         '计划外或复习计时',
@@ -335,12 +341,15 @@ class _PlannedStudyList extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         for (final group in groups)
-          _TaskDayRow(
-            key: ValueKey('${group.first.taskId}:$date'),
-            blocks: group,
-            date: date,
-            editable: editable,
-            onMove: () => MoveTaskDayDialog.show(context, group),
+          // W7: per-card repaint isolation.
+          RepaintBoundary(
+            child: _TaskDayRow(
+              key: ValueKey('${group.first.taskId}:$date'),
+              blocks: group,
+              date: date,
+              editable: editable,
+              onMove: () => MoveTaskDayDialog.show(context, group),
+            ),
           ),
       ],
     );
@@ -373,6 +382,7 @@ class _TaskDayRowState extends ConsumerState<_TaskDayRow> {
   Widget build(BuildContext context) {
     final blocks = widget.blocks;
     final editable = widget.editable;
+    final tokens = context.tokens;
     final data = ref.watch(plannerSessionProvider).data;
     final date = widget.date;
     final task = data.tasks
@@ -386,7 +396,7 @@ class _TaskDayRowState extends ConsumerState<_TaskDayRow> {
     final actual = day_ops.taskDayMinutes(data, task.id, date);
     final scheduled = day_ops.scheduledMinutesForTaskDay(data, task.id, date);
     final extra = day_ops.extraMinutesForTaskDay(data, task.id, date);
-    final color = _taskColor(task.id);
+    final color = _taskColor(task.id, tokens);
     final advice = blocks
         .where((block) => (block.adviceText ?? '').isNotEmpty)
         .map((block) => block.adviceText!)
@@ -410,8 +420,8 @@ class _TaskDayRowState extends ConsumerState<_TaskDayRow> {
           PlannerSpace.md,
         ),
         decoration: BoxDecoration(
-          color: PlannerColors.surface,
-          border: Border.all(color: PlannerColors.border),
+          color: tokens.surface,
+          border: Border.all(color: tokens.border),
           borderRadius: PlannerRadius.cardRadius,
         ),
         child: Column(
@@ -445,31 +455,31 @@ class _TaskDayRowState extends ConsumerState<_TaskDayRow> {
                     runSpacing: 4,
                     children: [
                       if (task.isFixed)
-                        const Tooltip(
+                        Tooltip(
                           message: '固定事项',
                           child: Icon(
-                            Icons.lock_outline,
+                            LucideIcons.lock,
                             size: 13,
-                            color: PlannerColors.subtle,
+                            color: tokens.subtle,
                           ),
                         ),
-                      for (final tag in _taskTag(data, task)) tag,
+                      for (final tag in _taskTag(data, task, tokens)) tag,
                       Text(
                         scheduled > 0
                             ? '原定完成 ${duration(scheduled)} / ${duration(planned)}'
                             : '原定 ${duration(planned)}',
-                        style: const TextStyle(
-                          color: PlannerColors.muted,
+                        style: TextStyle(
+                          color: tokens.muted,
                           fontSize: 12,
                           height: 1.4,
-                          fontFeatures: [FontFeature.tabularFigures()],
+                          fontFeatures: const [FontFeature.tabularFigures()],
                         ),
                       ),
                       if (extra > 0)
                         PlannerTag(
                           key: Key('task-extra-chip-${task.id}'),
                           label: '+加学 ${duration(extra)}',
-                          color: PlannerColors.orange,
+                          color: tokens.warning,
                           dense: true,
                         ),
                     ],
@@ -489,13 +499,15 @@ class _TaskDayRowState extends ConsumerState<_TaskDayRow> {
                   ? PlannerIconAction(
                       onPressed: widget.onMove,
                       tooltip: '调整日期',
-                      icon: Icons.event_outlined,
+                      icon: LucideIcons.calendar,
                       iconSize: 17,
                     )
                   : null,
               detailsAction: PlannerIconAction(
                 tooltip: _detailsExpanded ? '收起学习详情' : '展开学习详情',
-                icon: _detailsExpanded ? Icons.expand_less : Icons.expand_more,
+                icon: _detailsExpanded
+                    ? LucideIcons.chevronUp
+                    : LucideIcons.chevronDown,
                 iconSize: 17,
                 onPressed: () =>
                     setState(() => _detailsExpanded = !_detailsExpanded),
@@ -514,12 +526,12 @@ class _TaskDayRowState extends ConsumerState<_TaskDayRow> {
                       child: Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Padding(
-                            padding: EdgeInsets.only(top: 3),
+                          Padding(
+                            padding: const EdgeInsets.only(top: 3),
                             child: Icon(
-                              Icons.auto_awesome,
+                              LucideIcons.sparkles,
                               size: 13,
-                              color: PlannerColors.blue,
+                              color: tokens.accent,
                             ),
                           ),
                           const SizedBox(width: 6),
@@ -538,8 +550,8 @@ class _TaskDayRowState extends ConsumerState<_TaskDayRow> {
                   if ((task.description ?? '').isNotEmpty)
                     Text(
                       task.description!,
-                      style: const TextStyle(
-                        color: PlannerColors.muted,
+                      style: TextStyle(
+                        color: tokens.muted,
                         fontSize: 12.5,
                         height: 1.55,
                       ),
@@ -574,7 +586,7 @@ class _TaskDayRowState extends ConsumerState<_TaskDayRow> {
                                 }
                               }
                             : null,
-                        icon: const Icon(Icons.replay, size: 16),
+                        icon: const Icon(LucideIcons.rotateCcw, size: 16),
                         label: const Text('复习计时（不重新打开事项）'),
                       ),
                     ),
@@ -582,11 +594,11 @@ class _TaskDayRowState extends ConsumerState<_TaskDayRow> {
                     padding: const EdgeInsets.only(top: 6),
                     child: Text(
                       '${task.deadlineKind == ItemDateKind.planEnd ? '本期安排边界' : '事项截止'} ${task.deadline}',
-                      style: const TextStyle(
-                        color: PlannerColors.subtle,
+                      style: TextStyle(
+                        color: tokens.subtle,
                         fontSize: 11.5,
                         height: 1.4,
-                        fontFeatures: [FontFeature.tabularFigures()],
+                        fontFeatures: const [FontFeature.tabularFigures()],
                       ),
                     ),
                   ),
@@ -618,7 +630,8 @@ class _ExtraTaskRow extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final color = _taskColor(task.id);
+    final tokens = context.tokens;
+    final color = _taskColor(task.id, tokens);
     final extra = day_ops.extraMinutesForTaskDay(data, task.id, date);
     return Padding(
       padding: const EdgeInsets.only(bottom: PlannerSpace.md),
@@ -630,8 +643,8 @@ class _ExtraTaskRow extends ConsumerWidget {
           PlannerSpace.md,
         ),
         decoration: BoxDecoration(
-          color: PlannerColors.surface,
-          border: Border.all(color: PlannerColors.border),
+          color: tokens.surface,
+          border: Border.all(color: tokens.border),
           borderRadius: PlannerRadius.cardRadius,
         ),
         child: TaskStudyTimer(
@@ -652,15 +665,15 @@ class _ExtraTaskRow extends ConsumerWidget {
                 runSpacing: 4,
                 crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
-                  for (final tag in _taskTag(data, task)) tag,
+                  for (final tag in _taskTag(data, task, tokens)) tag,
                   Text(
                     '今日加学 ${duration(extra)}',
                     key: Key('extra-minutes-${task.id}'),
-                    style: const TextStyle(
-                      color: PlannerColors.orange,
+                    style: TextStyle(
+                      color: tokens.warning,
                       fontSize: 12,
                       height: 1.4,
-                      fontFeatures: [FontFeature.tabularFigures()],
+                      fontFeatures: const [FontFeature.tabularFigures()],
                     ),
                   ),
                 ],
@@ -676,7 +689,7 @@ class _ExtraTaskRow extends ConsumerWidget {
           canStart: editable && task.status != TaskStatus.archived,
           secondaryAction: PlannerIconAction(
             tooltip: '记录内容进度',
-            icon: Icons.rate_review_outlined,
+            icon: LucideIcons.messageSquare,
             iconSize: 17,
             onPressed: editable
                 ? () => ContentFeedbackDialog.show(context, task.id)
@@ -688,33 +701,35 @@ class _ExtraTaskRow extends ConsumerWidget {
   }
 }
 
-List<Widget> _taskTag(PlannerData data, Task task) {
+List<Widget> _taskTag(PlannerData data, Task task, PlannerTokens tokens) {
   final tagsById = {for (final tag in data.tags) tag.id: tag};
   return [
     for (final id in task.tagIds)
       if (tagsById[id] case final tag?)
-        PlannerTag(label: tag.name, color: _tagColor(tag.color), dense: true),
+        PlannerTag(
+          label: tag.name,
+          color: _tagColor(tag.color, tokens),
+          dense: true,
+        ),
   ];
 }
 
-Color _tagColor(String? hex) {
-  if (hex == null || hex.length < 7) return PlannerColors.muted;
+/// Explicit tag colours keep their hue; dark mode lifts them through dataTone
+/// so a user palette stays readable on the graphite surface.
+Color _tagColor(String? hex, PlannerTokens tokens) {
+  if (hex == null || hex.length < 7) return tokens.muted;
   final value = int.tryParse(hex.substring(1), radix: 16);
-  return value == null ? PlannerColors.muted : Color(0xff000000 | value);
+  if (value == null) return tokens.muted;
+  return tokens.dataTone(Color(0xff000000 | value));
 }
 
-Color _taskColor(String id) {
+/// Stable per-task accent for the read-only clock dent: the fallback palette is
+/// the theme's tag palette, so light values stay byte-identical.
+Color _taskColor(String id, PlannerTokens tokens) {
   var hash = 0;
   for (final code in id.codeUnits) {
     hash = (hash * 31 + code) & 0x7fffffff;
   }
-  const palette = [
-    Color(0xff537c87),
-    Color(0xff7d629f),
-    Color(0xffa06145),
-    Color(0xff537e52),
-    Color(0xff985c78),
-    Color(0xff66739b),
-  ];
+  final palette = tokens.tagFallbackColors;
   return palette[hash % palette.length];
 }

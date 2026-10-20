@@ -227,9 +227,6 @@ class _CapacityOverridesDialogState
     final width = _dialogWidth(context, 640);
     return AlertDialog(
       contentPadding: EdgeInsets.zero,
-      titlePadding: EdgeInsets.zero,
-      actionsPadding: EdgeInsets.zero,
-      insetPadding: const EdgeInsets.all(PlannerSpace.xl),
       content: _DialogFrame(
         width: width,
         title: '容量假设与例外',
@@ -282,13 +279,13 @@ class _CapacityOverridesDialogState
           ],
           onChanged: (value) => setState(() => _basis = value),
         ),
-        const Padding(
-          padding: EdgeInsets.only(top: PlannerSpace.sm),
+        Padding(
+          padding: const EdgeInsets.only(top: PlannerSpace.sm),
           child: Text(
             '净口径：你填写的就是真正用于学习的净时间，程序不再机械扣除机动。'
             '旧版总预算：每日安排前先扣除机动时间。切换口径会改变容量；'
             '保存后如需重排未来安排，请到调整页使用一键调整后续计划。',
-            style: _dialogBodyStyle,
+            style: _dialogBodyStyle(context),
           ),
         ),
         const Divider(height: PlannerSpace.xl),
@@ -349,12 +346,12 @@ class _CapacityOverridesDialogState
         ] else
           Text(
             '未设置周基线：按现有每周模板 ${_templateSummary(data.profile)} 逐日计算。',
-            style: _dialogBodyStyle,
+            style: _dialogBodyStyle(context),
           ),
         if (info.isNotEmpty)
           Padding(
             padding: const EdgeInsets.only(top: 6),
-            child: Text(info, style: _dialogHelperStyle),
+            child: Text(info, style: _dialogHelperStyle(context)),
           ),
         const Divider(height: PlannerSpace.xl),
         Row(
@@ -368,7 +365,7 @@ class _CapacityOverridesDialogState
           ],
         ),
         if (_weeks.isEmpty)
-          const Text('暂无特定周覆盖：所有周使用默认周容量。', style: _dialogHelperStyle),
+          Text('暂无特定周覆盖：所有周使用默认周容量。', style: _dialogHelperStyle(context)),
         for (final entry
             in (_weeks.entries.toList()
               ..sort((a, b) => a.key.compareTo(b.key))))
@@ -384,7 +381,8 @@ class _CapacityOverridesDialogState
             ),
           ],
         ),
-        if (_dates.isEmpty) const Text('暂无特定日期覆盖。', style: _dialogHelperStyle),
+        if (_dates.isEmpty)
+          Text('暂无特定日期覆盖。', style: _dialogHelperStyle(context)),
         for (final entry
             in (_dates.entries.toList()
               ..sort((a, b) => a.key.compareTo(b.key))))
@@ -434,7 +432,9 @@ class _CapacityOverridesDialogState
             padding: const EdgeInsets.only(top: 4),
             child: Text(
               error,
-              style: _dialogHelperStyle.copyWith(color: PlannerColors.orange),
+              style: _dialogHelperStyle(
+                context,
+              ).copyWith(color: context.tokens.warning),
             ),
           ),
         if (_saveError != null) ...[
@@ -534,9 +534,6 @@ class _CapacityOverridesDialogState
       builder: (context) => StatefulBuilder(
         builder: (context, setInner) => AlertDialog(
           contentPadding: EdgeInsets.zero,
-          titlePadding: EdgeInsets.zero,
-          actionsPadding: EdgeInsets.zero,
-          insetPadding: const EdgeInsets.all(PlannerSpace.xl),
           content: _DialogFrame(
             width: _dialogWidth(context, 520),
             title: '特定周容量',
@@ -565,7 +562,7 @@ class _CapacityOverridesDialogState
                 Text(
                   '也可以逐日给出明确值（留空表示该天跟随模板）；'
                   '同时设置周总量时，会先扣除逐日明确值再按模板比例分配剩余。',
-                  style: _dialogHelperStyle,
+                  style: _dialogHelperStyle(context),
                 ),
                 const SizedBox(height: 8),
                 Wrap(
@@ -688,9 +685,6 @@ class _CapacityOverridesDialogState
       builder: (context) => StatefulBuilder(
         builder: (context, setInner) => AlertDialog(
           contentPadding: EdgeInsets.zero,
-          titlePadding: EdgeInsets.zero,
-          actionsPadding: EdgeInsets.zero,
-          insetPadding: const EdgeInsets.all(PlannerSpace.xl),
           content: _DialogFrame(
             width: _dialogWidth(context, 420),
             title: '特定日期容量',
@@ -715,9 +709,9 @@ class _CapacityOverridesDialogState
                   ),
                 ),
                 const SizedBox(height: PlannerSpace.md),
-                const Text(
+                Text(
                   '清空或删除该日期覆盖会恢复上层规则（本周/默认），不等于设为 0。',
-                  style: _dialogHelperStyle,
+                  style: _dialogHelperStyle(context),
                 ),
               ],
             ),
@@ -761,9 +755,6 @@ class _CapacityOverridesDialogState
       builder: (context) => StatefulBuilder(
         builder: (context, setInner) => AlertDialog(
           contentPadding: EdgeInsets.zero,
-          titlePadding: EdgeInsets.zero,
-          actionsPadding: EdgeInsets.zero,
-          insetPadding: const EdgeInsets.all(PlannerSpace.xl),
           content: _DialogFrame(
             width: _dialogWidth(context, 420),
             title: '编辑日期容量',
@@ -826,18 +817,12 @@ class _CapacityOverridesDialogState
 }
 
 /// 对话框正文：13 / 1.6。
-const _dialogBodyStyle = TextStyle(
-  fontSize: 13,
-  height: 1.6,
-  color: PlannerColors.muted,
-);
+TextStyle _dialogBodyStyle(BuildContext context) =>
+    TextStyle(fontSize: 13, height: 1.6, color: context.tokens.muted);
 
 /// 对话框辅助说明 / 元信息：12.5 / 1.5。
-const _dialogHelperStyle = TextStyle(
-  fontSize: 12.5,
-  height: 1.5,
-  color: PlannerColors.muted,
-);
+TextStyle _dialogHelperStyle(BuildContext context) =>
+    TextStyle(fontSize: 12.5, height: 1.5, color: context.tokens.muted);
 
 /// 对话框小节标题：13.5 w600。
 class _SectionLabel extends StatelessWidget {
@@ -848,11 +833,11 @@ class _SectionLabel extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Text(
     label,
-    style: const TextStyle(
+    style: TextStyle(
       fontSize: 13.5,
       height: 1.5,
       fontWeight: FontWeight.w600,
-      color: PlannerColors.text,
+      color: context.tokens.text,
     ),
   );
 }
@@ -897,12 +882,12 @@ class _DialogFrame extends StatelessWidget {
                 Text(title, style: text.titleLarge),
                 if (subtitle != null) ...[
                   const SizedBox(height: 3),
-                  Text(subtitle!, style: _dialogHelperStyle),
+                  Text(subtitle!, style: _dialogHelperStyle(context)),
                 ],
               ],
             ),
           ),
-          Container(height: hairline, color: PlannerColors.border),
+          Container(height: hairline, color: context.tokens.border),
           Flexible(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(
@@ -914,7 +899,7 @@ class _DialogFrame extends StatelessWidget {
               child: body,
             ),
           ),
-          Container(height: hairline, color: PlannerColors.border),
+          Container(height: hairline, color: context.tokens.border),
           Padding(
             padding: const EdgeInsets.fromLTRB(
               PlannerSpace.xl,

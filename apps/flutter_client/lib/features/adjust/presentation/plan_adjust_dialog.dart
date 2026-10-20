@@ -53,7 +53,7 @@ class PlanAdjustDialog extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _verdictBanner(),
+            _verdictBanner(context),
             const SizedBox(height: PlannerSpace.md),
             Text(
               preview.assessment,
@@ -113,7 +113,7 @@ class PlanAdjustDialog extends StatelessWidget {
               valueKey: const Key('plan-adjust-intensity'),
             ),
             if (preview.intensity.reason.isNotEmpty)
-              _mutedText(preview.intensity.reason),
+              _mutedText(context, preview.intensity.reason),
             ..._workloadSection(context),
             _sectionTitle(context, '日程影响'),
             PlannerStat(
@@ -136,7 +136,7 @@ class PlanAdjustDialog extends StatelessWidget {
               label: '仍未安排',
               value: duration(preview.schedule.unscheduledMinutes),
               tone: preview.schedule.unscheduledMinutes > 0
-                  ? PlannerColors.orange
+                  ? context.tokens.warning
                   : null,
             ),
             ..._deadlineRiskSection(context),
@@ -165,22 +165,23 @@ class PlanAdjustDialog extends StatelessWidget {
     );
   }
 
-  Widget _verdictBanner() {
+  Widget _verdictBanner(BuildContext context) {
+    final tokens = context.tokens;
     final (color, background, border) = switch (preview.verdict) {
       PlanAdjustVerdict.reasonable => (
-        PlannerColors.green,
-        const Color(0xffeef7f2),
-        const Color(0xffcfe7db),
+        tokens.success,
+        tokens.noticeSuccessBackground,
+        tokens.noticeSuccessBorder,
       ),
       PlanAdjustVerdict.tooLight => (
-        PlannerColors.orange,
-        const Color(0xfffdf6e8),
-        const Color(0xffecd9b0),
+        tokens.warning,
+        tokens.noticeWarningBackground,
+        tokens.noticeWarningBorder,
       ),
       PlanAdjustVerdict.tooHeavy => (
-        PlannerColors.danger,
-        const Color(0xfffcefed),
-        const Color(0xfff0ccc7),
+        tokens.danger,
+        tokens.noticeErrorBackground,
+        tokens.noticeErrorBorder,
       ),
     };
     return Container(
@@ -224,27 +225,30 @@ class PlanAdjustDialog extends StatelessWidget {
     }
     final updated = workload.updatedTasks
         .take(maxListRows)
-        .map(_updatedRow)
+        .map((task) => _updatedRow(context, task))
         .toList();
-    final created = workload.newTasks.take(maxListRows).map(_newRow).toList();
+    final created = workload.newTasks
+        .take(maxListRows)
+        .map((task) => _newRow(context, task))
+        .toList();
     return [
       _sectionTitle(context, '工作量变化'),
       if (updated.isNotEmpty) ...[
-        _listHeading('调整事项'),
+        _listHeading(context, '调整事项'),
         ...updated,
         if (workload.updatedTasks.length > maxListRows)
-          _moreLabel(workload.updatedTasks.length - maxListRows),
+          _moreLabel(context, workload.updatedTasks.length - maxListRows),
       ],
       if (created.isNotEmpty) ...[
-        _listHeading('新增事项'),
+        _listHeading(context, '新增事项'),
         ...created,
         if (workload.newTasks.length > maxListRows)
-          _moreLabel(workload.newTasks.length - maxListRows),
+          _moreLabel(context, workload.newTasks.length - maxListRows),
       ],
     ];
   }
 
-  Widget _updatedRow(PlanAdjustUpdatedTask task) {
+  Widget _updatedRow(BuildContext context, PlanAdjustUpdatedTask task) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Column(
@@ -268,13 +272,14 @@ class PlanAdjustDialog extends StatelessWidget {
                 '${hoursText(task.minutes)} 小时',
                 style: tabularFigures.copyWith(
                   fontSize: 12.5,
-                  color: PlannerColors.muted,
+                  color: context.tokens.muted,
                 ),
               ),
             ],
           ),
           if (task.tagNames.isNotEmpty || task.reason.isNotEmpty)
             _mutedText(
+              context,
               [
                 if (task.tagNames.isNotEmpty) '标签：${task.tagNames.join('、')}',
                 if (task.reason.isNotEmpty) task.reason,
@@ -285,7 +290,7 @@ class PlanAdjustDialog extends StatelessWidget {
     );
   }
 
-  Widget _newRow(PlanAdjustNewTask task) {
+  Widget _newRow(BuildContext context, PlanAdjustNewTask task) {
     final meta = [
       if (task.tagNames.isNotEmpty) '标签：${task.tagNames.join('、')}',
       if (task.deadline != null && task.deadline!.isNotEmpty)
@@ -314,13 +319,14 @@ class PlanAdjustDialog extends StatelessWidget {
                 '新增 ${hoursText(task.minutes)} 小时',
                 style: tabularFigures.copyWith(
                   fontSize: 12.5,
-                  color: PlannerColors.muted,
+                  color: context.tokens.muted,
                 ),
               ),
             ],
           ),
           if (meta.isNotEmpty || task.reason.isNotEmpty)
             _mutedText(
+              context,
               [
                 if (meta.isNotEmpty) meta.join(' · '),
                 if (task.reason.isNotEmpty) task.reason,
@@ -354,7 +360,7 @@ class PlanAdjustDialog extends StatelessWidget {
                 '未排 ${duration(risk.unscheduledMinutes)}',
                 style: tabularFigures.copyWith(
                   fontSize: 12.5,
-                  color: PlannerColors.orange,
+                  color: context.tokens.warning,
                 ),
               ),
             ],
@@ -373,17 +379,17 @@ class PlanAdjustDialog extends StatelessWidget {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(
+              Icon(
                 Icons.warning_amber_rounded,
                 size: 16,
-                color: PlannerColors.orange,
+                color: context.tokens.warning,
               ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   warning,
-                  style: const TextStyle(
-                    color: PlannerColors.orange,
+                  style: TextStyle(
+                    color: context.tokens.warning,
                     fontSize: 12.5,
                     height: 1.5,
                   ),
@@ -402,7 +408,7 @@ class PlanAdjustDialog extends StatelessWidget {
       for (final note in preview.notes)
         Padding(
           padding: const EdgeInsets.symmetric(vertical: 2),
-          child: _mutedText(note),
+          child: _mutedText(context, note),
         ),
     ];
   }
@@ -413,21 +419,21 @@ class PlanAdjustDialog extends StatelessWidget {
     padding: const EdgeInsets.only(top: PlannerSpace.lg, bottom: 6),
     child: Text(
       title,
-      style: const TextStyle(
+      style: TextStyle(
         fontSize: 13.5,
         height: 1.5,
         fontWeight: FontWeight.w600,
-        color: PlannerColors.text,
+        color: context.tokens.text,
       ),
     ),
   );
 
-  Widget _listHeading(String title) => Padding(
+  Widget _listHeading(BuildContext context, String title) => Padding(
     padding: const EdgeInsets.only(top: 8, bottom: 2),
     child: Text(
       title,
-      style: const TextStyle(
-        color: PlannerColors.muted,
+      style: TextStyle(
+        color: context.tokens.muted,
         fontSize: 12,
         fontWeight: FontWeight.w600,
         letterSpacing: 0.2,
@@ -435,23 +441,23 @@ class PlanAdjustDialog extends StatelessWidget {
     ),
   );
 
-  Widget _mutedText(String value) => Padding(
+  Widget _mutedText(BuildContext context, String value) => Padding(
     padding: const EdgeInsets.only(top: 2),
     child: Text(
       value,
-      style: const TextStyle(
-        color: PlannerColors.muted,
+      style: TextStyle(
+        color: context.tokens.muted,
         fontSize: 12.5,
         height: 1.5,
       ),
     ),
   );
 
-  Widget _moreLabel(int count) => Padding(
+  Widget _moreLabel(BuildContext context, int count) => Padding(
     padding: const EdgeInsets.only(top: 4),
     child: Text(
       '另有 $count 条',
-      style: const TextStyle(color: PlannerColors.muted, fontSize: 12),
+      style: TextStyle(color: context.tokens.muted, fontSize: 12),
     ),
   );
 
@@ -521,17 +527,17 @@ class _DialogFrame extends StatelessWidget {
                   const SizedBox(height: 3),
                   Text(
                     subtitle!,
-                    style: const TextStyle(
+                    style: TextStyle(
                       fontSize: 12.5,
                       height: 1.5,
-                      color: PlannerColors.muted,
+                      color: context.tokens.muted,
                     ),
                   ),
                 ],
               ],
             ),
           ),
-          Container(height: hairline, color: PlannerColors.border),
+          Container(height: hairline, color: context.tokens.border),
           Flexible(
             child: SingleChildScrollView(
               padding: const EdgeInsets.fromLTRB(
@@ -543,7 +549,7 @@ class _DialogFrame extends StatelessWidget {
               child: body,
             ),
           ),
-          Container(height: hairline, color: PlannerColors.border),
+          Container(height: hairline, color: context.tokens.border),
           Padding(
             padding: const EdgeInsets.fromLTRB(
               PlannerSpace.xl,

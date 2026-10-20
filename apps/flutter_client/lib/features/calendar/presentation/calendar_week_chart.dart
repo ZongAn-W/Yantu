@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:fl_chart/fl_chart.dart';
 import 'package:flutter/material.dart';
 
 import '../../../core/theme.dart';
@@ -14,42 +15,44 @@ import '../domain/calendar_week_data.dart';
 /// Planned reference is ink-blue, extra study is amber and the sample points
 /// stay near-black. Item identity no longer drives a rainbow palette; the hatch
 /// pattern (not only the colour) still separates the effort kinds.
-Color _layerColor(CalendarWeekLayer layer) => switch (layer.kind) {
-  CalendarEffortKind.scheduled => PlannerColors.blue,
-  CalendarEffortKind.extra => PlannerColors.orange,
-  CalendarEffortKind.unscheduled => PlannerColors.orange,
-  CalendarEffortKind.legacyUnknown => PlannerColors.subtle,
-};
+Color _layerColor(PlannerTokens tokens, CalendarWeekLayer layer) =>
+    switch (layer.kind) {
+      CalendarEffortKind.scheduled => tokens.accent,
+      CalendarEffortKind.extra => tokens.warning,
+      CalendarEffortKind.unscheduled => tokens.warning,
+      CalendarEffortKind.legacyUnknown => tokens.subtle,
+    };
 
 /// Accent of one owner row in the on-demand day detail.
-Color _itemColor(CalendarDayItem item) {
+Color _itemColor(PlannerTokens tokens, CalendarDayItem item) {
   if (item.plannedMinutes > 0 || item.scheduledMinutes > 0) {
-    return PlannerColors.blue;
+    return tokens.accent;
   }
-  if (item.actualMinutes > 0) return PlannerColors.orange;
-  return PlannerColors.subtle;
+  if (item.actualMinutes > 0) return tokens.warning;
+  return tokens.subtle;
 }
 
 /// The fill of a planned reference block.
-Color _planFill() => PlannerColors.blueSoft;
+Color _planFill(PlannerTokens tokens) =>
+    tokens.isDark ? tokens.accent.withValues(alpha: 0.22) : tokens.accentSoft;
 
 /// The hairline accent of a planned reference block.
-Color _planStroke() => PlannerColors.blue.withValues(alpha: .38);
+Color _planStroke(PlannerTokens tokens) => tokens.accent.withValues(alpha: .38);
 
 /// Shared placement of a single effort-kind mark inside a legend or row.
-Color _kindColor(CalendarEffortKind? kind) => kind == null
-    ? PlannerColors.blue
+Color _kindColor(PlannerTokens tokens, CalendarEffortKind? kind) => kind == null
+    ? tokens.accent
     : switch (kind) {
-        CalendarEffortKind.scheduled => PlannerColors.blue,
-        CalendarEffortKind.extra => PlannerColors.orange,
-        CalendarEffortKind.unscheduled => PlannerColors.orange,
-        CalendarEffortKind.legacyUnknown => PlannerColors.subtle,
+        CalendarEffortKind.scheduled => tokens.accent,
+        CalendarEffortKind.extra => tokens.warning,
+        CalendarEffortKind.unscheduled => tokens.warning,
+        CalendarEffortKind.legacyUnknown => tokens.subtle,
       };
 
 /// One read-only week graphic with compact legends and day details on demand.
 ///
 /// Both [CalendarWeekView] values render this same widget with the same
-/// [CalendarWeekData] instance; only the painter changes.
+/// [CalendarWeekData] instance; only the plotted graphic changes.
 class CalendarWeekChart extends StatefulWidget {
   const CalendarWeekChart({
     required this.week,
@@ -123,6 +126,7 @@ class _CalendarWeekChartState extends State<CalendarWeekChart> {
         week.dayFor(_inspectionDate ?? widget.selectedDate) ?? week.days.first;
     final reduceMotion = MediaQuery.maybeDisableAnimationsOf(context) ?? false;
     final highlightDate = _hoveredDate ?? widget.selectedDate;
+    final tokens = context.tokens;
     return MenuAnchor(
       key: const ValueKey('calendar-week-chart'),
       controller: _menu,
@@ -166,7 +170,7 @@ class _CalendarWeekChartState extends State<CalendarWeekChart> {
                   key: const ValueKey('calendar-week-planned-total'),
                   style: tabularFigures.copyWith(
                     fontSize: 12.5,
-                    color: PlannerColors.muted,
+                    color: tokens.muted,
                   ),
                 ),
                 Text(
@@ -175,7 +179,7 @@ class _CalendarWeekChartState extends State<CalendarWeekChart> {
                   style: tabularFigures.copyWith(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: PlannerColors.text,
+                    color: tokens.text,
                   ),
                 ),
               ],
@@ -183,12 +187,12 @@ class _CalendarWeekChartState extends State<CalendarWeekChart> {
             const SizedBox(height: 10),
             _WeekLegend(week: week, view: widget.view),
             if (week.isEmpty)
-              const Padding(
-                key: ValueKey('calendar-week-empty'),
-                padding: EdgeInsets.only(top: 8),
+              Padding(
+                key: const ValueKey('calendar-week-empty'),
+                padding: const EdgeInsets.only(top: 8),
                 child: Text(
                   '本周没有学习计划或学习记录',
-                  style: TextStyle(fontSize: 12.5, color: PlannerColors.muted),
+                  style: TextStyle(fontSize: 12.5, color: tokens.muted),
                 ),
               ),
             const SizedBox(height: 10),
@@ -286,17 +290,17 @@ class _PlanLegendItem extends StatelessWidget {
           height: 10,
           child: CustomPaint(
             key: const ValueKey('calendar-week-kind-planned'),
-            painter: _PlanLegendPainter(view),
+            painter: _PlanLegendPainter(context.tokens, view),
           ),
         ),
       ),
       const SizedBox(width: 5),
       Text(
         view == CalendarWeekView.mirror ? '计划 ↑' : '计划',
-        style: const TextStyle(
-          fontSize: 11.5,
+        style: TextStyle(
+          fontSize: 11,
           height: 1.35,
-          color: PlannerColors.muted,
+          color: context.tokens.muted,
         ),
       ),
     ],
@@ -304,8 +308,9 @@ class _PlanLegendItem extends StatelessWidget {
 }
 
 class _PlanLegendPainter extends CustomPainter {
-  const _PlanLegendPainter(this.view);
+  const _PlanLegendPainter(this.tokens, this.view);
 
+  final PlannerTokens tokens;
   final CalendarWeekView view;
 
   @override
@@ -313,20 +318,20 @@ class _PlanLegendPainter extends CustomPainter {
     if (view == CalendarWeekView.mirror) {
       final rect = Rect.fromLTWH(0, 0, size.width, size.height - 2);
       final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(2.5));
-      canvas.drawRRect(rrect, Paint()..color = _planFill());
+      canvas.drawRRect(rrect, Paint()..color = _planFill(tokens));
       canvas.drawRRect(
         rrect,
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1
-          ..color = _planStroke(),
+          ..color = _planStroke(tokens),
       );
     } else {
       _drawDashedPolyline(
         canvas,
         [Offset(0, size.height / 2), Offset(size.width, size.height / 2)],
         Paint()
-          ..color = PlannerColors.blue
+          ..color = tokens.accent
           ..strokeWidth = 1.5,
         dash: 4,
         gap: 3,
@@ -336,7 +341,7 @@ class _PlanLegendPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _PlanLegendPainter oldDelegate) =>
-      view != oldDelegate.view;
+      tokens != oldDelegate.tokens || view != oldDelegate.view;
 }
 
 class _KindLegendItem extends StatelessWidget {
@@ -355,17 +360,17 @@ class _KindLegendItem extends StatelessWidget {
           height: 10,
           child: CustomPaint(
             key: ValueKey('calendar-week-kind-${kind?.name ?? 'planned'}'),
-            painter: _KindSwatchPainter(kind),
+            painter: _KindSwatchPainter(context.tokens, kind),
           ),
         ),
       ),
       const SizedBox(width: 5),
       Text(
         label,
-        style: const TextStyle(
-          fontSize: 11.5,
+        style: TextStyle(
+          fontSize: 11,
           height: 1.35,
-          color: PlannerColors.muted,
+          color: context.tokens.muted,
         ),
       ),
     ],
@@ -376,6 +381,16 @@ abstract final class _WeekGeometry {
   /// Left gutter that holds the minute ticks; the day axis rows reserve the
   /// same width so labels sit exactly under their chart columns.
   static const double axisWidth = 36;
+
+  /// Gap between neighbouring day columns: the plot draws no vertical
+  /// gridlines, so a small gutter keeps adjacent bars readable.
+  static const double columnGutter = 6;
+
+  /// Vertical breathing room of the plot. The hidden top/bottom axis name areas
+  /// reserve exactly these sizes (fl_chart turns them into chart margin) and the
+  /// texture overlays reuse them, so patterns stay on their bars.
+  static const double topPad = 10;
+  static const double bottomPad = 10;
 
   static int? dayIndexAt(Size size, Offset point) {
     final plotWidth = size.width - axisWidth;
@@ -390,7 +405,7 @@ class _WeekGraphic extends StatefulWidget {
     required this.canvasKey,
     required this.week,
     required this.height,
-    required this.painter,
+    required this.chart,
     required this.semanticsLabel,
     required this.onHover,
     required this.onSelect,
@@ -400,7 +415,10 @@ class _WeekGraphic extends StatefulWidget {
 
   final CalendarWeekData week;
   final double height;
-  final CustomPainter painter;
+
+  /// The whole-week plot for the current chart mode. It is laid out inside the
+  /// seven-column coordinate box that owns [canvasKey].
+  final Widget chart;
   final String semanticsLabel;
   final ValueChanged<String?> onHover;
   final ValueChanged<String> onSelect;
@@ -469,7 +487,7 @@ class _WeekGraphicState extends State<_WeekGraphic> {
                   key: widget.canvasKey,
                   width: size.width,
                   height: size.height,
-                  child: CustomPaint(painter: widget.painter),
+                  child: widget.chart,
                 ),
               ),
             ),
@@ -500,12 +518,12 @@ class _MirrorChart extends StatelessWidget {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const Text(
+          Text(
             '分钟',
             style: TextStyle(
-              fontSize: 10.5,
+              fontSize: 11,
               height: 1.3,
-              color: PlannerColors.subtle,
+              color: context.tokens.subtle,
             ),
           ),
           const SizedBox(height: 2),
@@ -514,9 +532,9 @@ class _MirrorChart extends StatelessWidget {
             week: week,
             height: height,
             semanticsLabel: _mirrorSemantics(week),
-            painter: _MirrorPainter(week: week, highlightDate: highlightDate),
             onHover: onHover,
             onSelect: onSelect,
+            chart: _MirrorPlot(week: week, highlightDate: highlightDate),
           ),
         ],
       );
@@ -530,91 +548,188 @@ String _mirrorSemantics(CalendarWeekData week) =>
     '本周计划 ${duration(week.plannedMinutes)}，本周实学 ${duration(week.actualMinutes)}。'
     '下方日期按钮可选择某天查看明细。';
 
-class _MirrorPainter extends CustomPainter {
-  const _MirrorPainter({required this.week, required this.highlightDate});
+/// The mirrored week plot.
+///
+/// fl_chart owns the shared zero baseline, the minute grid, the stacked
+/// planned/actual bars, the highlighted day column and the minute labels; only
+/// the effort-kind texture is layered on top as a decorative overlay.
+class _MirrorPlot extends StatelessWidget {
+  const _MirrorPlot({required this.week, required this.highlightDate});
 
   final CalendarWeekData week;
   final String highlightDate;
 
-  static const double _topPad = 8;
-  static const double _bottomPad = 4;
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final narrow = constraints.maxWidth < 340;
+      final scale = week.scaleMinutes;
+      final tokens = context.tokens;
+      final columnWidth =
+          math.max(1.0, constraints.maxWidth - _WeekGeometry.axisWidth) / 7;
+      final barWidth = math.max(2.0, columnWidth - _WeekGeometry.columnGutter);
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          // W7: isolate the static chart canvas from hover overlays.
+          RepaintBoundary(
+            child: BarChart(
+              BarChartData(
+                // Centering the seven equally wide groups with the same gutter
+                // as the bars keeps every column centred under its date button.
+                alignment: BarChartAlignment.center,
+                groupsSpace: _WeekGeometry.columnGutter,
+                barGroups: _mirrorBarGroups(tokens, week, barWidth),
+                minY: -scale,
+                maxY: scale,
+                barTouchData: const BarTouchData(enabled: false),
+                borderData: FlBorderData(show: false),
+                rangeAnnotations: RangeAnnotations(
+                  verticalRangeAnnotations: [
+                    for (var index = 0; index < week.days.length; index++)
+                      if (week.days[index].date == highlightDate)
+                        VerticalRangeAnnotation(
+                          x1: index / week.days.length,
+                          x2: (index + 1) / week.days.length,
+                          color: tokens.accentSoft.withValues(alpha: .55),
+                        ),
+                  ],
+                ),
+                gridData: _weekGrid(tokens, scale / 2, faintAlpha: .45),
+                extraLinesData: ExtraLinesData(
+                  horizontalLines: [
+                    for (final y in [-scale, scale])
+                      HorizontalLine(
+                        y: y,
+                        color: tokens.border.withValues(alpha: .45),
+                        strokeWidth: 1,
+                      ),
+                  ],
+                ),
+                titlesData: FlTitlesData(
+                  leftTitles: _minuteAxisTitles(
+                    tokens,
+                    interval: narrow ? scale : scale / 2,
+                    mirror: true,
+                  ),
+                  topTitles: _edgePaddingTitles,
+                  rightTitles: _noTitles,
+                  bottomTitles: _edgePaddingTitles,
+                ),
+              ),
+              duration: Duration.zero,
+            ),
+          ),
+          IgnorePointer(
+            child: CustomPaint(
+              painter: _MirrorTexturePainter(week: week, tokens: tokens),
+            ),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+List<BarChartGroupData> _mirrorBarGroups(
+  PlannerTokens tokens,
+  CalendarWeekData week,
+  double barWidth,
+) => [
+  for (var index = 0; index < week.days.length; index++)
+    BarChartGroupData(
+      x: index,
+      groupVertically: true,
+      barRods: _mirrorRods(tokens, week.days[index], barWidth),
+    ),
+];
+
+List<BarChartRodData> _mirrorRods(
+  PlannerTokens tokens,
+  CalendarWeekDay day,
+  double barWidth,
+) {
+  const radius = BorderRadius.all(Radius.circular(2));
+  // Planned reference: light segments stacked upward from the shared zero.
+  final planned = <BarChartRodStackItem>[];
+  var plannedTop = 0.0;
+  for (final item in day.day.items) {
+    if (item.plannedMinutes <= 0) continue;
+    planned.add(
+      BarChartRodStackItem(
+        plannedTop,
+        plannedTop + item.plannedMinutes,
+        _planFill(tokens),
+        borderSide: BorderSide(color: _planStroke(tokens), width: 1),
+      ),
+    );
+    plannedTop += item.plannedMinutes;
+  }
+  // Actual study: positive minutes drawn downward, full over-plan amount.
+  final actual = <BarChartRodStackItem>[];
+  var actualBottom = 0.0;
+  for (final item in day.day.items) {
+    for (final effort in item.efforts) {
+      if (effort.minutes <= 0) continue;
+      actual.add(
+        BarChartRodStackItem(
+          -actualBottom,
+          -(actualBottom + effort.minutes),
+          _kindColor(tokens, effort.kind),
+        ),
+      );
+      actualBottom += effort.minutes;
+    }
+  }
+  // Every day keeps both rods, even at zero, because fl_chart derives the
+  // seven column positions from the sum of the group widths.
+  return [
+    BarChartRodData(
+      fromY: 0,
+      toY: plannedTop,
+      color: _planFill(tokens),
+      width: barWidth,
+      borderRadius: radius,
+      borderSide: BorderSide(color: _planStroke(tokens), width: 1),
+      rodStackItems: planned,
+    ),
+    BarChartRodData(
+      fromY: 0,
+      toY: -actualBottom,
+      color: Colors.transparent,
+      width: barWidth,
+      borderRadius: radius,
+      rodStackItems: actual,
+    ),
+  ];
+}
+
+/// Re-applies the established effort-kind texture language on top of the
+/// fl_chart bars. fl_chart has no pattern fills, so the decorative hatch is
+/// painted in exactly the same seven-column geometry as the chart below it.
+class _MirrorTexturePainter extends CustomPainter {
+  const _MirrorTexturePainter({required this.week, required this.tokens});
+
+  final CalendarWeekData week;
+  final PlannerTokens tokens;
 
   @override
   void paint(Canvas canvas, Size size) {
     final plotLeft = _WeekGeometry.axisWidth;
     final plotWidth = math.max(1.0, size.width - plotLeft);
-    final plotHeight = math.max(1.0, size.height - _topPad - _bottomPad);
+    final plotHeight = math.max(
+      1.0,
+      size.height - _WeekGeometry.topPad - _WeekGeometry.bottomPad,
+    );
     final half = plotHeight / 2;
-    final zeroY = _topPad + half;
+    final zeroY = _WeekGeometry.topPad + half;
     final unit = half / week.scaleMinutes;
     final columnWidth = plotWidth / 7;
-    // A visible gutter between day columns keeps neighbouring bars readable
-    // without drawing vertical gridlines.
-    final barWidth = math.max(2.0, columnWidth - 6);
-
-    final grid = Paint()..color = PlannerColors.border.withValues(alpha: .8);
-    final faintGrid = Paint()
-      ..color = PlannerColors.border.withValues(alpha: .45);
-    // Horizontal hairlines only: a calendar plot with vertical rules reads like
-    // a spreadsheet, so the seven columns stay implied by the bars.
-    for (final fraction in const [0.0, .5, 1.0]) {
-      final dy = half * fraction;
-      canvas.drawLine(
-        Offset(plotLeft, zeroY - dy),
-        Offset(size.width, zeroY - dy),
-        fraction == 0 ? grid : faintGrid,
-      );
-      canvas.drawLine(
-        Offset(plotLeft, zeroY + dy),
-        Offset(size.width, zeroY + dy),
-        fraction == 0 ? grid : faintGrid,
-      );
-    }
-
-    // Highlight the selected/hovered day column without hiding the data.
-    final highlightIndex = week.days.indexWhere(
-      (day) => day.date == highlightDate,
-    );
-    if (highlightIndex >= 0) {
-      final left = plotLeft + columnWidth * highlightIndex;
-      canvas.drawRect(
-        Rect.fromLTWH(left + 1, _topPad, columnWidth - 2, plotHeight),
-        Paint()..color = PlannerColors.blueSoft.withValues(alpha: .55),
-      );
-    }
-
-    _paintMirrorAxis(canvas, size, zeroY, half, plotLeft);
-
+    final barWidth = math.max(2.0, columnWidth - _WeekGeometry.columnGutter);
     for (var index = 0; index < week.days.length; index++) {
       final day = week.days[index];
       final left =
           plotLeft + columnWidth * index + (columnWidth - barWidth) / 2;
-      // Planned reference: light segments stacked upward from the shared zero.
-      var plannedTop = zeroY;
-      for (final item in day.day.items) {
-        if (item.plannedMinutes <= 0) continue;
-        final height = item.plannedMinutes * unit;
-        final rect = Rect.fromLTWH(left, plannedTop - height, barWidth, height);
-        canvas.drawRect(rect, Paint()..color = _planFill());
-        canvas.drawLine(
-          Offset(left, plannedTop - height),
-          Offset(left + barWidth, plannedTop - height),
-          Paint()
-            ..color = _planStroke()
-            ..strokeWidth = 1,
-        );
-        plannedTop -= height;
-      }
-      if (plannedTop < zeroY) {
-        canvas.drawRect(
-          Rect.fromLTWH(left, plannedTop, barWidth, zeroY - plannedTop),
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1
-            ..color = _planStroke(),
-        );
-      }
-      // Actual study: positive minutes drawn downward, full over-plan amount.
       var actualTop = zeroY;
       for (var itemIndex = 0; itemIndex < day.day.items.length; itemIndex++) {
         final item = day.day.items[itemIndex];
@@ -622,18 +737,25 @@ class _MirrorPainter extends CustomPainter {
         for (final effort in item.efforts) {
           if (effort.minutes <= 0) continue;
           final height = effort.minutes * unit;
-          _drawEffortSegment(
-            canvas,
-            Rect.fromLTWH(left, actualTop, barWidth, height),
-            _kindColor(effort.kind),
-            effort.kind,
-            textureAlpha: .42,
-          );
+          if (effort.kind != CalendarEffortKind.scheduled) {
+            final rect = Rect.fromLTWH(left, actualTop, barWidth, height);
+            canvas.save();
+            canvas.clipRect(rect);
+            _drawKindPattern(
+              canvas,
+              rect,
+              _kindColor(tokens, effort.kind),
+              effort.kind,
+              alpha: .42,
+              patternColor: tokens.surface,
+            );
+            canvas.restore();
+          }
           actualTop += height;
           drewItem = true;
         }
-        // A hairline rule separates adjacent task rows so the
-        // object attribution stays visible even when their colours match.
+        // A hairline rule separates adjacent task rows so the object
+        // attribution stays visible even when their colours match.
         if (drewItem &&
             itemIndex != day.day.items.length - 1 &&
             actualTop > zeroY) {
@@ -641,69 +763,17 @@ class _MirrorPainter extends CustomPainter {
             Offset(left, actualTop),
             Offset(left + barWidth, actualTop),
             Paint()
-              ..color = Colors.white.withValues(alpha: .75)
+              ..color = tokens.surface.withValues(alpha: .75)
               ..strokeWidth = 1,
           );
         }
       }
     }
-
-    // One strong zero baseline: the same shared axis for plan and actual.
-    canvas.drawLine(
-      Offset(0, zeroY),
-      Offset(size.width, zeroY),
-      Paint()
-        ..color = PlannerColors.borderStrong
-        ..strokeWidth = 1,
-    );
-    _paintLeftLabel(canvas, '0', zeroY, plotLeft, align: _LabelAlign.center);
-  }
-
-  void _paintMirrorAxis(
-    Canvas canvas,
-    Size size,
-    double zeroY,
-    double half,
-    double plotLeft,
-  ) {
-    final narrow = size.width < 340;
-    final planTop = zeroY - half;
-    final actualBottom = zeroY + half;
-    _paintLeftLabel(
-      canvas,
-      _minuteText(week.scaleMinutes),
-      planTop,
-      plotLeft,
-      align: _LabelAlign.center,
-    );
-    _paintLeftLabel(
-      canvas,
-      _minuteText(week.scaleMinutes),
-      actualBottom,
-      plotLeft,
-      align: _LabelAlign.center,
-    );
-    if (!narrow) {
-      _paintLeftLabel(
-        canvas,
-        _minuteText(week.scaleMinutes / 2),
-        planTop + half / 2,
-        plotLeft,
-        align: _LabelAlign.center,
-      );
-      _paintLeftLabel(
-        canvas,
-        _minuteText(week.scaleMinutes / 2),
-        zeroY + half / 2,
-        plotLeft,
-        align: _LabelAlign.center,
-      );
-    }
   }
 
   @override
-  bool shouldRepaint(covariant _MirrorPainter oldDelegate) =>
-      week != oldDelegate.week || highlightDate != oldDelegate.highlightDate;
+  bool shouldRepaint(covariant _MirrorTexturePainter oldDelegate) =>
+      week != oldDelegate.week || tokens != oldDelegate.tokens;
 }
 
 class _MountainChart extends StatelessWidget {
@@ -728,9 +798,9 @@ class _MountainChart extends StatelessWidget {
         week: week,
         height: height,
         semanticsLabel: _mountainSemantics(week),
-        painter: _MountainPainter(week: week, highlightDate: highlightDate),
         onHover: onHover,
         onSelect: onSelect,
+        chart: _MountainPlot(week: week, highlightDate: highlightDate),
       );
     },
   );
@@ -742,173 +812,324 @@ String _mountainSemantics(CalendarWeekData week) =>
     '本周计划 ${duration(week.plannedMinutes)}，本周实学 ${duration(week.actualMinutes)}。'
     '下方日期按钮可选择某天查看明细。';
 
-class _MountainPainter extends CustomPainter {
-  const _MountainPainter({required this.week, required this.highlightDate});
+/// The stacked "learning mountain" plot.
+///
+/// fl_chart owns the minute grid, the fixed-order stacked areas, the dashed
+/// planned contour, the real daily sample points and the highlighted day
+/// column; the texture overlay only adds the effort-kind pattern on top.
+class _MountainPlot extends StatelessWidget {
+  const _MountainPlot({required this.week, required this.highlightDate});
 
   final CalendarWeekData week;
   final String highlightDate;
 
-  static const double _topPad = 6;
-  static const double _bottomPad = 4;
+  @override
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final narrow = constraints.maxWidth < 340;
+      final scale = week.scaleMinutes;
+      final tokens = context.tokens;
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          // W7: isolate the static chart canvas from hover overlays.
+          RepaintBoundary(
+            child: LineChart(
+              LineChartData(
+                minX: -0.5,
+                maxX: week.days.length - 0.5,
+                minY: 0,
+                maxY: scale,
+                lineBarsData: _mountainLines(tokens, week),
+                lineTouchData: const LineTouchData(enabled: false),
+                borderData: FlBorderData(show: false),
+                rangeAnnotations: RangeAnnotations(
+                  verticalRangeAnnotations: [
+                    for (var index = 0; index < week.days.length; index++)
+                      if (week.days[index].date == highlightDate)
+                        VerticalRangeAnnotation(
+                          x1: index - 0.5,
+                          x2: index + 0.5,
+                          color: tokens.accentSoft.withValues(alpha: .45),
+                        ),
+                  ],
+                ),
+                gridData: _weekGrid(tokens, scale / 4, faintAlpha: .4),
+                extraLinesData: ExtraLinesData(
+                  horizontalLines: [
+                    HorizontalLine(
+                      y: 0,
+                      color: tokens.borderStrong,
+                      strokeWidth: 1,
+                    ),
+                    HorizontalLine(
+                      y: scale,
+                      color: tokens.border.withValues(alpha: .4),
+                      strokeWidth: 1,
+                    ),
+                  ],
+                ),
+                titlesData: FlTitlesData(
+                  leftTitles: _minuteAxisTitles(
+                    tokens,
+                    interval: narrow ? scale : scale / 2,
+                  ),
+                  topTitles: _edgePaddingTitles,
+                  rightTitles: _noTitles,
+                  bottomTitles: _edgePaddingTitles,
+                ),
+              ),
+              duration: Duration.zero,
+            ),
+          ),
+          IgnorePointer(
+            child: CustomPaint(
+              painter: _MountainTexturePainter(week: week, tokens: tokens),
+            ),
+          ),
+        ],
+      );
+    },
+  );
+}
+
+/// One fixed-order stacked actual-learning band of the mountain plot.
+class _WeekBand {
+  const _WeekBand({
+    required this.layer,
+    required this.bottom,
+    required this.top,
+  });
+
+  final CalendarWeekLayer layer;
+
+  /// Cumulative minutes of every lower layer, per day.
+  final List<double> bottom;
+
+  /// [bottom] plus this layer's minutes, per day.
+  final List<double> top;
+}
+
+List<_WeekBand> _weekBands(CalendarWeekData week) {
+  final count = week.days.length;
+  final cumulative = List<double>.filled(count, 0);
+  final bands = <_WeekBand>[];
+  for (final layer in week.layers) {
+    final top = <double>[
+      for (var index = 0; index < count; index++)
+        cumulative[index] + layer.minutesOn(index),
+    ];
+    bands.add(
+      _WeekBand(
+        layer: layer,
+        bottom: List<double>.unmodifiable(cumulative),
+        top: List<double>.unmodifiable(top),
+      ),
+    );
+    for (var index = 0; index < count; index++) {
+      cumulative[index] = top[index];
+    }
+  }
+  return bands;
+}
+
+List<LineChartBarData> _mountainLines(
+  PlannerTokens tokens,
+  CalendarWeekData week,
+) {
+  final bands = _weekBands(week);
+  return [
+    // Paint the topmost stacked boundary first: every lower band then covers
+    // the shared baseline area underneath it, leaving exactly its own thickness.
+    for (var index = bands.length - 1; index >= 0; index--)
+      _bandLine(tokens, bands[index], week.days.length),
+    // The plan is a separate dashed total contour on the same vertical scale;
+    // it is never filled, so no area claims original-plan achievement.
+    _planLine(tokens, week),
+    // Real daily samples: solid dots on studied days, hollow zero dots otherwise.
+    _sampleDotsLine(tokens, week),
+    _sampleDotCentersLine(tokens, week),
+  ];
+}
+
+LineChartBarData _bandLine(
+  PlannerTokens tokens,
+  _WeekBand band,
+  int dayCount,
+) => LineChartBarData(
+  spots: [
+    for (var index = 0; index < dayCount; index++)
+      FlSpot(index.toDouble(), band.top[index]),
+  ],
+  color: Colors.transparent,
+  barWidth: 0,
+  belowBarData: BarAreaData(
+    show: true,
+    color: _layerColor(tokens, band.layer).withValues(alpha: .88),
+  ),
+  dotData: const FlDotData(show: false),
+);
+
+LineChartBarData _planLine(PlannerTokens tokens, CalendarWeekData week) =>
+    LineChartBarData(
+      spots: [
+        for (var index = 0; index < week.days.length; index++)
+          FlSpot(index.toDouble(), week.days[index].plannedMinutes.toDouble()),
+      ],
+      color: tokens.accent,
+      barWidth: 1.6,
+      dashArray: const [6, 4],
+      dotData: const FlDotData(show: false),
+    );
+
+LineChartBarData _sampleDotsLine(PlannerTokens tokens, CalendarWeekData week) =>
+    LineChartBarData(
+      spots: [
+        for (var index = 0; index < week.days.length; index++)
+          FlSpot(index.toDouble(), week.days[index].actualMinutes.toDouble()),
+      ],
+      color: Colors.transparent,
+      barWidth: 0,
+      dotData: FlDotData(
+        getDotPainter: (spot, percent, bar, index) => spot.y > 0
+            ? FlDotCirclePainter(color: tokens.accent, radius: 3)
+            : FlDotCirclePainter(
+                color: Colors.transparent,
+                radius: 2,
+                strokeWidth: 1,
+                strokeColor: tokens.subtle.withValues(alpha: .8),
+              ),
+      ),
+    );
+
+LineChartBarData _sampleDotCentersLine(
+  PlannerTokens tokens,
+  CalendarWeekData week,
+) => LineChartBarData(
+  spots: [
+    for (var index = 0; index < week.days.length; index++)
+      FlSpot(index.toDouble(), week.days[index].actualMinutes.toDouble()),
+  ],
+  color: Colors.transparent,
+  barWidth: 0,
+  dotData: FlDotData(
+    checkToShowDot: (spot, bar) => spot.y > 0,
+    getDotPainter: (spot, percent, bar, index) =>
+        FlDotCirclePainter(color: tokens.accentOn, radius: 1.2),
+  ),
+);
+
+/// Re-applies the effort-kind texture on the stacked bands. The band polygons
+/// are the same seven-sample polylines the LineChart fills, so the pattern can
+/// never drift away from the area it belongs to.
+class _MountainTexturePainter extends CustomPainter {
+  const _MountainTexturePainter({required this.week, required this.tokens});
+
+  final CalendarWeekData week;
+  final PlannerTokens tokens;
 
   @override
   void paint(Canvas canvas, Size size) {
     final plotLeft = _WeekGeometry.axisWidth;
     final plotWidth = math.max(1.0, size.width - plotLeft);
-    final plotHeight = math.max(1.0, size.height - _topPad - _bottomPad);
-    final baselineY = _topPad + plotHeight;
+    final plotHeight = math.max(
+      1.0,
+      size.height - _WeekGeometry.topPad - _WeekGeometry.bottomPad,
+    );
+    final baselineY = _WeekGeometry.topPad + plotHeight;
     final unit = plotHeight / week.scaleMinutes;
     final columnWidth = plotWidth / 7;
-
-    final grid = Paint()..color = PlannerColors.border.withValues(alpha: .8);
-    final faintGrid = Paint()
-      ..color = PlannerColors.border.withValues(alpha: .4);
-    // Horizontal hairlines only; the seven day positions stay implied by the
-    // contour and the day axis below the plot.
-    for (final fraction in const [0.0, .25, .5, .75, 1.0]) {
-      final y = baselineY - plotHeight * fraction;
-      canvas.drawLine(
-        Offset(plotLeft, y),
-        Offset(size.width, y),
-        fraction == 0 ? grid : faintGrid,
-      );
-    }
-    _paintMountainAxis(canvas, size, baselineY, plotHeight, plotLeft);
-
-    final highlightIndex = week.days.indexWhere(
-      (day) => day.date == highlightDate,
-    );
-    if (highlightIndex >= 0) {
-      final left = plotLeft + columnWidth * highlightIndex;
-      canvas.drawRect(
-        Rect.fromLTWH(left + 1, _topPad, columnWidth - 2, plotHeight),
-        Paint()..color = PlannerColors.blueSoft.withValues(alpha: .45),
-      );
-    }
-
-    // Fixed-ordered stacked areas: straight segments through the seven real
-    // daily samples, never a smooth curve that would invent unrecorded peaks.
-    final cumulative = List<double>.filled(7, 0);
-    for (final layer in week.layers) {
-      final color = _layerColor(layer);
+    for (final band in _weekBands(week)) {
+      if (band.layer.kind == CalendarEffortKind.scheduled) continue;
       final path = Path();
-      for (var index = 0; index < 7; index++) {
-        final x = plotLeft + columnWidth * (index + .5);
-        final y =
-            baselineY - (cumulative[index] + layer.minutesOn(index)) * unit;
+      for (var index = 0; index < week.days.length; index++) {
+        final x = plotLeft + columnWidth * (index + 0.5);
+        final y = baselineY - band.top[index] * unit;
         if (index == 0) {
           path.moveTo(x, y);
         } else {
           path.lineTo(x, y);
         }
       }
-      for (var index = 6; index >= 0; index--) {
-        final x = plotLeft + columnWidth * (index + .5);
-        final y = baselineY - cumulative[index] * unit;
-        path.lineTo(x, y);
+      for (var index = week.days.length - 1; index >= 0; index--) {
+        path.lineTo(
+          plotLeft + columnWidth * (index + 0.5),
+          baselineY - band.bottom[index] * unit,
+        );
       }
       path.close();
-      canvas.drawPath(path, Paint()..color = color.withValues(alpha: .88));
-      if (layer.kind != CalendarEffortKind.scheduled) {
-        canvas.save();
-        canvas.clipPath(path);
-        _drawKindPattern(
-          canvas,
-          path.getBounds(),
-          color,
-          layer.kind,
-          alpha: .5,
-        );
-        canvas.restore();
-      }
-      for (var index = 0; index < 7; index++) {
-        cumulative[index] += layer.minutesOn(index);
-      }
-    }
-
-    // The plan is a separate dashed total contour with the same vertical scale;
-    // no fill between plan and actual ever claims original-plan achievement.
-    final planPoints = <Offset>[
-      for (var index = 0; index < 7; index++)
-        Offset(
-          plotLeft + columnWidth * (index + .5),
-          baselineY - week.days[index].plannedMinutes * unit,
-        ),
-    ];
-    _drawDashedPolyline(
-      canvas,
-      planPoints,
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1.6
-        ..color = PlannerColors.blue,
-    );
-
-    // Real daily sample points of the actual mountain.
-    for (var index = 0; index < 7; index++) {
-      final x = plotLeft + columnWidth * (index + .5);
-      final total = cumulative[index];
-      final y = baselineY - total * unit;
-      if (total > 0) {
-        canvas.drawCircle(Offset(x, y), 3, Paint()..color = PlannerColors.blue);
-        canvas.drawCircle(Offset(x, y), 1.2, Paint()..color = Colors.white);
-      } else {
-        canvas.drawCircle(
-          Offset(x, baselineY),
-          2,
-          Paint()
-            ..style = PaintingStyle.stroke
-            ..strokeWidth = 1
-            ..color = PlannerColors.subtle.withValues(alpha: .8),
-        );
-      }
-    }
-
-    canvas.drawLine(
-      Offset(0, baselineY),
-      Offset(size.width, baselineY),
-      Paint()
-        ..color = PlannerColors.borderStrong
-        ..strokeWidth = 1,
-    );
-  }
-
-  void _paintMountainAxis(
-    Canvas canvas,
-    Size size,
-    double baselineY,
-    double plotHeight,
-    double plotLeft,
-  ) {
-    _paintLeftLabel(
-      canvas,
-      _minuteText(week.scaleMinutes),
-      baselineY - plotHeight,
-      plotLeft,
-      align: _LabelAlign.center,
-    );
-    _paintLeftLabel(
-      canvas,
-      '0',
-      baselineY,
-      plotLeft,
-      align: _LabelAlign.center,
-    );
-    if (size.width >= 340) {
-      _paintLeftLabel(
+      canvas.save();
+      canvas.clipPath(path);
+      _drawKindPattern(
         canvas,
-        _minuteText(week.scaleMinutes / 2),
-        baselineY - plotHeight / 2,
-        plotLeft,
-        align: _LabelAlign.center,
+        path.getBounds(),
+        _layerColor(tokens, band.layer),
+        band.layer.kind,
+        alpha: .5,
+        patternColor: tokens.surface,
       );
+      canvas.restore();
     }
   }
 
   @override
-  bool shouldRepaint(covariant _MountainPainter oldDelegate) =>
-      week != oldDelegate.week || highlightDate != oldDelegate.highlightDate;
+  bool shouldRepaint(covariant _MountainTexturePainter oldDelegate) =>
+      week != oldDelegate.week || tokens != oldDelegate.tokens;
 }
+
+/// Hidden axis titles used to turn the fl_chart title margins into plot
+/// padding: the top/bottom sides reserve the plot's vertical breathing room
+/// through an empty axis name, the other sides reserve nothing. The visible
+/// minute labels then stay centred on their gridline instead of being clipped
+/// at the canvas edge.
+const _edgePaddingTitles = AxisTitles(
+  axisNameWidget: SizedBox.shrink(),
+  axisNameSize: _WeekGeometry.topPad,
+  sideTitles: SideTitles(showTitles: false, reservedSize: 0),
+);
+const _noTitles = AxisTitles(
+  sideTitles: SideTitles(showTitles: false, reservedSize: 0),
+);
+
+/// Minute ticks in the left gutter: 11 px tabular digits in the subtle ink.
+AxisTitles _minuteAxisTitles(
+  PlannerTokens tokens, {
+  required double interval,
+  bool mirror = false,
+}) => AxisTitles(
+  sideTitles: SideTitles(
+    showTitles: true,
+    reservedSize: _WeekGeometry.axisWidth,
+    interval: interval,
+    getTitlesWidget: (value, meta) =>
+        _minuteLabel(tokens, mirror ? value.abs() : value),
+  ),
+);
+
+Widget _minuteLabel(PlannerTokens tokens, double minutes) => Align(
+  alignment: Alignment.center,
+  child: Text(
+    _minuteText(minutes),
+    style: tabularFigures.copyWith(fontSize: 11, color: tokens.subtle),
+  ),
+);
+
+/// Horizontal hairlines only: a calendar plot with vertical rules reads like a
+/// spreadsheet, so the seven columns stay implied by the bars and the date axis.
+FlGridData _weekGrid(
+  PlannerTokens tokens,
+  double interval, {
+  required double faintAlpha,
+}) => FlGridData(
+  drawVerticalLine: false,
+  horizontalInterval: interval,
+  getDrawingHorizontalLine: (value) => FlLine(
+    color: value.abs() < .001
+        ? tokens.borderStrong
+        : tokens.border.withValues(alpha: faintAlpha),
+    strokeWidth: 1,
+  ),
+);
 
 class _WeekDayAxis extends StatelessWidget {
   const _WeekDayAxis({
@@ -958,6 +1179,7 @@ class _WeekDayButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final description = _dayDescription(day);
     final isToday = day.date == shanghaiToday();
+    final tokens = context.tokens;
     return Semantics(
       key: ValueKey('calendar-week-day-${day.date}'),
       button: true,
@@ -981,10 +1203,10 @@ class _WeekDayButton extends StatelessWidget {
             constraints: const BoxConstraints(minHeight: 48),
             padding: const EdgeInsets.symmetric(vertical: 5, horizontal: 1),
             decoration: BoxDecoration(
-              color: selected ? PlannerColors.blueSoft : null,
+              color: selected ? tokens.accentSoft : null,
               borderRadius: BorderRadius.circular(8),
               border: Border.all(
-                color: selected ? PlannerColors.blue : Colors.transparent,
+                color: selected ? tokens.accent : Colors.transparent,
                 width: 2,
                 strokeAlign: BorderSide.strokeAlignInside,
               ),
@@ -997,10 +1219,10 @@ class _WeekDayButton extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.clip,
                   style: TextStyle(
-                    fontSize: 10.5,
+                    fontSize: 11,
                     height: 1.3,
                     fontWeight: selected ? FontWeight.w600 : FontWeight.w400,
-                    color: selected ? PlannerColors.blue : PlannerColors.subtle,
+                    color: selected ? tokens.accent : tokens.subtle,
                   ),
                 ),
                 const SizedBox(height: 1),
@@ -1009,8 +1231,8 @@ class _WeekDayButton extends StatelessWidget {
                     width: 24,
                     height: 24,
                     alignment: Alignment.center,
-                    decoration: const BoxDecoration(
-                      color: PlannerColors.blue,
+                    decoration: BoxDecoration(
+                      color: tokens.accent,
                       shape: BoxShape.circle,
                     ),
                     child: Text(
@@ -1020,7 +1242,7 @@ class _WeekDayButton extends StatelessWidget {
                         fontSize: 11.5,
                         height: 1.2,
                         fontWeight: FontWeight.w600,
-                        color: Colors.white,
+                        color: tokens.accentOn,
                       ),
                     ),
                   )
@@ -1037,9 +1259,7 @@ class _WeekDayButton extends StatelessWidget {
                           fontWeight: selected
                               ? FontWeight.w600
                               : FontWeight.w500,
-                          color: selected
-                              ? PlannerColors.blue
-                              : PlannerColors.text,
+                          color: selected ? tokens.accent : tokens.text,
                         ),
                       ),
                     ),
@@ -1091,6 +1311,7 @@ class _WeekDayDetail extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final kinds = <CalendarEffortKind, int>{};
+    final tokens = context.tokens;
     for (final item in items) {
       for (final effort in item.efforts) {
         kinds[effort.kind] = (kinds[effort.kind] ?? 0) + effort.minutes;
@@ -1112,7 +1333,7 @@ class _WeekDayDetail extends StatelessWidget {
             Text(
               '当天没有学习计划或学习记录',
               key: const ValueKey('calendar-week-detail-empty'),
-              style: const TextStyle(fontSize: 12, color: PlannerColors.muted),
+              style: TextStyle(fontSize: 12, color: tokens.muted),
             ),
           ],
         ),
@@ -1134,10 +1355,7 @@ class _WeekDayDetail extends StatelessWidget {
             Text(
               '计划 ${duration(plannedMinutes)} · 实学 ${duration(actualMinutes)}',
               key: const ValueKey('calendar-week-detail-totals'),
-              style: tabularFigures.copyWith(
-                fontSize: 12,
-                color: PlannerColors.muted,
-              ),
+              style: tabularFigures.copyWith(fontSize: 12, color: tokens.muted),
             ),
           ],
         ),
@@ -1156,7 +1374,9 @@ class _WeekDayDetail extends StatelessWidget {
                         child: SizedBox(
                           width: 10,
                           height: 10,
-                          child: CustomPaint(painter: _KindSwatchPainter(kind)),
+                          child: CustomPaint(
+                            painter: _KindSwatchPainter(tokens, kind),
+                          ),
                         ),
                       ),
                       const SizedBox(width: 4),
@@ -1164,7 +1384,7 @@ class _WeekDayDetail extends StatelessWidget {
                         '${kind.label} ${duration(kinds[kind]!)}',
                         style: tabularFigures.copyWith(
                           fontSize: 11,
-                          color: PlannerColors.muted,
+                          color: tokens.muted,
                         ),
                       ),
                     ],
@@ -1188,7 +1408,8 @@ class _WeekItemRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final color = _itemColor(item);
+    final tokens = context.tokens;
+    final color = _itemColor(tokens, item);
     return Semantics(
       label: _itemDescription(item),
       excludeSemantics: true,
@@ -1245,7 +1466,7 @@ class _WeekItemRow extends StatelessWidget {
                     '实学 ${duration(item.actualMinutes)}',
                     style: tabularFigures.copyWith(
                       fontSize: 11,
-                      color: PlannerColors.muted,
+                      color: tokens.muted,
                     ),
                   ),
                   const SizedBox(height: 3),
@@ -1254,12 +1475,9 @@ class _WeekItemRow extends StatelessWidget {
                     runSpacing: 4,
                     children: [
                       if (item.efforts.isEmpty)
-                        const Text(
+                        Text(
                           '尚无学习记录',
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: PlannerColors.muted,
-                          ),
+                          style: TextStyle(fontSize: 11, color: tokens.muted),
                         ),
                       for (final effort in item.efforts)
                         Row(
@@ -1271,6 +1489,7 @@ class _WeekItemRow extends StatelessWidget {
                                 height: 10,
                                 child: CustomPaint(
                                   painter: _KindSwatchPainter(
+                                    tokens,
                                     effort.kind,
                                     color: color,
                                   ),
@@ -1282,7 +1501,7 @@ class _WeekItemRow extends StatelessWidget {
                               '${effort.kind.label} ${duration(effort.minutes)}',
                               style: tabularFigures.copyWith(
                                 fontSize: 11,
-                                color: PlannerColors.muted,
+                                color: tokens.muted,
                               ),
                             ),
                           ],
@@ -1305,22 +1524,23 @@ String _itemDescription(CalendarDayItem item) =>
     '${item.efforts.isEmpty ? '尚无学习记录' : item.efforts.map((effort) => '${effort.kind.label} ${duration(effort.minutes)}').join('，')}';
 
 class _KindSwatchPainter extends CustomPainter {
-  const _KindSwatchPainter(this.kind, {this.color = PlannerColors.blue});
+  const _KindSwatchPainter(this.tokens, this.kind, {this.color});
 
+  final PlannerTokens tokens;
   final CalendarEffortKind? kind;
-  final Color color;
+  final Color? color;
 
   @override
   void paint(Canvas canvas, Size size) {
     final rect = Offset.zero & size;
-    final fill = _kindColor(kind);
+    final fill = _kindColor(tokens, kind);
     final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(2));
     if (kind == null) {
-      canvas.drawRRect(rrect, Paint()..color = _planFill());
+      canvas.drawRRect(rrect, Paint()..color = _planFill(tokens));
       canvas.drawRRect(
         rrect,
         Paint()
-          ..color = _planStroke()
+          ..color = _planStroke(tokens)
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1,
       );
@@ -1330,32 +1550,16 @@ class _KindSwatchPainter extends CustomPainter {
     if (kind != CalendarEffortKind.scheduled) {
       canvas.save();
       canvas.clipRRect(rrect);
-      _drawKindPattern(canvas, rect, fill, kind!);
+      _drawKindPattern(canvas, rect, fill, kind!, patternColor: tokens.surface);
       canvas.restore();
     }
   }
 
   @override
   bool shouldRepaint(covariant _KindSwatchPainter oldDelegate) =>
-      kind != oldDelegate.kind || color != oldDelegate.color;
-}
-
-void _drawEffortSegment(
-  Canvas canvas,
-  Rect rect,
-  Color color,
-  CalendarEffortKind kind, {
-  double textureAlpha = .42,
-}) {
-  if (rect.isEmpty) return;
-  final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(2));
-  canvas.drawRRect(rrect, Paint()..color = color);
-  if (kind != CalendarEffortKind.scheduled) {
-    canvas.save();
-    canvas.clipRRect(rrect);
-    _drawKindPattern(canvas, rect, color, kind, alpha: textureAlpha);
-    canvas.restore();
-  }
+      tokens != oldDelegate.tokens ||
+      kind != oldDelegate.kind ||
+      color != oldDelegate.color;
 }
 
 /// Shared texture language for non-original-plan effort kinds.
@@ -1367,10 +1571,11 @@ void _drawKindPattern(
   Rect rect,
   Color color,
   CalendarEffortKind kind, {
+  required Color patternColor,
   double alpha = .42,
 }) {
   final paint = Paint()
-    ..color = Colors.white.withValues(alpha: alpha)
+    ..color = patternColor.withValues(alpha: alpha)
     ..strokeWidth = 1.2;
   if (kind == CalendarEffortKind.legacyUnknown) {
     for (var y = rect.top + 2; y < rect.bottom; y += 5) {
@@ -1388,31 +1593,6 @@ void _drawKindPattern(
       paint,
     );
   }
-}
-
-enum _LabelAlign { left, center, right }
-
-void _paintLeftLabel(
-  Canvas canvas,
-  String text,
-  double centerY,
-  double axisWidth, {
-  _LabelAlign align = _LabelAlign.right,
-}) {
-  final painter = TextPainter(
-    text: TextSpan(
-      text: text,
-      style: tabularFigures.copyWith(fontSize: 11, color: PlannerColors.subtle),
-    ),
-    textDirection: TextDirection.ltr,
-    maxLines: 1,
-  )..layout(maxWidth: axisWidth);
-  final dx = switch (align) {
-    _LabelAlign.left => 0.0,
-    _LabelAlign.center => (axisWidth - painter.width) / 2,
-    _LabelAlign.right => axisWidth - painter.width - 4,
-  };
-  painter.paint(canvas, Offset(dx, centerY - painter.height / 2));
 }
 
 String _minuteText(double minutes) => minutes.round().toStringAsFixed(0);
