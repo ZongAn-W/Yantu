@@ -403,7 +403,7 @@ class _SettingsPageState extends ConsumerState<SettingsPage> {
     final auth = ref.watch(authControllerProvider);
     final user = auth.user;
     final tokens = context.tokens;
-    return Card(
+    return PlannerSurface(
       child: Padding(
         padding: const EdgeInsets.all(20),
         child: Column(

@@ -382,7 +382,7 @@ void main() {
 
       // A finished profile also goes straight to the workbench.
       expect(router.routeInformationProvider.value.uri.path, '/');
-      expect(find.text('今日学习'), findsOneWidget);
+      expect(find.text('全部事项'), findsOneWidget);
 
       await client.clearSession();
       await tester.pumpAndSettle();
@@ -428,7 +428,6 @@ void main() {
     expect(find.widgetWithText(NavigationDestination, '事项'), findsNothing);
     expect(find.widgetWithText(NavigationDestination, '进度'), findsNothing);
     expect(find.byType(NavigationDestination), findsNWidgets(4));
-    expect(find.text('今日学习'), findsOneWidget);
     expect(find.text('全部事项'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(NavigationDestination, '日历'));

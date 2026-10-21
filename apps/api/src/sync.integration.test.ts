@@ -52,6 +52,17 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
               : value;
       return retag(raw);
     }
+    /**
+     * 阶段 3b-A：服务端总会把 archived 归一化进任务（旧写入方缺失时按 status 兼容），
+     * 其余字段原样回传；比较“输入文档”与“服务端文档”时用它构造期望值。
+     */
+    const withArchived = (document: any) => ({
+      ...document,
+      tasks: document.tasks.map((task: any) => ({
+        ...task,
+        archived: task.archived === true || (task.archived == null && task.status === "archived"),
+      })),
+    });
     beforeAll(async () => {
       vi.stubEnv("DATABASE_URL", process.env.AUTH_TEST_DATABASE_URL!);
       vi.stubEnv("JWT_ACCESS_SECRET", secret);
@@ -124,7 +135,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       const pulled = (
         await app.inject({ url: "/api/planner/sync", headers: user.headers })
       ).json();
-      expect(pulled.data).toEqual(data);
+      expect(pulled.data).toEqual(withArchived(data));
       expect(pulled.revision).toBeGreaterThan(0);
       const native = (
         await app.inject({
@@ -212,9 +223,12 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       data.planning = { version: 1, prompt_version: "planning-1", rules_version: "rules-1", detail_days: 14,
         rolling: true, route: [{ id: "route", title: "Project", item_ids: [data.tasks[0].id], outcome: "Working result", check: "Run it" }],
         milestones: [], assumptions: ["estimated"], risks: [], uncovered: [] };
+      // 时间口径：只保留活动策略与依赖；旧内容量字段输入宽容但写回被丢弃。
       data.tasks[0].planning = { workload: { components: [{ id: "papers", label: "Past papers", quantity: 21, unit: "paper", minutes_per_unit: 180 }],
-        source: "confirmed scope", confidence: "medium", calibration: "Review after 3 attempts" } };
+        source: "confirmed scope", confidence: "medium", calibration: "Review after 3 attempts" },
+        activity: { kind: "finite", starts_on: "2026-10-01", ends_on: "2027-10-01" } };
       data.tasks[0].estimated_minutes = 3780;
+      data.tasks[0].completed_at = "2026-10-15T08:00:00.000Z";
       data.blocks[0].activity_instance_id = "task:2026-10-12:1";
       const put = (value: unknown, base: unknown, expectedRevision: number, writer?: number) => app.inject({
         method: "PUT", url: "/api/planner/sync", headers: user.headers,
@@ -225,7 +239,9 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       const saved = first.json();
       const native = (await app.inject({ url: "/api/planner/snapshot", headers: user.headers })).json().data;
       expect(native.planning.route[0].item_ids).toContain(native.tasks[0].id);
-      expect(native.tasks[0].planning.workload.components[0].quantity).toBe(21);
+      expect(native.tasks[0].planning.activity).toEqual({ kind: "finite", starts_on: "2026-10-01", ends_on: "2027-10-01" });
+      expect(native.tasks[0].planning).not.toHaveProperty("workload");
+      expect(native.tasks[0].completed_at).toBe("2026-10-15T08:00:00.000Z");
       expect(native.blocks[0].activity_instance_id).toBe("task:2026-10-12:1");
       const stripped = structuredClone(saved.data);
       delete stripped.planning;
@@ -238,9 +254,12 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       expect(unchanged.revision).toBe(saved.revision);
       const renamed = structuredClone(stripped);
       renamed.tasks[0].title = "An ordinary edit";
+      // 旧写入方不认识 completed_at：字段缺失必须保留云端完成时间（完成是粘性的）。
+      delete renamed.tasks[0].completed_at;
       const preserved = await put(renamed, saved.data, saved.revision, 1);
       expect(preserved.statusCode, preserved.body).toBe(200);
-      expect(preserved.json().data.tasks[0].planning).toEqual(data.tasks[0].planning);
+      expect(preserved.json().data.tasks[0].planning).toEqual({ activity: { kind: "finite", starts_on: "2026-10-01", ends_on: "2027-10-01" } });
+      expect(preserved.json().data.tasks[0].completed_at).toBe("2026-10-15T08:00:00.000Z");
       const clear = structuredClone(preserved.json().data);
       clear.planning = null;
       clear.tasks[0].planning = null;
@@ -249,6 +268,81 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       expect(cleared.statusCode, cleared.body).toBe(200);
       expect(cleared.json().data.planning).toBeNull();
       expect((await db.query("select planning_metadata from profiles where user_id=$1", [user.id])).rows[0].planning_metadata).toBeNull();
+    });
+
+    it("round-trips completed_at and only an explicit null clears completion", async () => {
+      const user = await account(), data = await fixture(user.id);
+      data.tasks[0].completed_at = "2026-10-15T08:00:00.000Z";
+      data.tasks[0].status = "completed";
+      const put = (value: any, base: any, expectedRevision: number) => app.inject({
+        method: "PUT", url: "/api/planner/sync", headers: user.headers,
+        payload: { data: value, base, expectedRevision },
+      });
+      const first = await put(data, null, 0);
+      expect(first.statusCode, first.body).toBe(200);
+      expect(first.json().data.tasks[0].completed_at).toBe("2026-10-15T08:00:00.000Z");
+      expect((await db.query("select completed_at from items where user_id=$1", [user.id])).rows[0].completed_at).not.toBeNull();
+      // 缺失字段的旧写入方不能清空完成时间。
+      const oldWriter = structuredClone(first.json().data);
+      delete oldWriter.tasks[0].completed_at;
+      oldWriter.tasks[0].title = "旧写入方改名";
+      const second = await put(oldWriter, first.json().data, first.json().revision);
+      expect(second.statusCode, second.body).toBe(200);
+      expect(second.json().data.tasks[0].completed_at).toBe("2026-10-15T08:00:00.000Z");
+      // 显式 null 才是清空；清空后关系表投影按时间规则重新派生兼容 status。
+      const cleared = structuredClone(second.json().data);
+      cleared.tasks[0].completed_at = null;
+      const third = await put(cleared, second.json().data, second.json().revision);
+      expect(third.statusCode, third.body).toBe(200);
+      expect(third.json().data.tasks[0].completed_at ?? null).toBeNull();
+      expect((await db.query("select completed_at,status from items where user_id=$1", [user.id])).rows[0].completed_at).toBeNull();
+    });
+
+    it("round-trips the archived dual form (legacy status, new field, preserve and unarchive)", async () => {
+      const user = await account(), data = await fixture(user.id);
+      const put = (value: any, base: any, expectedRevision: number) => app.inject({
+        method: "PUT", url: "/api/planner/sync", headers: user.headers,
+        payload: { data: value, base, expectedRevision },
+      });
+      // 1) 旧写入方：只发 status='archived'，archived 缺失 → 归档，响应补 archived=true。
+      data.tasks[0].status = "archived";
+      delete data.tasks[0].archived;
+      const first = await put(data, null, 0);
+      expect(first.statusCode, first.body).toBe(200);
+      expect(first.json().data.tasks[0]).toMatchObject({ archived: true, status: "archived" });
+      const archivedRow = (await db.query("select archived,status from items where user_id=$1", [user.id])).rows[0];
+      expect(archivedRow).toEqual({ archived: true, status: "archived" });
+
+      // 2) 旧写入方省略 archived 的普通同步：保留云端归档（缺失=保留）。
+      //    旧客户端模型不认识新字段，base 回传时同样会丢掉 archived，不能因此误报 409。
+      const oldWriter = structuredClone(first.json().data);
+      delete oldWriter.tasks[0].archived;
+      oldWriter.tasks[0].title = "旧写入方改名";
+      const oldWriterBase = structuredClone(first.json().data);
+      delete oldWriterBase.tasks[0].archived;
+      const second = await put(oldWriter, oldWriterBase, first.json().revision);
+      expect(second.statusCode, second.body).toBe(200);
+      expect(second.json().data.tasks[0].archived).toBe(true);
+
+      // 3) 新客户端：只发 archived=true、status 缺失 → 投影 status=archived，读回两种字段都正确。
+      const newClient = structuredClone(second.json().data);
+      newClient.tasks[0].archived = true;
+      delete newClient.tasks[0].status;
+      const third = await put(newClient, second.json().data, second.json().revision);
+      expect(third.statusCode, third.body).toBe(200);
+      expect(third.json().data.tasks[0]).toMatchObject({ archived: true, status: "archived" });
+      expect((await db.query("select archived,status from items where user_id=$1", [user.id])).rows[0])
+        .toEqual({ archived: true, status: "archived" });
+
+      // 4) 显式 archived=false → 取消归档（新字段优先于仍存在的旧 status）；
+      //    status 投影按时间口径重新派生（fixture 有 35 分钟日志 → in_progress）。
+      const restored = structuredClone(third.json().data);
+      restored.tasks[0].archived = false;
+      const fourth = await put(restored, third.json().data, third.json().revision);
+      expect(fourth.statusCode, fourth.body).toBe(200);
+      expect(fourth.json().data.tasks[0]).toMatchObject({ archived: false, status: "in_progress" });
+      expect((await db.query("select archived,status from items where user_id=$1", [user.id])).rows[0])
+        .toEqual({ archived: false, status: "in_progress" });
     });
 
     it("clears the target date instead of reviving the legacy exam date", async () => {
@@ -333,7 +427,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       expect(saved.statusCode, saved.body).toBe(200);
       for (let attempt = 0; attempt < 2; attempt++) {
         const pulled = (await app.inject({ url: "/api/planner/sync", headers: user.headers })).json();
-        expect(pulled.data).toEqual(data);
+        expect(pulled.data).toEqual(withArchived(data));
       }
       const native = (await app.inject({ url: "/api/planner/snapshot", headers: user.headers })).json().data;
       expect(data.blocks.filter((row: any) => row.date === "2026-10-17")).toHaveLength(2);
@@ -395,7 +489,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       const pulled = await app.inject({ url: "/api/planner/sync", headers: user.headers });
       expect(pulled.statusCode).toBe(409);
       expect(pulled.json().error).toContain("时间块");
-      expect((await db.query("select document from planner_sync_state where user_id=$1", [user.id])).rows[0].document).toEqual(data);
+      expect((await db.query("select document from planner_sync_state where user_id=$1", [user.id])).rows[0].document).toEqual(withArchived(data));
     });
     it("concurrent clients cannot both commit the same expected revision", async () => {
       const user = await account(),

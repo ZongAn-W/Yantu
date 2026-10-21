@@ -380,7 +380,9 @@ void main() {
     expect(taskDayMinutes(harness.coordinator.data!, taskId, '2026-10-17'), 0);
   });
 
-  testWidgets('today shows the read-only ring at mobile width', (tester) async {
+  testWidgets('today shows the compact timer row at mobile width', (
+    tester,
+  ) async {
     tester.view.physicalSize = const Size(320, 844);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
@@ -462,21 +464,14 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, '登录'));
     await tester.pumpAndSettle();
 
-    expect(find.byType(TaskStudyTimer), findsOneWidget);
-    expect(
-      find.descendant(
-        of: find.byType(TaskStudyTimer),
-        matching: find.byType(CircularProgressIndicator),
-      ),
-      findsOneWidget,
-    );
-    expect(
-      find.descendant(
-        of: find.byType(TaskStudyTimer),
-        matching: find.text('开始计时'),
-      ),
-      findsOneWidget,
-    );
+    final taskId = plan.tasks.single.id;
+    final date = shanghaiToday(clock.now());
+    // 今日页使用单行紧凑计时行：实时用时、主操作与展开入口，不再渲染大圆环。
+    expect(find.byType(TaskStudyTimer), findsNothing);
+    expect(find.byKey(Key('study-clock-$taskId-$date')), findsOneWidget);
+    expect(find.byKey(Key('study-timer-action-$taskId-$date')), findsOneWidget);
+    expect(find.byTooltip('展开学习详情'), findsOneWidget);
+    expect(find.text('开始计时'), findsOneWidget);
     expect(find.text('今日已完成'), findsNothing);
     expect(find.text('记录用时'), findsNothing);
     expect(find.text('修改用时'), findsNothing);

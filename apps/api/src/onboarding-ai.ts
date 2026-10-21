@@ -335,7 +335,7 @@ export async function generateItems(session: OnboardingSession, instruction = ""
       ? `本次为全周期一次性生成：planning.mode="full"，rolling=false，detail_days=${horizonDays}，从 plan_start_date 到 plan_end_date 首尾完整覆盖，不按14天窗口分段，也不要求模型逐日输出时间块（程序会按结构化策略展开每日安排）。`
       : `本次为旧版滚动计划：planning.mode="rolling"，rolling=true，detail_days=${horizonDays}，仅细化近期窗口，其余周期用于预测。`;
     const capacityInstruction = capacity
-      ? `容量假设：口径=${capacity.basis}；每周采用${capacity.adopted_weekly_minutes ?? "默认模板"}分钟${capacity.weekly_range_minutes ? `（用户给出范围${capacity.weekly_range_minutes.min}–${capacity.weekly_range_minutes.max}分钟，仅说明较高容量情景）` : ""}；共${capacity.weeks.length}个自然周（其中${capacity.estimated_weeks}周为程序建议分配）。时间不足时明确列出范围缺口与取舍，不得篡改真实截止日期或压缩单价。`
+      ? `容量假设：口径=${capacity.basis}；每周采用${capacity.adopted_weekly_minutes ?? "默认模板"}分钟${capacity.weekly_range_minutes ? `（用户给出范围${capacity.weekly_range_minutes.min}–${capacity.weekly_range_minutes.max}分钟，仅说明较高容量情景）` : ""}；共${capacity.weeks.length}个自然周（其中${capacity.estimated_weeks}周为程序建议分配）。时间不足时明确列出范围缺口与取舍，不得篡改真实截止日期或虚报时长。`
       : "";
     const result = await model(itemSchema, [
       '直接生成可执行事项，不要求先创建课程。返回 {"items":[{"id":"item-1","tag_names":["可选标签名"],"title":"可执行标题","description":"学习范围","completion_criteria":"可验证标准","estimated_minutes":600,"earliest_date":"YYYY-MM-DD","deadline":"YYYY-MM-DD","deadline_kind":"deadline","priority":2}],"summary":"依据","assumptions":[],"warnings":[]}。tag_names可以省略或为空；只写标签名称，不得编造数据库ID。',
@@ -345,15 +345,15 @@ export async function generateItems(session: OnboardingSession, instruction = ""
       "日期不得早于今天且开始不得晚于截止。本次规划周期为 plan_start_date 到 plan_end_date；目标日期是 target_date，可以为空，且不等于规划结束日期。真实截止日期可以晚于 plan_end_date，不要为了塞进本期而缩短它。",
       "全周期覆盖要求：每一项学习内容都必须有明确去向——正式安排、明确在本期范围外、用户确认的备选，或量化的容量缺口（写入 planning.uncovered / risks）。未知材料或速度用明确估算、可信度和少量诊断事项表达，仍一次生成完整计划，不要求先完成诊断才生成远期安排。",
       "有修改要求时以当前手动编辑后的事项为基础，只做用户要求的修改，保留未修改事项的id。",
-      "有current_plan时，继续同一学习事项应复用原id，estimated_minutes为包含已完成用时的总预算；固定事项必须原样保留。不要恢复status为archived的事项，除非用户明确要求。",
+      "有current_plan时，继续同一学习事项应复用原id，estimated_minutes为包含已完成用时的总预算；固定事项必须原样保留。不要恢复 archived（旧字段 status 为 archived）的事项，除非用户明确要求。",
       "current_plan 是精简的历史背景：archived_items 中的事项必须保持归档，除非用户明确要求恢复；recent_execution 是近期记录的汇总，不替代完整计时样本。",
       `规划版本为 ${PLANNING_PROMPT_VERSION} / ${PLANNING_RULES_VERSION}。必须返回 planning:{version:1,prompt_version:"${PLANNING_PROMPT_VERSION}",rules_version:"${PLANNING_RULES_VERSION}",mode:"${planMode}",detail_days:${horizonDays},rolling:${planMode === "rolling"},route:[{id,title,start_date?,end_date?,item_ids,outcome,check}],milestones:[],assumptions:[],risks:[],uncovered:[]}。阶段根据目标选择，技能围绕成果、学习内容围绕章节，自学允许低强度，不套用考研阶段。`,
-      '每个事项返回 planning:{workload:{components:[{id,label,quantity,unit,minutes_per_unit,selected:true}],source,confidence:"low"|"medium"|"high",calibration},activity:{kind:"finite"|"recurring",starts_on,ends_on,sessions_per_week?,session_minutes?,state:"active"},dependencies:[{task_id,mode:"planned"|"confirmed"}]}。数量和单价不可只写在自然语言里。组成分量相加，未选择的备选 selected:false 不计入预算；复盘与作答分开，区间可加range_min/range_max，说明所采用值是估计。',
-      '有限内容 estimated_minutes 必须等于选中组成项 quantity*minutes_per_unit 向上取整的和。例如15套真题+6套模拟每套180分钟，作答就3780分钟，复盘额外计算。持续活动 workload 描述单次组成且等于session_minutes，estimated_minutes由程序按本期需求计算；不能把全年预算再按周重复计入。',
-      '持续练习使用有限有效窗口、每周次数1至7、单次时长，不能先排完全部预算后消失。无真实日期不编造准确官方日期。仅引用输入中实际存在的资料，未知材料安排少量校准并声明未知；source不能声称未提供的资料已核实。',
-      'workload.evidence_refs 可引用 answer:0 等实际回答下标或 research.sources 中的原网址，缺少依据则保持空数组。milestones 每项包含 title、source_kind(user|verified|suggested|unknown)、date_precision(year|month|day|unknown)、date_value、source_ref；verified必须对应非参考原文，未公布日不使用day精度。',
-      '标签仅作为可选分类，不能用标签代替事项状态、日期、工作量或进度。保留用户可用时间和所有真实日期，容量不足明确取舍与未覆盖内容，禁止为了填满日历编任务或压缩单价。修订必须保留全部已确认事项ID，范围变化写入risks。',
-      'current_plan.feedback_signals 分别提供实际用时、用户确认内容进度和困难。有效计时少于3次不能推断稳定速度；遇到困难应调整练习方式、范围或复习，不只是移动分钟。达到预算不表示内容完成，后续依赖需要实际内容确认。',
+      '每个事项返回 planning:{activity:{kind:"finite"|"recurring",starts_on,ends_on,sessions_per_week?,session_minutes?,state:"active"},dependencies:[{task_id,mode:"planned"|"confirmed"}]}。进度只按时间口径：estimated_minutes 是完成该事项的预计总学习分钟数（含已完成用时），不要再编造数量×单价、内容进度、困难反馈或难度字段。',
+      '材料或学习速度未知时给出明确可调整的估算，并在 assumptions/warnings 里说明不确定性；可以安排少量校准事项，但不要虚构精确单价或依据。预算与实际用时持续偏离时调整 estimated_minutes 或范围，不写内容进度。',
+      '持续练习使用有限有效窗口、每周次数1至7、单次时长，estimated_minutes 由程序按本期需求计算；不能先排完全部预算后消失。无真实日期不编造准确官方日期。仅引用输入中实际存在的资料，未知材料安排少量校准并声明未知；source不能声称未提供的资料已核实。',
+      'milestones 每项包含 title、source_kind(user|verified|suggested|unknown)、date_precision(year|month|day|unknown)、date_value、source_ref；verified必须对应非参考原文，未公布日不使用day精度。',
+      '标签仅作为可选分类，不能用标签代替事项状态、日期、时间预算或进度。保留用户可用时间和所有真实日期，容量不足明确取舍与未覆盖内容，禁止为了填满日历编任务或虚报时长。修订必须保留全部已确认事项ID，范围变化写入risks。',
+      'current_plan.recent_execution 提供近期实际用时汇总；有效计时少于3次不能推断稳定速度。进度只按时间计算：预计时长用完即视为完成，不需要内容确认；实际用时持续偏离估算时调整 estimated_minutes、练习范围或频率，而不是编造内容进度。',
     ].join("\n"), {
       answers: session.answers, profile: session.profile, learning_context: session.learning_context, research: session.research, recommendations: session.recommendations,
       plan_start_date: session.start_date || shanghaiDate(),
@@ -381,9 +381,6 @@ export async function generateItems(session: OnboardingSession, instruction = ""
       completion_criteria: index === 0 ? "完成所选材料并整理要点" : "完成练习并记录错因或改进点",
       estimated_minutes: index === 0 ? 120 : 60,
       planning: {
-        workload: { components: [{ id: "calibrate", label: index === 0 ? "少量材料诊断" : "练习与复盘", quantity: 1,
-          unit: "次", minutes_per_unit: index === 0 ? 120 : 60, selected: true }],
-          source: "材料和速度未知，采用可调整的初始估计", confidence: "low" as const, calibration: "完成一次后记录实际内容进度和困难，再评估范围" },
         activity: { kind: "finite" as const, starts_on: session.start_date || today, ends_on: boundary, state: "active" as const },
         dependencies: [] },
       earliest_date: today, deadline: boundary, deadline_kind: "plan_end" as const,
@@ -393,7 +390,7 @@ export async function generateItems(session: OnboardingSession, instruction = ""
     items,
     summary: "根据访谈内容整理的学习事项",
     assumptions: session.profile.target_date ? [] : ["暂未设置目标日期，事项按本期安排边界推进"],
-    warnings: ["服务器未配置 AI，当前为基础模板，请核对学习预算和范围"],
+    warnings: ["服务器未配置 AI，当前为基础模板，请核对学习时间预算和范围"],
     planning: { ...newPlanning(), route: scopes.map((scope, index) => ({ id: `route-${index + 1}`, title: scope,
       item_ids: titles.map((_, itemIndex) => `item-${index + 1}-${itemIndex + 1}`),
       outcome: "确认材料与当前基础，完成小范围学习", check: "记录内容进展后重新评估" })),

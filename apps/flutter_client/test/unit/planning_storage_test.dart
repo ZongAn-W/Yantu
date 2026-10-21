@@ -40,20 +40,6 @@ PlannerData strategyFixture() {
     tasks: [
       data.tasks.single.copyWith(
         planning: {
-          'workload': {
-            'components': [
-              {
-                'id': 'papers',
-                'label': 'Past papers',
-                'quantity': 1,
-                'unit': 'paper',
-                'minutes_per_unit': 30,
-              },
-            ],
-            'source': 'confirmed scope',
-            'confidence': 'medium',
-            'calibration': 'Check after three attempts',
-          },
           'activity': {
             'kind': 'recurring',
             'starts_on': '2026-10-17',
@@ -62,7 +48,6 @@ PlannerData strategyFixture() {
             'session_minutes': 30,
             'state': 'active',
           },
-          'content_progress': {'completed_units': 1, 'confirmed': false},
         },
       ),
     ],
@@ -121,7 +106,10 @@ void main() {
           base.tasks.single.copyWith(
             planning: {
               ...base.tasks.single.planning!,
-              'content_progress': {'completed_units': 2, 'confirmed': false},
+              'activity': {
+                ...(base.tasks.single.planning!['activity'] as Map),
+                'sessions_per_week': 2,
+              },
             },
           ),
         ],
@@ -130,11 +118,8 @@ void main() {
       expect(merged.conflicts, isEmpty);
       expect(merged.data.planning!['risks'], ['review needed']);
       expect(
-        merged
-            .data
-            .tasks
-            .single
-            .planning!['content_progress']['completed_units'],
+        (merged.data.tasks.single.planning!['activity']
+            as Map)['sessions_per_week'],
         2,
       );
       final conflict = mergePlans(

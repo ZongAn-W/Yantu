@@ -17,6 +17,7 @@ class PlannerTokens extends ThemeExtension<PlannerTokens> {
     required this.canvas,
     required this.surface,
     required this.surfaceMuted,
+    required this.surfaceInset,
     required this.sidebar,
     required this.hover,
     required this.selected,
@@ -35,6 +36,7 @@ class PlannerTokens extends ThemeExtension<PlannerTokens> {
     required this.focusRing,
     required this.selection,
     required this.shadow,
+    required this.panelShadow,
     required this.scrim,
     required this.snackAction,
     required this.noticeSuccessBackground,
@@ -73,6 +75,10 @@ class PlannerTokens extends ThemeExtension<PlannerTokens> {
 
   /// Inset blocks, progress tracks and muted fills.
   final Color surfaceMuted;
+
+  /// Recessed controls inside a panel (inputs, icon-action chrome). One step
+  /// below [surface] so controls no longer disappear into white panels.
+  final Color surfaceInset;
 
   /// Desktop navigation rail background.
   final Color sidebar;
@@ -124,8 +130,12 @@ class PlannerTokens extends ThemeExtension<PlannerTokens> {
   /// Text selection highlight.
   final Color selection;
 
-  /// Floating-layer shadow (never used on cards).
+  /// Floating-layer shadow.
   final Color shadow;
+
+  /// Panel-level micro shadow: panels stay calm (hairline + 1 px soft shadow)
+  /// while floating layers keep [shadow]. Never use a heavy drop shadow.
+  final Color panelShadow;
 
   /// Modal scrim.
   final Color scrim;
@@ -202,6 +212,7 @@ class PlannerTokens extends ThemeExtension<PlannerTokens> {
     canvas: PlannerPalette.canvas,
     surface: PlannerPalette.surface,
     surfaceMuted: PlannerPalette.surfaceMuted,
+    surfaceInset: PlannerPalette.surfaceInset,
     sidebar: PlannerPalette.sidebar,
     hover: PlannerPalette.hover,
     selected: PlannerPalette.selected,
@@ -220,6 +231,7 @@ class PlannerTokens extends ThemeExtension<PlannerTokens> {
     focusRing: PlannerPalette.focusRing,
     selection: PlannerPalette.selection,
     shadow: PlannerPalette.shadow,
+    panelShadow: PlannerPalette.panelShadow,
     scrim: PlannerPalette.scrim,
     snackAction: PlannerPalette.snackAction,
     noticeSuccessBackground: PlannerPalette.noticeSuccessBackground,
@@ -259,6 +271,7 @@ class PlannerTokens extends ThemeExtension<PlannerTokens> {
     canvas: PlannerDarkPalette.canvas,
     surface: PlannerDarkPalette.surface,
     surfaceMuted: PlannerDarkPalette.surfaceMuted,
+    surfaceInset: PlannerDarkPalette.surfaceInset,
     sidebar: PlannerDarkPalette.sidebar,
     hover: PlannerDarkPalette.hover,
     selected: PlannerDarkPalette.selected,
@@ -277,6 +290,7 @@ class PlannerTokens extends ThemeExtension<PlannerTokens> {
     focusRing: PlannerDarkPalette.focusRing,
     selection: PlannerDarkPalette.selection,
     shadow: PlannerDarkPalette.shadow,
+    panelShadow: PlannerDarkPalette.panelShadow,
     scrim: PlannerDarkPalette.scrim,
     snackAction: PlannerDarkPalette.snackAction,
     noticeSuccessBackground: PlannerDarkPalette.noticeSuccessBackground,
@@ -316,6 +330,7 @@ class PlannerTokens extends ThemeExtension<PlannerTokens> {
     Color? canvas,
     Color? surface,
     Color? surfaceMuted,
+    Color? surfaceInset,
     Color? sidebar,
     Color? hover,
     Color? selected,
@@ -334,6 +349,7 @@ class PlannerTokens extends ThemeExtension<PlannerTokens> {
     Color? focusRing,
     Color? selection,
     Color? shadow,
+    Color? panelShadow,
     Color? scrim,
     Color? snackAction,
     Color? noticeSuccessBackground,
@@ -365,6 +381,7 @@ class PlannerTokens extends ThemeExtension<PlannerTokens> {
     canvas: canvas ?? this.canvas,
     surface: surface ?? this.surface,
     surfaceMuted: surfaceMuted ?? this.surfaceMuted,
+    surfaceInset: surfaceInset ?? this.surfaceInset,
     sidebar: sidebar ?? this.sidebar,
     hover: hover ?? this.hover,
     selected: selected ?? this.selected,
@@ -383,6 +400,7 @@ class PlannerTokens extends ThemeExtension<PlannerTokens> {
     focusRing: focusRing ?? this.focusRing,
     selection: selection ?? this.selection,
     shadow: shadow ?? this.shadow,
+    panelShadow: panelShadow ?? this.panelShadow,
     scrim: scrim ?? this.scrim,
     snackAction: snackAction ?? this.snackAction,
     noticeSuccessBackground:
@@ -428,6 +446,7 @@ class PlannerTokens extends ThemeExtension<PlannerTokens> {
       canvas: mixColor(canvas, other.canvas),
       surface: mixColor(surface, other.surface),
       surfaceMuted: mixColor(surfaceMuted, other.surfaceMuted),
+      surfaceInset: mixColor(surfaceInset, other.surfaceInset),
       sidebar: mixColor(sidebar, other.sidebar),
       hover: mixColor(hover, other.hover),
       selected: mixColor(selected, other.selected),
@@ -446,6 +465,7 @@ class PlannerTokens extends ThemeExtension<PlannerTokens> {
       focusRing: mixColor(focusRing, other.focusRing),
       selection: mixColor(selection, other.selection),
       shadow: mixColor(shadow, other.shadow),
+      panelShadow: mixColor(panelShadow, other.panelShadow),
       scrim: mixColor(scrim, other.scrim),
       snackAction: mixColor(snackAction, other.snackAction),
       noticeSuccessBackground: mixColor(
@@ -513,23 +533,27 @@ abstract final class PlannerDurations {
 /// The literal "Mist Ink" palette. This is the only place colour values are
 /// written down; [PlannerTokens.light] and the legacy aliases both read it.
 abstract final class PlannerPalette {
-  static const canvas = Color(0xfff6f7f9);
+  // "Mist Ink 2.0" (2026-10-21): a brand-washed canvas + deeper sidebar give
+  // the page shell a second plane; panels then sit on it with a 1 px micro
+  // shadow and white paper stays the only "flat" surface.
+  static const canvas = Color(0xffeef2f8);
   static const surface = Color(0xffffffff);
-  static const surfaceMuted = Color(0xfff0f3f7);
-  static const sidebar = Color(0xfff3f5f8);
-  static const hover = Color(0xfff1f3f6);
-  static const selected = Color(0xffe9f1f8);
+  static const surfaceMuted = Color(0xffeef3f9);
+  static const surfaceInset = Color(0xfff1f5fa);
+  static const sidebar = Color(0xffe3ecf5);
+  static const hover = Color(0xffedf2f8);
+  static const selected = Color(0xffe2edf8);
 
   static const text = Color(0xff1c2530);
   static const muted = Color(0xff5a6675);
   static const subtle = Color(0xff8b96a5);
 
-  static const border = Color(0xffe4e8ee);
-  static const borderStrong = Color(0xffcdd5df);
+  static const border = Color(0xffe1e8f0);
+  static const borderStrong = Color(0xffc8d4e2);
 
   static const accent = Color(0xff2f5d8a);
   static const accentHover = Color(0xff244a70);
-  static const accentSoft = Color(0xffe9f1f8);
+  static const accentSoft = Color(0xffe4eff9);
   static const accentOn = Colors.white;
   static const success = Color(0xff2e7d66);
   static const warning = Color(0xffb7791f);
@@ -537,6 +561,7 @@ abstract final class PlannerPalette {
   static const focusRing = Color(0x592f5d8a);
   static const selection = Color(0x332f5d8a);
   static const shadow = Color(0x1a0f172a);
+  static const panelShadow = Color(0x140f172a);
   static const scrim = Color(0x660f172a);
   static const snackAction = Color(0xffa9c8e5);
   static const noticeSuccessBackground = Color(0xffeef7f2);
@@ -548,7 +573,7 @@ abstract final class PlannerPalette {
   static const noticeErrorBackground = Color(0xfffcefed);
   static const noticeErrorBorder = Color(0xfff0ccc7);
   static const noticeErrorInk = Color(0xff8f3733);
-  static const accentBorder = Color(0xffb8cfe4);
+  static const accentBorder = Color(0xffb0cbe4);
   static const floatingShadow = Color(0x0a0f172a);
   static const inverseOn = Color(0xffffffff);
   static const tagFallbackColors = <Color>[
@@ -569,6 +594,7 @@ abstract final class PlannerDarkPalette {
   static const canvas = Color(0xff0f1115);
   static const surface = Color(0xff161a20);
   static const surfaceMuted = Color(0xff1c2128);
+  static const surfaceInset = Color(0xff14181e);
   static const sidebar = Color(0xff12161b);
   static const hover = Color(0xff232b35);
   static const selected = Color(0xff1e2f42);
@@ -590,6 +616,7 @@ abstract final class PlannerDarkPalette {
   static const focusRing = Color(0x997faad8);
   static const selection = Color(0x557faad8);
   static const shadow = Color(0x66000000);
+  static const panelShadow = Color(0x4d000000);
   static const scrim = Color(0x99000000);
   static const snackAction = Color(0xffa9c8e5);
 
@@ -645,6 +672,9 @@ abstract final class PlannerRadius {
 
 /// Maximum content width of a workbench page on desktop.
 const double plannerPageMaxWidth = 1200;
+
+/// Width at which the shell switches from the bottom navigation to the sidebar.
+const double plannerShellBreakpoint = 900;
 
 /// Shorthand for feature widgets: context.tokens.muted.
 extension PlannerTokensBuildContext on BuildContext {

@@ -12,6 +12,7 @@ import { PROFILE_COLUMNS, confirmDraft, itemToJson, replanDocument, saveProfile,
 import { commitPlannerState, PlannerRevisionConflict, readPlannerState } from "./sync.js";
 import type { PlannerDocument } from "./sync-contracts.js";
 import { buildPlanningDocument } from "./planning-service.js";
+import { taskArchived, taskCompleted } from "./planning-scheduler.js";
 
 class SessionConflict extends Error {}
 
@@ -32,23 +33,14 @@ function planContext(document: PlannerDocument) {
   const fixed = new Set(document.blocks.filter(block => block.is_fixed).map(block => block.task_id));
   return { profile: document.profile, tags: document.tags, items: document.tasks.map(task => ({ ...task, is_fixed: task.is_fixed || fixed.has(task.id) })),
     planning: document.planning,
-    feedback_signals: document.tasks.flatMap(task => {
-      const feedback = task.planning?.feedback;
-      if (!feedback) return [];
-      const samples = document.logs.filter(log => log.task_id === task.id && log.source === "timer" && log.minutes > 0
-        && Date.parse(log.ended_at) > Date.parse(log.started_at) && log.ended_at <= feedback.sampled_at);
-      const elapsed = samples.reduce((sum, log) => sum + log.minutes, 0);
-      return [{ item_id: task.id, content_units: feedback.content_units, content_completed: feedback.content_completed,
-        difficulty: feedback.difficulty, valid_samples: samples.length, actual_minutes: elapsed,
-        observed_minutes_per_unit: samples.length >= 3 && feedback.content_units > 0 ? elapsed / feedback.content_units : null,
-        estimated: samples.length < 3 }];
-    }),
     recent_blocks: document.blocks.filter(block => block.actual_minutes > 0 || block.is_fixed).slice(-100) };
 }
 
 function seedDraft(session: OnboardingSession, document: PlannerDocument) {
   const fixed = new Set(document.blocks.filter(block => block.is_fixed).map(block => block.task_id));
-  const tasks = document.tasks.filter(task => task.is_fixed || fixed.has(task.id) || task.status !== "archived" && task.status !== "completed").slice(0, 500);
+  // 阶段 3b-A：归档/完成判断优先用新字段，旧 status 仍兼容（文档经同步层归一化后两者都有）。
+  const tasks = document.tasks.filter(task => task.is_fixed || fixed.has(task.id)
+    || !taskArchived(task) && !taskCompleted(task)).slice(0, 500);
   const tagsById = new Map(document.tags.map(tag => [tag.id, tag.name]));
   session.items = tasks.map(task => ({ id: task.id, tag_names: task.tag_ids.map(id => tagsById.get(id)).filter((name): name is string => Boolean(name)), title: task.title,
     description: task.description ?? "", completion_criteria: "", estimated_minutes: task.estimated_minutes,

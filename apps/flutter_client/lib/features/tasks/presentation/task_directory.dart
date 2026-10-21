@@ -6,11 +6,13 @@ import 'package:planner_ui_vendor/planner_ui_vendor.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets.dart';
 import '../../../shared/models/planner_models.dart';
+import '../../../shared/models/task_lifecycle.dart';
 import '../../planner/application/planner_session.dart';
 import '../../planner/application/study_timer.dart';
 import '../../planner/domain/planner_format.dart';
 import '../../planner/presentation/task_study_timer.dart'
     show showExtraStudyPauseFollowUp;
+import 'task_quick_actions.dart';
 import 'tasks_dialogs.dart';
 
 /// Flat task directory with optional multi-tag filtering.
@@ -92,10 +94,6 @@ class _TaskDirectoryState extends ConsumerState<TaskDirectory> {
     }
   }
 
-  Future<void> _manageTags() async {
-    await TagManagementDialog.show(context);
-  }
-
   Future<void> _deleteTask(Task task) async {
     final confirmed = await confirmAction(
       context,
@@ -122,6 +120,9 @@ class _TaskDirectoryState extends ConsumerState<TaskDirectory> {
   @override
   Widget build(BuildContext context) {
     final tokens = context.tokens;
+    // Below the shell breakpoint the app bar owns the global item actions.
+    final wideLayout =
+        MediaQuery.sizeOf(context).width >= plannerShellBreakpoint;
     final tagsById = {for (final tag in widget.data.tags) tag.id: tag};
     final filtered =
         widget.data.tasks.where((task) {
@@ -137,24 +138,8 @@ class _TaskDirectoryState extends ConsumerState<TaskDirectory> {
         SectionHeader(
           title: '全部事项',
           count: filtered.length,
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              PlannerIconAction(
-                key: const Key('manage-tags-button'),
-                tooltip: '管理标签',
-                icon: LucideIcons.tags,
-                onPressed: widget.editable ? _manageTags : null,
-              ),
-              const SizedBox(width: PlannerSpace.sm),
-              FilledButton.icon(
-                key: const Key('new-task-button'),
-                onPressed: widget.editable ? () => _editTask() : null,
-                icon: const Icon(LucideIcons.plus, size: 16),
-                label: const Text('新建事项'),
-              ),
-            ],
-          ),
+          centered: true,
+          trailing: wideLayout ? const TaskQuickActions() : null,
         ),
         if (widget.data.tags.isNotEmpty) ...[
           const SizedBox(height: PlannerSpace.md),
@@ -236,7 +221,7 @@ class _TaskDirectoryState extends ConsumerState<TaskDirectory> {
             actionLabel: _selectedTagIds.isNotEmpty ? '清除筛选' : '新建事项',
           )
         else
-          Card(
+          PlannerSurface(
             child: Column(
               children: [
                 for (var i = 0; i < filtered.length; i++) ...[
@@ -244,6 +229,7 @@ class _TaskDirectoryState extends ConsumerState<TaskDirectory> {
                   // W7: per-row repaint isolation.
                   RepaintBoundary(
                     child: _TaskRow(
+                      data: widget.data,
                       task: filtered[i],
                       tags: [
                         for (final id in filtered[i].tagIds)
@@ -265,6 +251,7 @@ class _TaskDirectoryState extends ConsumerState<TaskDirectory> {
 
 class _TaskRow extends StatelessWidget {
   const _TaskRow({
+    required this.data,
     required this.task,
     required this.tags,
     required this.editable,
@@ -272,6 +259,7 @@ class _TaskRow extends StatelessWidget {
     required this.onDelete,
   });
 
+  final PlannerData data;
   final Task task;
   final List<Tag> tags;
   final bool editable;
@@ -280,8 +268,9 @@ class _TaskRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final archived = task.status == TaskStatus.archived;
-    final completed = task.status == TaskStatus.completed;
+    final progress = taskTimeProgress(data, task);
+    final archived = progress.archived;
+    final completed = progress.completed;
     final tokens = context.tokens;
     return Material(
       color: Colors.transparent,
@@ -319,20 +308,15 @@ class _TaskRow extends StatelessWidget {
                         ),
                       ),
                     ),
-                    if (completed)
-                      Padding(
-                        padding: const EdgeInsets.only(left: 5),
-                        child: Icon(
-                          LucideIcons.circleCheck,
-                          size: 13,
-                          color: tokens.success,
-                        ),
+                    Padding(
+                      padding: const EdgeInsets.only(left: 6),
+                      child: PlannerTag(
+                        key: Key('task-progress-${task.id}'),
+                        label: progress.shortLabel,
+                        color: taskProgressTone(progress, tokens),
+                        dense: true,
                       ),
-                    if (archived)
-                      const Padding(
-                        padding: EdgeInsets.only(left: 5),
-                        child: PlannerTag(label: '已归档', dense: true),
-                      ),
+                    ),
                     if (tags.isNotEmpty) ...[
                       const SizedBox(width: 8),
                       for (final tag in tags.take(2))
@@ -358,7 +342,20 @@ class _TaskRow extends StatelessWidget {
                 enabled: editable,
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(minWidth: 150),
-                icon: Icon(LucideIcons.ellipsis, size: 18, color: tokens.muted),
+                icon: Container(
+                  width: 30,
+                  height: 30,
+                  decoration: BoxDecoration(
+                    color: tokens.surfaceInset,
+                    borderRadius: BorderRadius.circular(PlannerRadius.xs),
+                    border: Border.all(color: tokens.border),
+                  ),
+                  child: Icon(
+                    LucideIcons.ellipsis,
+                    size: 18,
+                    color: tokens.muted,
+                  ),
+                ),
                 itemBuilder: (context) => [
                   const PopupMenuItem(
                     value: _TaskMenuAction.edit,
@@ -414,7 +411,7 @@ class _TaskExtraTimerButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (task.status == TaskStatus.archived) return const SizedBox.shrink();
+    if (task.isArchived) return const SizedBox.shrink();
     final tokens = context.tokens;
     final timer = ref.watch(studyTimerProvider);
     final date = shanghaiToday();
@@ -423,7 +420,7 @@ class _TaskExtraTimerButton extends ConsumerWidget {
     final enabled = editable && timer.ready && !timer.busy;
     final tooltip = active
         ? '暂停计时'
-        : task.status == TaskStatus.completed
+        : task.isCompleted
         ? '复习计时'
         : hasExtraToday
         ? '继续加学计时'
@@ -477,7 +474,7 @@ class _EmptyDirectory extends StatelessWidget {
   final String actionLabel;
 
   @override
-  Widget build(BuildContext context) => Card(
+  Widget build(BuildContext context) => PlannerSurface(
     child: PlannerEmpty(
       icon: icon,
       message: title,

@@ -251,7 +251,7 @@ void main() {
         tasks: [
           base.tasks.single.copyWith(
             title: '旧规划归档事项',
-            status: TaskStatus.archived,
+            archived: true,
             earliestDate: addDate(shanghaiToday(), 1),
           ),
         ],
@@ -260,7 +260,7 @@ void main() {
     final container = await signIn(tester, respond: server.respond);
     container.read(appRouterProvider).go('/tasks');
     await tester.pumpAndSettle();
-    // 合并后同一事项会同时出现在今日学习与全部事项目录里。
+    // 合并后同一事项会同时出现在今日安排与全部事项目录里。
     expect(find.text('旧规划归档事项'), findsWidgets);
 
     final menu = find.byTooltip('编辑或删除事项');
@@ -407,7 +407,6 @@ void main() {
     await tester.tap(find.text('重试加载'));
     await tester.pumpAndSettle(const Duration(seconds: 5));
     expect(coordinator.status, SyncStatus.connected);
-    expect(find.text('今日学习'), findsOneWidget);
     expect(find.text('全部事项'), findsOneWidget);
     expect(find.text('基础一轮'), findsWidgets);
   });

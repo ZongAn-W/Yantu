@@ -193,25 +193,26 @@ void main() {
         data.copyWith(tasks: [task]),
         updatedAt: '2026-10-17T00:00:00.000Z',
       );
-      // The log records 35 minutes against a 30 minute budget, so it is capped.
+      // The log records 35 minutes against a 30 minute budget, so it is capped
+      // and the time budget is exhausted → completedAt is stamped.
       expect(refreshed.tasks.single.completedMinutes, 30);
-      expect(refreshed.tasks.single.status, TaskStatus.inProgress);
+      expect(refreshed.tasks.single.completedAt, '2026-10-17T00:00:00.000Z');
       expect(refreshed.tasks.single.updatedAt, '2026-10-17T00:00:00.000Z');
     });
 
     test('a completed task stays completed unless it is corrected', () {
       final data = plannerFixture();
       final task = data.tasks.single.copyWith(
-        status: TaskStatus.completed,
+        completedAt: '2026-10-16T00:00:00.000Z',
         completedMinutes: 15600,
       );
       final kept = refreshTaskProgress(data.copyWith(tasks: [task]));
-      expect(kept.tasks.single.status, TaskStatus.completed);
+      expect(kept.tasks.single.completedAt, isNotNull);
       final corrected = refreshTaskProgress(
         data.copyWith(tasks: [task]),
         correctedTaskIds: [task.id],
       );
-      expect(corrected.tasks.single.status, TaskStatus.inProgress);
+      expect(corrected.tasks.single.completedAt, isNull);
     });
   });
 
@@ -390,9 +391,10 @@ void main() {
     });
 
     test(
-      'a task past its deadline is marked conflicted instead of scheduled',
+      'a task past its deadline reports a conflict without changing status',
       () {
         final data = plannerFixture();
+        final before = data.tasks.single;
         final result = scheduleTaskDay(
           data,
           data.tasks.single.id,
@@ -401,7 +403,8 @@ void main() {
         );
         expect(result.outcome.placed, 0);
         expect(result.outcome.conflict, isTrue);
-        expect(result.data.tasks.single.status, TaskStatus.conflict);
+        expect(result.data.tasks.single.archived, before.archived);
+        expect(result.data.tasks.single.completedAt, before.completedAt);
         expect(result.outcome.message, contains('容量不足'));
       },
     );
@@ -558,7 +561,7 @@ void main() {
         actualMinutes: 60,
       );
       final task = next.tasks.firstWhere((item) => item.id == taskId);
-      expect(task.status, TaskStatus.completed);
+      expect(task.completedAt, isNotNull);
       expect(task.completedMinutes, 60);
       expect(
         next.logs
@@ -583,7 +586,7 @@ void main() {
         actualMinutes: 0,
       );
       expect(next.blocks.any((block) => block.id == 'future'), isFalse);
-      expect(next.tasks.single.status, TaskStatus.completed);
+      expect(next.tasks.single.completedAt, isNotNull);
     });
   });
 

@@ -8,8 +8,14 @@ import { hasPlanningMetadata, preservePlanningMetadata } from "./sync.js";
 const fixture = () => JSON.parse(readFileSync(new URL("../../flutter_client/test/fixtures/planner_v1.json", import.meta.url), "utf8"));
 const strategy = () => PlanPlanningSchema.parse({ version: 1, prompt_version: "planning-1", rules_version: "rules-1",
   rolling: true, route: [], milestones: [], assumptions: ["estimated"], risks: [], uncovered: [] });
-const workload = { components: [{ id: "papers", label: "past papers", quantity: 21, unit: "paper", minutes_per_unit: 180 }],
-  source: "user supplied scope", confidence: "medium" as const, calibration: "compare actual time after 3 papers" };
+const timePlanning = () => ItemPlanningSchema.parse({ activity: { kind: "finite", starts_on: "2026-10-17",
+  ends_on: "2027-12-21" }, dependencies: [] });
+/** 旧数据里的内容量机制：读取必须宽容，但不再保留。 */
+const legacyContentPlanning = { workload: { components: [{ id: "papers", label: "past papers", quantity: 21, unit: "paper", minutes_per_unit: 180 }],
+  source: "user supplied scope", confidence: "medium", calibration: "compare actual time after 3 papers" },
+  content_progress: { completed_units: 2, confirmed: true },
+  feedback: { content_units: 100, content_completed: false, difficulty: "manageable", sampled_at: "2026-10-16T00:00:00.000Z" },
+  activity: { kind: "finite" as const, starts_on: "2026-10-17", ends_on: "2027-12-21" }, dependencies: [] };
 
 describe("planning metadata contracts and writer compatibility", () => {
   it("leaves legacy records without inferred metadata", () => {
@@ -18,20 +24,28 @@ describe("planning metadata contracts and writer compatibility", () => {
     expect(data.tasks.every(task => task.planning === undefined)).toBe(true);
     expect(hasPlanningMetadata(data)).toBe(false);
   });
-  it("preserves structured workload and strategy through draft and sync parsing", () => {
-    const planning = ItemPlanningSchema.parse({ workload, activity: { kind: "finite", starts_on: "2026-10-17",
-      ends_on: "2027-12-21" } });
+  it("keeps time-based strategy and silently drops legacy content-volume fields", () => {
+    const planning = ItemPlanningSchema.parse(legacyContentPlanning);
+    expect(planning.activity).toEqual({ kind: "finite", starts_on: "2026-10-17", ends_on: "2027-12-21" });
+    expect(planning.dependencies).toEqual([]);
+    expect(JSON.stringify(planning)).not.toContain("workload");
+    expect(JSON.stringify(planning)).not.toContain("content_progress");
     const item = ItemDraftSchema.parse({ id: "item", tag_names: ["高数"], title: "papers", estimated_minutes: 3780,
       deadline: "2027-12-21", planning });
     const draft = PlanDraftSchema.parse({ items: [item], analysis_summary: "scope", planning: strategy() });
-    expect(draft.items[0].planning?.workload?.components[0]).toMatchObject({ quantity: 21, minutes_per_unit: 180 });
+    expect(draft.items[0].planning?.activity?.kind).toBe("finite");
     expect(draft.planning?.detail_days).toBe(14);
     const data = fixture();
     data.planning = strategy();
-    data.tasks[0].planning = planning;
+    // 旧文档里带内容量字段：解析宽容，写回结构不含它们。
+    data.tasks[0].planning = legacyContentPlanning;
     data.tasks[0].estimated_minutes = 3780;
+    data.tasks[0].completed_at = "2026-10-20T08:00:00.000Z";
     data.blocks[0].activity_instance_id = "item:2026-10-12:1";
-    expect(PlannerDocumentSchema.parse(data).tasks[0].planning).toEqual(planning);
+    const parsed = PlannerDocumentSchema.parse(data);
+    expect(parsed.tasks[0].planning).toEqual(timePlanning());
+    expect(parsed.tasks[0].completed_at).toBe("2026-10-20T08:00:00.000Z");
+    expect(JSON.stringify(parsed.tasks[0])).not.toContain("workload");
   });
   it("maps old course draft references to optional tag names at the input boundary", () => {
     const draft = PlanDraftSchema.parse({ courses: [{ id: "old-id", name: "读书" }], items: [{ id: "item", course_id: "old-id",
@@ -55,7 +69,7 @@ describe("planning metadata contracts and writer compatibility", () => {
   it("preserves omitted metadata while honoring an explicit clear", () => {
     const current = PlannerDocumentSchema.parse(fixture());
     current.planning = strategy();
-    current.tasks[0].planning = { workload };
+    current.tasks[0].planning = timePlanning();
     current.blocks[0].activity_instance_id = "stable-instance";
     const stripped = PlannerDocumentSchema.parse(fixture());
     const saved = preservePlanningMetadata(stripped, current);
@@ -71,14 +85,50 @@ describe("planning metadata contracts and writer compatibility", () => {
     expect(cleared.tasks[0].planning).toBeNull();
     expect(cleared.blocks[0].activity_instance_id).toBeNull();
   });
-  it("refuses a new client's scalar budget edit that contradicts confirmed scope", () => {
+  it("accepts time-budget edits without any workload consistency requirement", () => {
     const data = fixture();
     data.planning = strategy();
-    data.tasks[0].planning = { workload };
+    data.tasks[0].planning = timePlanning();
+    // 纯时间口径：改预算不再需要同步任何结构化工作量。
     data.tasks[0].estimated_minutes = 2400;
-    expect(PlannerDocumentSchema.safeParse(data).success).toBe(false);
-    data.tasks[0].estimated_minutes = 3780;
     expect(PlannerDocumentSchema.safeParse(data).success).toBe(true);
+    data.tasks[0].completed_at = "2026-10-20T08:00:00.000Z";
+    expect(PlannerDocumentSchema.safeParse(data).success).toBe(true);
+    // completed_at 必须是合法的 ISO 时间戳；空字符串按“未完成”处理。
+    data.tasks[0].completed_at = "not-a-timestamp";
+    expect(PlannerDocumentSchema.safeParse(data).success).toBe(false);
+    data.tasks[0].completed_at = "";
+    const parsed = PlannerDocumentSchema.parse(data);
+    expect(parsed.tasks[0].completed_at).toBeNull();
+  });
+  it("supports the archived dual form while status stays a legacy projection", () => {
+    // 新客户端：只发 archived + completed_at，status 可省略。
+    const data = fixture();
+    data.tasks[0].archived = true;
+    delete data.tasks[0].status;
+    data.tasks[0].completed_at = "2026-10-20T08:00:00.000Z";
+    const parsed = PlannerDocumentSchema.parse(data);
+    expect(parsed.tasks[0].archived).toBe(true);
+    expect(parsed.tasks[0].status).toBeUndefined();
+    expect(parsed.tasks[0].completed_at).toBe("2026-10-20T08:00:00.000Z");
+
+    // 新客户端显式 false=取消归档；旧 status 仍可同时存在（服务端归一化时以 archived 为准）。
+    data.tasks[0].archived = false;
+    data.tasks[0].status = "archived";
+    expect(PlannerDocumentSchema.parse(data).tasks[0].archived).toBe(false);
+
+    // 旧客户端/旧文档：只发 status（含历史 delayed/conflict），archived 缺失可解析。
+    const legacy = fixture();
+    delete legacy.tasks[0].archived;
+    for (const status of ["archived", "delayed", "conflict", "completed", "not_started"] as const) {
+      legacy.tasks[0].status = status;
+      expect(PlannerDocumentSchema.safeParse(legacy).success, status).toBe(true);
+    }
+
+    // archived 只接受布尔值。
+    const invalid = fixture();
+    invalid.tasks[0].archived = "true";
+    expect(PlannerDocumentSchema.safeParse(invalid).success).toBe(false);
   });
   it("keeps server relation checks consistent with the client deletion rules", () => {
     // The client removes a deletable item, cleans `planning.route[].item_ids`,

@@ -12,23 +12,15 @@ void main() {
   PlannerData archivedFixture() {
     final base = plannerFixture();
     return base.copyWith(
-      tasks: [base.tasks.single.copyWith(status: TaskStatus.archived)],
+      tasks: [base.tasks.single.copyWith(archived: true)],
     );
   }
 
-  test(
-    'archived tasks round-trip through canonical JSON and task snapshots',
-    () {
-      final data = archivedFixture();
-      expect(data.toJson()['tasks'][0]['status'], 'archived');
-      expect(PlannerData.fromJson(data.toJson()), data);
-      final snapshot = TaskStatusSnapshot(
-        id: data.tasks.single.id,
-        status: TaskStatus.archived,
-      );
-      expect(TaskStatusSnapshot.fromJson(snapshot.toJson()), snapshot);
-    },
-  );
+  test('archived tasks round-trip through canonical JSON', () {
+    final data = archivedFixture();
+    expect(data.toJson()['tasks'][0]['archived'], isTrue);
+    expect(PlannerData.fromJson(data.toJson()), data);
+  });
 
   test(
     'archived history remains in actual totals but leaves active progress',
@@ -66,20 +58,20 @@ void main() {
       '2026-10-16',
       0,
     );
-    expect(recorded.tasks.single.status, TaskStatus.archived);
+    expect(recorded.tasks.single.archived, isTrue);
     expect(recorded.tasks.single.completedMinutes, 60);
-    expect(corrected.tasks.single.status, TaskStatus.archived);
+    expect(corrected.tasks.single.archived, isTrue);
     expect(corrected.tasks.single.completedMinutes, 0);
     expect(
-      refreshTaskProgress(recorded).tasks.single.status,
-      TaskStatus.archived,
+      refreshTaskProgress(recorded).tasks.single.archived,
+      isTrue,
     );
     expect(
       refreshTaskProgress(
         recorded,
         correctedTaskIds: [taskId],
-      ).tasks.single.status,
-      TaskStatus.archived,
+      ).tasks.single.archived,
+      isTrue,
     );
   });
 

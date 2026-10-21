@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../../shared/models/planner_models.dart';
+import '../../shared/models/task_lifecycle.dart';
 import '../../features/planner/application/local_replanning.dart';
 import '../../features/planner/domain/initial_plan.dart';
 import '../../features/planner/domain/scheduler/planner_scheduler.dart'
@@ -148,14 +149,12 @@ class PlannerCoordinator extends ChangeNotifier {
     StorageMetadata meta, {
     bool recovery = false,
   }) async {
-    final cleaned = purgeAdHocData(next);
     var effective = _purgedMetadata(meta);
-    if (!identical(cleaned, next) && !effective.pending) {
-      effective = effective.copyWith(
-        pending: true,
-        updatedAt: DateTime.now().toUtc(),
-      );
-    }
+    // 时间口径规范化只在确有本机写入（pending）时落盘，避免纯读取/云端拉取
+    // 立刻改写文档并触发一次无意义的回传；界面进度始终由日志实时派生。
+    final cleaned = effective.pending
+        ? normalizeTaskLifecycle(purgeAdHocData(next))
+        : purgeAdHocData(next);
     await storage.save(key, cleaned, effective, recovery: recovery);
     if (_disposed) return;
     data = cleaned;

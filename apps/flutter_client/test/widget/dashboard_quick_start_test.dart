@@ -11,7 +11,6 @@ import 'package:sjtu_study_planner_client/features/dashboard/presentation/dashbo
 import 'package:sjtu_study_planner_client/features/planner/application/planner_session.dart';
 import 'package:sjtu_study_planner_client/features/planner/application/study_timer.dart';
 import 'package:sjtu_study_planner_client/features/planner/domain/planner_format.dart';
-import 'package:sjtu_study_planner_client/features/planner/presentation/task_study_timer.dart';
 import 'package:sjtu_study_planner_client/shared/models/planner_models.dart';
 
 import '../support/planner_fixture.dart';
@@ -214,7 +213,7 @@ void main() {
   });
 
   testWidgets(
-    'planned day keeps the study timer card and adds the item directory',
+    'planned day keeps the compact study row and adds the item directory',
     (tester) async {
       final data = _plannedPlan();
       final task = data.tasks.single;
@@ -222,8 +221,16 @@ void main() {
       expect(find.text(_emptyTitle), findsNothing);
       expect(find.byKey(const Key('dashboard-empty-plan')), findsNothing);
       expect(find.byKey(_aiPlanning), findsNothing);
-      expect(find.text('今日学习'), findsOneWidget);
-      expect(find.byType(TaskStudyTimer), findsOneWidget);
+      expect(find.text('今日安排'), findsOneWidget);
+      // 今日页顶部不再展示日期与今日原定/已学汇总，两个分区图例也已移除。
+      expect(find.text('今日学习'), findsNothing);
+      expect(find.textContaining('今日原定'), findsNothing);
+      expect(find.text('开始计时后自动累计实际用时'), findsNothing);
+      expect(find.text('计划外或复习计时'), findsNothing);
+      // 单行紧凑计时行：实时用时、主操作与展开入口，不再有独立加学卡。
+      expect(find.byKey(Key('study-clock-${task.id}-$_today')), findsOneWidget);
+      expect(find.byTooltip('展开学习详情'), findsOneWidget);
+      expect(find.text('今日加学'), findsNothing);
       expect(
         find.byKey(Key('study-timer-action-${task.id}-$_today')),
         findsOneWidget,

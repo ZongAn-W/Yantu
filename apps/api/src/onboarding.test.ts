@@ -684,8 +684,7 @@ describe("full-period onboarding (one model response, flexible capacity)", () =>
     items: [{ id: "math-1", tag_names: ["线性代数"], title: "矩阵章节", description: "", completion_criteria: "",
       estimated_minutes: 120, earliest_date: cycle.start_date, deadline: cycle.end_date,
       deadline_kind: "plan_end", priority: 2,
-      planning: { workload: { components: [{ id: "unit", label: "章", quantity: 2, unit: "章", minutes_per_unit: 60 }],
-        source: "估算", confidence: "low", calibration: "记录本次速度" }, activity: { kind: "finite" }, dependencies: [] } }],
+      planning: { activity: { kind: "finite" }, dependencies: [] } }],
     planning,
   });
 
@@ -742,8 +741,10 @@ describe("full-period onboarding (one model response, flexible capacity)", () =>
     expect(items.planning!.mode).toBe("full");
     expect(items.planning!.detail_days).toBe(28);
     expect(items.items.length).toBeGreaterThan(0);
-    expect(items.items.every(item => item.planning?.workload?.confidence === "low")).toBe(true);
-    expect(items.items.every(item => Boolean(item.planning?.workload?.calibration))).toBe(true);
+    expect(items.items.every(item => item.planning?.activity?.kind === "finite")).toBe(true);
+    // 内容量机制已移除：回退模板只给时间预算，不再生成数量×单价。
+    expect(JSON.stringify(items.items)).not.toContain("workload");
+    expect(items.items.every(item => item.estimated_minutes >= 30)).toBe(true);
     const schedule = await advanceOnboarding(items, { type: "confirm_items", items: items.items });
     const preview = await advanceOnboarding(schedule, { type: "preview_schedule", ...cycle, weekly_minutes: week120 });
     expect(preview.preview!.mode).toBe("full");

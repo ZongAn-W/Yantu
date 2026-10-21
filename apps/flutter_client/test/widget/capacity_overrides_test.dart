@@ -35,7 +35,6 @@ PlannerData _data() => PlannerData(
       priority: 2,
       deadline: '2026-11-08',
       isFixed: false,
-      status: TaskStatus.notStarted,
       createdAt: _stamp,
       updatedAt: _stamp,
     ),

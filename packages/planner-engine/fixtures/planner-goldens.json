@@ -682,7 +682,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "in_progress",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -828,7 +828,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "in_progress",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -920,19 +920,7 @@
               "advanced": [],
               "conflicts": [],
               "daily_changes": [],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "in_progress"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "in_progress"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -983,7 +971,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "in_progress",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -1075,19 +1063,7 @@
               "advanced": [],
               "conflicts": [],
               "daily_changes": [],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "in_progress"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "in_progress"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -1151,7 +1127,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             },
@@ -1166,7 +1142,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -2704,7 +2680,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "delayed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
@@ -2719,7 +2695,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "delayed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -4697,27 +4673,7 @@
                   "after_minutes": 300
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                },
-                {
-                  "id": "english",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                },
-                {
-                  "id": "english",
-                  "status": "delayed"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -4768,7 +4724,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
@@ -4783,7 +4739,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -6267,27 +6223,7 @@
                   "after_minutes": 300
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                },
-                {
-                  "id": "english",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                },
-                {
-                  "id": "english",
-                  "status": "delayed"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -6351,7 +6287,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -6653,7 +6589,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "delayed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -6940,19 +6876,7 @@
                   "after_minutes": 120
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -7003,7 +6927,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -7251,19 +7175,7 @@
                   "after_minutes": 120
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -7327,7 +7239,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -7418,7 +7330,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -7495,7 +7407,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -7572,7 +7484,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -7662,7 +7574,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -7753,7 +7665,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -7931,7 +7843,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "in_progress",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -8077,7 +7989,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "in_progress",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -8169,19 +8081,7 @@
               "advanced": [],
               "conflicts": [],
               "daily_changes": [],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "in_progress"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "in_progress"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -8232,7 +8132,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "in_progress",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -8324,19 +8224,7 @@
               "advanced": [],
               "conflicts": [],
               "daily_changes": [],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "in_progress"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "in_progress"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -8400,7 +8288,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             },
@@ -8415,7 +8303,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -9953,7 +9841,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "delayed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
@@ -9968,7 +9856,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "delayed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -11946,27 +11834,7 @@
                   "after_minutes": 300
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                },
-                {
-                  "id": "english",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                },
-                {
-                  "id": "english",
-                  "status": "delayed"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -12017,7 +11885,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
@@ -12032,7 +11900,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -13516,27 +13384,7 @@
                   "after_minutes": 300
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                },
-                {
-                  "id": "english",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                },
-                {
-                  "id": "english",
-                  "status": "delayed"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -13600,7 +13448,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -13902,7 +13750,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "delayed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -14189,19 +14037,7 @@
                   "after_minutes": 120
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -14252,7 +14088,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -14500,19 +14336,7 @@
                   "after_minutes": 120
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -14576,7 +14400,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -14667,7 +14491,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -14744,7 +14568,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -14821,7 +14645,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -14911,7 +14735,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -15002,7 +14826,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -15094,7 +14918,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             },
@@ -15109,7 +14933,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -15200,7 +15024,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             },
@@ -15215,7 +15039,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -15306,7 +15130,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -15397,7 +15221,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             },
@@ -15412,7 +15236,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -15501,7 +15325,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -15590,7 +15414,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -15681,7 +15505,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -15772,7 +15596,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -15875,7 +15699,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z",
               "earliest_date": "2026-10-17"
@@ -15967,7 +15791,7 @@
               "deadline": "2026-10-15",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -16058,9 +15882,10 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "completed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-09-01T00:00:00Z"
+              "updated_at": "2026-09-01T00:00:00Z",
+              "completed_at": "2026-09-01T00:00:00Z"
             }
           ],
           "blocks": [
@@ -16149,7 +15974,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "archived",
+              "archived": true,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -16240,7 +16065,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -16331,7 +16156,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -16422,7 +16247,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -16513,7 +16338,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -16604,7 +16429,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -16695,7 +16520,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": true,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -16787,7 +16612,7 @@
               "deadline": "2026-10-17",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -17256,7 +17081,7 @@
               "deadline": "2026-10-17",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "delayed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -17788,19 +17613,7 @@
                   "after_minutes": 300
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -17851,7 +17664,7 @@
               "deadline": "2026-10-17",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -18266,19 +18079,7 @@
                   "after_minutes": 300
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -18342,7 +18143,7 @@
               "deadline": "2026-10-16",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -18479,7 +18280,7 @@
               "deadline": "2026-10-16",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "conflict",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -18548,19 +18349,7 @@
                   "after_minutes": 0
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "conflict"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -18611,7 +18400,7 @@
               "deadline": "2026-10-16",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -18694,19 +18483,7 @@
                   "after_minutes": 0
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "conflict"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -18770,7 +18547,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z",
               "earliest_date": "2026-10-31"
@@ -18908,7 +18685,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "conflict",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z",
               "earliest_date": "2026-10-31"
@@ -18978,19 +18755,7 @@
                   "after_minutes": 0
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "conflict"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -19041,7 +18806,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z",
               "earliest_date": "2026-10-31"
@@ -19125,19 +18890,7 @@
                   "after_minutes": 0
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "conflict"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -19201,7 +18954,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z",
               "earliest_date": "2026-10-30"
@@ -19544,7 +19297,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "delayed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z",
               "earliest_date": "2026-10-30"
@@ -19859,19 +19612,7 @@
                   "after_minutes": 120
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -19922,7 +19663,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z",
               "earliest_date": "2026-10-30"
@@ -20211,19 +19952,7 @@
                   "after_minutes": 120
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -20287,7 +20016,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             },
@@ -20302,7 +20031,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": true,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -20733,7 +20462,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "delayed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
@@ -20748,7 +20477,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": true,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -21138,27 +20867,7 @@
                   "after_minutes": 240
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                },
-                {
-                  "id": "fixed-task",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                },
-                {
-                  "id": "fixed-task",
-                  "status": "not_started"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -21209,7 +20918,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
@@ -21224,7 +20933,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": true,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -21601,27 +21310,7 @@
                   "after_minutes": 240
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                },
-                {
-                  "id": "fixed-task",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                },
-                {
-                  "id": "fixed-task",
-                  "status": "not_started"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -21685,7 +21374,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -21813,7 +21502,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -21887,19 +21576,7 @@
               "advanced": [],
               "conflicts": [],
               "daily_changes": [],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -21950,7 +21627,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -22024,19 +21701,7 @@
               "advanced": [],
               "conflicts": [],
               "daily_changes": [],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -22100,7 +21765,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -22228,7 +21893,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -22302,19 +21967,7 @@
               "advanced": [],
               "conflicts": [],
               "daily_changes": [],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -22365,7 +22018,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -22439,19 +22092,7 @@
               "advanced": [],
               "conflicts": [],
               "daily_changes": [],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -22515,9 +22156,10 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "completed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-09-01T00:00:00Z"
+              "updated_at": "2026-09-01T00:00:00Z",
+              "completed_at": "2026-09-01T00:00:00Z"
             }
           ],
           "blocks": [
@@ -22645,9 +22287,10 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "completed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
+              "updated_at": "2026-10-16T08:09:10.123Z",
+              "completed_at": "2026-09-01T00:00:00Z"
             }
           ],
           "blocks": [],
@@ -22707,19 +22350,7 @@
                   "after_minutes": 0
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "completed"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "completed"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -22770,9 +22401,10 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "completed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
+              "updated_at": "2026-10-16T08:09:10.123Z",
+              "completed_at": "2026-09-01T00:00:00Z"
             }
           ],
           "blocks": [
@@ -22846,19 +22478,7 @@
                   "after_minutes": 0
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "completed"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "completed"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -22922,7 +22542,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "archived",
+              "archived": true,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -23273,7 +22893,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "archived",
+              "archived": true,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -23544,19 +23164,7 @@
                   "after_minutes": 120
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "archived"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "archived"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -23607,7 +23215,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "archived",
+              "archived": true,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -23904,19 +23512,7 @@
                   "after_minutes": 120
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "archived"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "archived"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -23980,7 +23576,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "archived",
+              "archived": true,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -24331,7 +23927,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "archived",
+              "archived": true,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -24602,19 +24198,7 @@
                   "after_minutes": 120
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "archived"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "archived"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -24665,7 +24249,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "archived",
+              "archived": true,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -24962,19 +24546,7 @@
                   "after_minutes": 120
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "archived"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "archived"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -25038,7 +24610,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -25240,7 +24812,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "delayed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -25388,19 +24960,7 @@
                   "after_minutes": 90
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -25451,7 +25011,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -25599,19 +25159,7 @@
                   "after_minutes": 90
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -25675,7 +25223,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -25803,7 +25351,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -25877,19 +25425,7 @@
               "advanced": [],
               "conflicts": [],
               "daily_changes": [],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -25940,7 +25476,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -26014,19 +25550,7 @@
               "advanced": [],
               "conflicts": [],
               "daily_changes": [],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -26090,7 +25614,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -26393,7 +25917,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "delayed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -26668,19 +26192,7 @@
                   "after_minutes": 120
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -26731,7 +26243,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -26980,19 +26492,7 @@
                   "after_minutes": 120
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -27056,7 +26556,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -31412,7 +30912,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "delayed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -36234,19 +35734,7 @@
                   "after_minutes": 150
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -36297,7 +35785,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -40599,19 +40087,7 @@
                   "after_minutes": 150
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -40675,7 +40151,7 @@
               "deadline": "2026-10-17",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             },
@@ -40690,7 +40166,7 @@
               "deadline": "2026-10-17",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             },
@@ -40705,7 +40181,7 @@
               "deadline": "2026-10-17",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2025-01-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             },
@@ -40720,7 +40196,7 @@
               "deadline": "2026-10-17",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             },
@@ -40735,7 +40211,7 @@
               "deadline": "2026-10-18",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -41190,7 +40666,7 @@
               "deadline": "2026-10-17",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "delayed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
@@ -41205,7 +40681,7 @@
               "deadline": "2026-10-17",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "delayed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
@@ -41220,7 +40696,7 @@
               "deadline": "2026-10-17",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "delayed",
+              "archived": false,
               "created_at": "2025-01-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
@@ -41235,7 +40711,7 @@
               "deadline": "2026-10-17",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "delayed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
@@ -41250,7 +40726,7 @@
               "deadline": "2026-10-18",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "delayed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -41651,51 +41127,7 @@
                   "after_minutes": 150
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "z",
-                  "status": "not_started"
-                },
-                {
-                  "id": "a",
-                  "status": "not_started"
-                },
-                {
-                  "id": "old",
-                  "status": "not_started"
-                },
-                {
-                  "id": "low",
-                  "status": "not_started"
-                },
-                {
-                  "id": "later",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "z",
-                  "status": "delayed"
-                },
-                {
-                  "id": "a",
-                  "status": "delayed"
-                },
-                {
-                  "id": "old",
-                  "status": "delayed"
-                },
-                {
-                  "id": "low",
-                  "status": "delayed"
-                },
-                {
-                  "id": "later",
-                  "status": "delayed"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -41746,7 +41178,7 @@
               "deadline": "2026-10-17",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
@@ -41761,7 +41193,7 @@
               "deadline": "2026-10-17",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
@@ -41776,7 +41208,7 @@
               "deadline": "2026-10-17",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2025-01-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
@@ -41791,7 +41223,7 @@
               "deadline": "2026-10-17",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
@@ -41806,7 +41238,7 @@
               "deadline": "2026-10-18",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -42207,51 +41639,7 @@
                   "after_minutes": 150
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "z",
-                  "status": "not_started"
-                },
-                {
-                  "id": "a",
-                  "status": "not_started"
-                },
-                {
-                  "id": "old",
-                  "status": "not_started"
-                },
-                {
-                  "id": "low",
-                  "status": "not_started"
-                },
-                {
-                  "id": "later",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "z",
-                  "status": "delayed"
-                },
-                {
-                  "id": "a",
-                  "status": "delayed"
-                },
-                {
-                  "id": "old",
-                  "status": "delayed"
-                },
-                {
-                  "id": "low",
-                  "status": "delayed"
-                },
-                {
-                  "id": "later",
-                  "status": "delayed"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -42315,7 +41703,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -42551,7 +41939,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -42746,19 +42134,7 @@
                   "after_minutes": 0
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -42809,7 +42185,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -42991,19 +42367,7 @@
                   "after_minutes": 0
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -43067,7 +42431,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -43269,7 +42633,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -43430,19 +42794,7 @@
                   "after_minutes": 60
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -43493,7 +42845,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -43641,19 +42993,7 @@
                   "after_minutes": 60
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -43717,7 +43057,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -43833,7 +43173,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -43895,19 +43235,7 @@
               "advanced": [],
               "conflicts": [],
               "daily_changes": [],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -43958,7 +43286,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -44020,19 +43348,7 @@
               "advanced": [],
               "conflicts": [],
               "daily_changes": [],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -44096,7 +43412,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -44259,7 +43575,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -44368,19 +43684,7 @@
                   "after_minutes": 0
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -44431,7 +43735,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -44540,19 +43844,7 @@
                   "after_minutes": 0
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -44616,7 +43908,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -44852,7 +44144,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -45047,19 +44339,7 @@
                   "after_minutes": 90
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -45110,7 +44390,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -45292,19 +44572,7 @@
                   "after_minutes": 90
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -45368,7 +44636,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -47086,7 +46354,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -48763,19 +48031,7 @@
                   "after_minutes": 2370
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -48826,7 +48082,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -50490,19 +49746,7 @@
                   "after_minutes": 2370
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -50566,7 +49810,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             },
@@ -50581,7 +49825,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -50790,7 +50034,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
@@ -50805,7 +50049,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -50973,27 +50217,7 @@
                   "after_minutes": 30
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                },
-                {
-                  "id": "english",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                },
-                {
-                  "id": "english",
-                  "status": "not_started"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -51044,7 +50268,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             },
@@ -51059,7 +50283,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -51214,27 +50438,7 @@
                   "after_minutes": 30
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                },
-                {
-                  "id": "english",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                },
-                {
-                  "id": "english",
-                  "status": "not_started"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -51298,7 +50502,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z",
               "earliest_date": "2026-10-17"
@@ -51314,9 +50518,10 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "completed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-09-01T00:00:00Z"
+              "updated_at": "2026-09-01T00:00:00Z",
+              "completed_at": "2026-09-01T00:00:00Z"
             }
           ],
           "blocks": [
@@ -51601,7 +50806,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z",
               "earliest_date": "2026-10-17"
@@ -51617,9 +50822,10 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "completed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
+              "updated_at": "2026-10-16T08:09:10.123Z",
+              "completed_at": "2026-09-01T00:00:00Z"
             }
           ],
           "blocks": [
@@ -51837,27 +51043,7 @@
                   "after_minutes": 60
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                },
-                {
-                  "id": "done",
-                  "status": "completed"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                },
-                {
-                  "id": "done",
-                  "status": "completed"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -51908,7 +51094,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z",
               "earliest_date": "2026-10-17"
@@ -51924,9 +51110,10 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "completed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-10-16T08:09:10.123Z"
+              "updated_at": "2026-10-16T08:09:10.123Z",
+              "completed_at": "2026-09-01T00:00:00Z"
             }
           ],
           "blocks": [
@@ -52157,27 +51344,7 @@
                   "after_minutes": 60
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                },
-                {
-                  "id": "done",
-                  "status": "completed"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                },
-                {
-                  "id": "done",
-                  "status": "completed"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -52240,7 +51407,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -52436,7 +51603,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "delayed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -52592,19 +51759,7 @@
                   "after_minutes": 60
                 }
               ],
-              "status": "confirmed",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                }
-              ]
+              "status": "confirmed"
             }
           ],
           "phases": []
@@ -52654,7 +51809,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-10-16T08:09:10.123Z"
             }
@@ -52797,19 +51952,7 @@
                   "after_minutes": 60
                 }
               ],
-              "status": "undone",
-              "task_status_before": [
-                {
-                  "id": "math",
-                  "status": "not_started"
-                }
-              ],
-              "task_status_after": [
-                {
-                  "id": "math",
-                  "status": "delayed"
-                }
-              ]
+              "status": "undone"
             }
           ],
           "phases": []
@@ -52838,7 +51981,7 @@
           "deadline": "2026-11-30",
           "deadline_kind": "deadline",
           "is_fixed": false,
-          "status": "not_started",
+          "archived": false,
           "created_at": "2026-09-01T00:00:00Z",
           "updated_at": "2026-09-01T00:00:00Z"
         },
@@ -52887,7 +52030,7 @@
           "deadline": "2026-11-30",
           "deadline_kind": "deadline",
           "is_fixed": false,
-          "status": "not_started",
+          "archived": false,
           "created_at": "2026-09-01T00:00:00Z",
           "updated_at": "2026-09-01T00:00:00Z"
         },
@@ -52960,7 +52103,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             },
@@ -52975,7 +52118,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -53073,7 +52216,7 @@
             "deadline": "2026-11-30",
             "deadline_kind": "deadline",
             "is_fixed": false,
-            "status": "not_started",
+            "archived": false,
             "created_at": "2026-09-01T00:00:00Z",
             "updated_at": "2026-10-16T08:09:10.123Z"
           },
@@ -53088,7 +52231,7 @@
             "deadline": "2026-11-30",
             "deadline_kind": "deadline",
             "is_fixed": false,
-            "status": "not_started",
+            "archived": false,
             "created_at": "2026-09-01T00:00:00Z",
             "updated_at": "2026-09-01T00:00:00Z"
           }
@@ -53176,7 +52319,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             },
@@ -53191,7 +52334,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -53289,7 +52432,7 @@
             "deadline": "2026-11-30",
             "deadline_kind": "deadline",
             "is_fixed": false,
-            "status": "in_progress",
+            "archived": false,
             "created_at": "2026-09-01T00:00:00Z",
             "updated_at": "2026-10-16T08:09:10.123Z"
           },
@@ -53304,7 +52447,7 @@
             "deadline": "2026-11-30",
             "deadline_kind": "deadline",
             "is_fixed": false,
-            "status": "not_started",
+            "archived": false,
             "created_at": "2026-09-01T00:00:00Z",
             "updated_at": "2026-09-01T00:00:00Z"
           }
@@ -53403,7 +52546,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             },
@@ -53418,7 +52561,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -53516,7 +52659,7 @@
             "deadline": "2026-11-30",
             "deadline_kind": "deadline",
             "is_fixed": false,
-            "status": "in_progress",
+            "archived": false,
             "created_at": "2026-09-01T00:00:00Z",
             "updated_at": "2026-10-16T08:09:10.123Z"
           },
@@ -53531,7 +52674,7 @@
             "deadline": "2026-11-30",
             "deadline_kind": "deadline",
             "is_fixed": false,
-            "status": "not_started",
+            "archived": false,
             "created_at": "2026-09-01T00:00:00Z",
             "updated_at": "2026-09-01T00:00:00Z"
           }
@@ -53641,7 +52784,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             },
@@ -53656,7 +52799,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -53754,7 +52897,7 @@
             "deadline": "2026-11-30",
             "deadline_kind": "deadline",
             "is_fixed": false,
-            "status": "in_progress",
+            "archived": false,
             "created_at": "2026-09-01T00:00:00Z",
             "updated_at": "2026-10-16T08:09:10.123Z"
           },
@@ -53769,7 +52912,7 @@
             "deadline": "2026-11-30",
             "deadline_kind": "deadline",
             "is_fixed": false,
-            "status": "not_started",
+            "archived": false,
             "created_at": "2026-09-01T00:00:00Z",
             "updated_at": "2026-09-01T00:00:00Z"
           }
@@ -53879,7 +53022,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             },
@@ -53894,7 +53037,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -53992,7 +53135,7 @@
             "deadline": "2026-11-30",
             "deadline_kind": "deadline",
             "is_fixed": false,
-            "status": "in_progress",
+            "archived": false,
             "created_at": "2026-09-01T00:00:00Z",
             "updated_at": "2026-10-16T08:09:10.123Z"
           },
@@ -54007,7 +53150,7 @@
             "deadline": "2026-11-30",
             "deadline_kind": "deadline",
             "is_fixed": false,
-            "status": "not_started",
+            "archived": false,
             "created_at": "2026-09-01T00:00:00Z",
             "updated_at": "2026-09-01T00:00:00Z"
           }
@@ -54117,7 +53260,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             },
@@ -54132,7 +53275,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -54238,7 +53381,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             },
@@ -54253,7 +53396,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -54359,7 +53502,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -54447,7 +53590,7 @@
             "deadline": "2026-11-30",
             "deadline_kind": "deadline",
             "is_fixed": false,
-            "status": "in_progress",
+            "archived": false,
             "created_at": "2026-09-01T00:00:00Z",
             "updated_at": "2026-10-16T08:09:10.123Z"
           }
@@ -54570,7 +53713,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -54631,7 +53774,7 @@
             "deadline": "2026-11-30",
             "deadline_kind": "deadline",
             "is_fixed": false,
-            "status": "in_progress",
+            "archived": false,
             "created_at": "2026-09-01T00:00:00Z",
             "updated_at": "2026-10-16T08:09:10.123Z"
           }
@@ -54705,9 +53848,10 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "completed",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
-              "updated_at": "2026-09-01T00:00:00Z"
+              "updated_at": "2026-09-01T00:00:00Z",
+              "completed_at": "2026-09-01T00:00:00Z"
             }
           ],
           "blocks": [
@@ -54780,9 +53924,10 @@
             "deadline": "2026-11-30",
             "deadline_kind": "deadline",
             "is_fixed": false,
-            "status": "completed",
+            "archived": false,
             "created_at": "2026-09-01T00:00:00Z",
-            "updated_at": "2026-10-16T08:09:10.123Z"
+            "updated_at": "2026-10-16T08:09:10.123Z",
+            "completed_at": "2026-09-01T00:00:00Z"
           }
         ],
         "blocks": [
@@ -54868,7 +54013,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "archived",
+              "archived": true,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -54943,7 +54088,7 @@
             "deadline": "2026-11-30",
             "deadline_kind": "deadline",
             "is_fixed": false,
-            "status": "archived",
+            "archived": true,
             "created_at": "2026-09-01T00:00:00Z",
             "updated_at": "2026-10-16T08:09:10.123Z"
           }
@@ -55031,7 +54176,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -55114,7 +54259,7 @@
               "deadline": "2026-11-30",
               "deadline_kind": "deadline",
               "is_fixed": false,
-              "status": "not_started",
+              "archived": false,
               "created_at": "2026-09-01T00:00:00Z",
               "updated_at": "2026-09-01T00:00:00Z"
             }
@@ -55203,7 +54348,7 @@
             "deadline": "2026-11-30",
             "deadline_kind": "deadline",
             "is_fixed": false,
-            "status": "in_progress",
+            "archived": false,
             "created_at": "2026-09-01T00:00:00Z",
             "updated_at": "2026-10-16T08:09:10.123Z"
           }

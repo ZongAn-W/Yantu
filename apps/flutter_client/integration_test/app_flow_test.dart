@@ -132,7 +132,7 @@ void main() {
     await login(tester, app);
 
     expect(app.router.state.uri.path, '/');
-    expect(find.text('今日学习'), findsOneWidget);
+    expect(find.text('今日安排'), findsOneWidget);
     expect(find.text('高数'), findsWidgets);
     expect(find.text('基础一轮'), findsWidgets);
     // The seeded plan has one 90 minute block and one 60 minute block today.
@@ -217,7 +217,7 @@ void main() {
       reason: '离线重启后协调器未进入离线状态',
     );
     expect(second.router.state.uri.path, '/');
-    expect(find.text('今日学习'), findsOneWidget);
+    expect(find.text('今日安排'), findsOneWidget);
     await openRoute(tester, second, '/tasks');
     expect(find.text('全部事项'), findsOneWidget);
     await openRoute(tester, second, '/');

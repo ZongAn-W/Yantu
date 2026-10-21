@@ -12,7 +12,7 @@ export function strategyInput(row: any): StrategyInput {
       ...(row.profile ?? {}) },
     tasks: row.tasks.map((task: Partial<StrategyTask>) => ({ user_id: "fixture-user",
       title: task.id, estimated_minutes: 30, completed_minutes: 0, priority: 2, deadline: row.to,
-      is_fixed: false, status: "not_started", ...task })),
+      is_fixed: false, archived: false, ...task })),
     blocks: row.blocks ?? [], logs: row.logs ?? [], fixed_events: (row.fixed_events ?? []).map((event: any) => ({
       date: row.from, repeat: "none", kind: "course", ...event })),
   };

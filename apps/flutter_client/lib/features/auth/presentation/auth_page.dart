@@ -72,6 +72,7 @@ class _AuthPageState extends ConsumerState<AuthPage> {
                 color: tokens.surface,
                 border: Border.all(color: tokens.border),
                 borderRadius: BorderRadius.circular(PlannerRadius.dialog),
+                boxShadow: plannerPanelShadow(context),
               ),
               child: Form(
                 key: _formKey,

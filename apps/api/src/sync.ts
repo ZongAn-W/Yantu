@@ -4,7 +4,8 @@ import type { FastifyInstance } from "fastify";
 import { z } from "zod";
 import { transaction } from "./db.js";
 import { AccountDeletedError, requireUser } from "./auth.js";
-import { isReliableWeek, normalizeWeek, snapshot } from "./planner.js";
+import { isReliableWeek, isoTimestamp, normalizeWeek, snapshot } from "./planner.js";
+import { deriveTaskStatus, taskArchived, type DerivedTaskStatus } from "./planning-scheduler.js";
 import {
   PlannerDocumentSchema,
   type PlannerDocument,
@@ -73,6 +74,117 @@ export function preservePlanningMetadata(data: PlannerDocument, current: Planner
 
 /** “缺失”与“显式清空”的判定必须基于键是否存在；旧写入方从不发送新字段键。 */
 const hasKey = (value: object, key: string) => Object.prototype.hasOwnProperty.call(value, key);
+
+/**
+ * 完成时间是关系表事实：旧写入方/旧文档缺少 `completed_at` 时保留云端已有值，
+ * 不能被一次普通同步无声清空（完成是粘性的，阶段 3 才删除 status）。
+ * 显式给出 null 才表示清空。
+ */
+export function preserveTaskCompletion(data: PlannerDocument, current: PlannerDocument | null): PlannerDocument {
+  if (!current) return data;
+  const result = clone(data);
+  const priorTasks = new Map(current.tasks.map(task => [task.id, task]));
+  for (const task of result.tasks) {
+    const previous = priorTasks.get(task.id);
+    if (!hasKey(task, "completed_at") && previous?.completed_at !== undefined && previous.completed_at !== null)
+      task.completed_at = clone(previous.completed_at);
+  }
+  return result;
+}
+
+/** 关系表投影里的完成时间是权威事实：文档缺失该字段时补回，响应与缓存的文档保持一致。 */
+function withProjectedTaskCompletion(
+  document: PlannerDocument,
+  projection: PlannerDocument | null,
+): PlannerDocument {
+  if (!projection) return document;
+  const result = clone(document);
+  const projected = new Map(projection.tasks.map(task => [task.id, task]));
+  for (const task of result.tasks) {
+    const source = projected.get(task.id);
+    if (source?.completed_at === undefined || source.completed_at === null) continue;
+    if (task.completed_at === undefined || task.completed_at === null) task.completed_at = source.completed_at;
+  }
+  return result;
+}
+
+/**
+ * 归档双形态（阶段 3b-A）：`archived` 缺失时保留云端值；旧写入方用 `status`
+ * 归档（'archived'）时按归档意图处理；两者都没有才是未归档。
+ * 显式 `archived`（含 false=取消归档）以写入方为准。
+ */
+export function preserveTaskArchived(data: PlannerDocument, current: PlannerDocument | null): PlannerDocument {
+  const result = clone(data);
+  const priorTasks = new Map((current?.tasks ?? []).map(task => [task.id, task]));
+  for (const task of result.tasks) {
+    if (hasKey(task, "archived")) continue;
+    const previous = priorTasks.get(task.id);
+    task.archived = task.status === "archived" ? true : previous ? taskArchived(previous) : false;
+  }
+  return result;
+}
+
+/**
+ * 关系表投影是归档事实的权威来源：读响应/缓存文档缺 `archived` 时补回；
+ * 缺 `status`（新客户端不发送）时补派生兼容 status，保证旧客户端仍能解析。
+ */
+export function withProjectedTaskLifecycle(
+  document: PlannerDocument,
+  projection: PlannerDocument | null,
+): PlannerDocument {
+  const result = clone(document);
+  const projected = new Map((projection?.tasks ?? []).map(task => [task.id, task]));
+  for (const task of result.tasks) {
+    const source = projected.get(task.id);
+    if (task.archived === undefined || task.archived === null)
+      task.archived = source ? source.archived === true : taskArchived(task);
+    if (task.status === undefined || task.status === null)
+      task.status = source?.status ?? deriveTaskStatus({
+        archived: task.archived,
+        completed_at: task.completed_at,
+        // 文档里的 completed_minutes 已是 min(预计, 实际)，没有日志时作为实际用时的保守代理。
+        actual_minutes: task.completed_minutes,
+        estimated_minutes: task.estimated_minutes,
+      });
+  }
+  return result;
+}
+
+/**
+ * 关系表投影写入的权威生命周期解析（纯函数，便于单测；阶段 3b-A 双形态）：
+ * - archived：新字段显式优先；缺失时保留云端；旧 status='archived' 兼容为 true；
+ * - status：始终返回派生兼容投影（archived→archived；completed_at/实际>=预计→completed；
+ *   实际>0→in_progress；否则 not_started），供旧客户端读取；
+ * - completed_at：显式键（含 null）为准，缺失保留云端；旧 status='completed' 且无时间时回退 updated_at。
+ */
+export function resolvedItemLifecycle(
+  task: Record<string, unknown>,
+  previous: Record<string, unknown> | undefined,
+  actualMinutes: number,
+): { archived: boolean; status: DerivedTaskStatus; completed_at: string | null } {
+  const completedAt = hasKey(task, "completed_at")
+    ? isoTimestamp(task.completed_at as string | Date | null)
+    : isoTimestamp(previous?.completed_at as string | Date | null | undefined)
+      ?? (task.status === "completed" && typeof task.updated_at === "string" ? task.updated_at : null);
+  const archived = hasKey(task, "archived")
+    ? task.archived === true
+    : task.status === "archived"
+      ? true
+      : previous
+        ? taskArchived({
+            archived: previous.archived as boolean | null | undefined,
+            status: previous.status as string | null | undefined,
+          })
+        : false;
+  const status = deriveTaskStatus({
+    archived,
+    stored_status: typeof task.status === "string" ? task.status : null,
+    completed_at: completedAt,
+    actual_minutes: actualMinutes,
+    estimated_minutes: Number(task.estimated_minutes ?? 0),
+  });
+  return { archived, status, completed_at: completedAt };
+}
 
 /** Profile 上的灵活容量字段（文档 blob 权威，关系列是同值投影）。 */
 export const LEARNING_PROFILE_KEYS = [
@@ -364,13 +476,32 @@ function withProjectedProfile(
 }
 
 /**
+ * 兼容窗口内的 base 归一化：客户端模型不认识对方新增的字段时（阶段 3b 前的客户端
+ * 没有 `archived`；阶段 B 之后的客户端不再发送 `status`），把服务端响应原样回传成
+ * base 时这些键会消失。base 只用于冲突检测，因此按 task id 用当前云端值补齐这些
+ * “模型无法表示的字段”，避免每次同步都因表示差异误报 409。
+ */
+export function normalizeBaseTaskLifecycle(base: PlannerDocument, current: PlannerDocument | null): PlannerDocument {
+  if (!current) return base;
+  const result = clone(base);
+  const currentTasks = new Map(current.tasks.map(task => [task.id, task]));
+  for (const task of result.tasks) {
+    const source = currentTasks.get(task.id);
+    if (!source) continue;
+    if (task.archived === undefined && source.archived !== undefined) task.archived = source.archived;
+    if (task.status === undefined && source.status !== undefined) task.status = source.status;
+    if (task.completed_at === undefined && source.completed_at !== undefined) task.completed_at = source.completed_at;
+  }
+  return result;
+}
+
+/**
  * Profile 里“没有值”的统一字面量。
  *
  * 空目标日期和空学习限制在文档中都统一用空字符串表达：客户端模型写出空字符串，
  * 服务端快照可能省略或用 null；读写比较前都要归一化，否则每次同步都会因为
  * null 与 '' 的表示差异而误报冲突。
- */
-function normalizeProfilePlaceholders(document: PlannerDocument): PlannerDocument {
+ */function normalizeProfilePlaceholders(document: PlannerDocument): PlannerDocument {
   const result = clone(document);
   const profile = result.profile as Record<string, unknown>;
   const target = profile.target_date;
@@ -428,7 +559,9 @@ async function currentState(
       : (row.document ?? raw);
   // 关系表是权威来源：文档里没有的字段（例如旧客户端的 weekly_minutes）必须补回。
   // 执行关系/临时学习引用在 rebase 内按投影权威补回，避免丢失计时事实。
-  const data = rebased ? withProjectedProfile(rebased, raw) : rebased;
+  const data = rebased
+    ? withProjectedTaskLifecycle(withProjectedTaskCompletion(withProjectedProfile(rebased, raw), raw), raw)
+    : rebased;
   // 只读调用方（PUT/规划提交）随后会整体写入新状态，无需先重写一次缓存文档。
   if (data && options.persist !== false)
     await client.query(
@@ -446,13 +579,19 @@ export async function commitPlannerState(client: pg.PoolClient, owner: string, d
   const row = await lockedState(client, owner);
   if (Number(row.revision) !== expectedRevision) throw new PlannerRevisionConflict("当前计划已更新，请重新读取当前计划后再确认");
   const current = await currentState(client, owner, row, { persist: false });
-  // 规划提交路径同样遵守“缺失=保留”：生成的文档不会清掉临时学习/容量覆盖。
+  // 规划提交路径同样遵守“缺失=保留”：生成的文档不会清掉临时学习/容量覆盖/完成时间/归档。
   const validated = PlannerDocumentSchema.parse(
-    preserveLearningData(preservePlanningMetadata(data, current.data), current.data),
+    preserveTaskArchived(
+      preserveTaskCompletion(preserveLearningData(preservePlanningMetadata(data, current.data), current.data), current.data),
+      current.data,
+    ),
   );
   await writeProjection(client, owner, validated);
   const projection = await snapshot(owner, client);
-  const document = withProjectedProfile(validated, projection as PlannerDocument | null);
+  const document = withProjectedTaskLifecycle(
+    withProjectedTaskCompletion(withProjectedProfile(validated, projection as PlannerDocument | null), projection as PlannerDocument | null),
+    projection as PlannerDocument | null,
+  );
   const result = await client.query<{ revision: string }>(
     "update planner_sync_state set document=$2,projection=$3,revision=revision+1,updated_at=now() where user_id=$1 returning revision",
     [owner, JSON.stringify(document), JSON.stringify(projection)],
@@ -578,7 +717,7 @@ async function writeProjection(
   const existingItems = (
     await client.query<Row>(
       `select id,title,description,completion_criteria,estimated_minutes,
-        earliest_date::text,deadline::text,deadline_kind,priority,status,planning_metadata
+        earliest_date::text,deadline::text,deadline_kind,priority,status,archived,completed_at,planning_metadata
        from items where user_id=$1`,
       [owner],
     )
@@ -645,9 +784,16 @@ async function writeProjection(
     created_at: tag.created_at ?? new Date().toISOString(),
     updated_at: tag.updated_at ?? new Date().toISOString(),
   }));
+  const loggedByTask = new Map<string, number>();
+  for (const log of data.logs)
+    loggedByTask.set(log.task_id, (loggedByTask.get(log.task_id) ?? 0) + log.minutes);
   const itemTargets = data.tasks.map((task) => {
     const itemId = id("items", task.id);
     const previous = itemsById.get(itemId);
+    // 阶段 3b-A：archived / 兼容 status / completed_at 统一由纯函数解析（便于单测）。
+    const row = task as Record<string, unknown>;
+    const actualMinutes = loggedByTask.get(task.id) ?? 0;
+    const lifecycle = resolvedItemLifecycle(row, previous, actualMinutes);
     // 旧数据把“完成标准”并进 description；文档等价时保留原拆分，不能每次同步都改写。
     let description = task.description ?? "",
       criteria = "";
@@ -675,7 +821,9 @@ async function writeProjection(
       deadline: task.deadline,
       deadline_kind: task.deadline_kind ?? "deadline",
       priority: task.priority,
-      status: task.status,
+      archived: lifecycle.archived,
+      status: lifecycle.status,
+      completed_at: lifecycle.completed_at,
       created_at: task.created_at,
       updated_at: task.updated_at,
       planning: task.planning
@@ -843,7 +991,9 @@ async function writeProjection(
       previous.deadline !== target.deadline ||
       (previous.deadline_kind ?? "deadline") !== target.deadline_kind ||
       previous.priority !== target.priority ||
+      (previous.archived === true) !== target.archived ||
       previous.status !== target.status ||
+      isoTimestamp(previous.completed_at as string | Date | null | undefined) !== target.completed_at ||
       canonicalJson(previous.planning_metadata) !== canonicalJson(target.planning)
     );
   });
@@ -853,17 +1003,17 @@ async function writeProjection(
     [
       "id", "user_id", "title", "description", "completion_criteria",
       "estimated_minutes", "earliest_date", "deadline", "deadline_kind", "priority",
-      "status", "confirmed", "created_at", "updated_at", "planning_metadata",
+      "archived", "status", "completed_at", "confirmed", "created_at", "updated_at", "planning_metadata",
     ],
     [
       "uuid", "uuid", "text", "text", "text", "int", "date", "date", "text",
-      "int", "text", "boolean", "timestamptz", "timestamptz", "jsonb",
+      "int", "boolean", "text", "timestamptz", "boolean", "timestamptz", "timestamptz", "jsonb",
     ],
     `on conflict(id) do update set title=excluded.title,
       description=excluded.description,completion_criteria=excluded.completion_criteria,
       estimated_minutes=excluded.estimated_minutes,earliest_date=excluded.earliest_date,
       deadline=excluded.deadline,deadline_kind=excluded.deadline_kind,priority=excluded.priority,
-      status=excluded.status,updated_at=excluded.updated_at,
+      archived=excluded.archived,status=excluded.status,completed_at=excluded.completed_at,updated_at=excluded.updated_at,
       planning_metadata=excluded.planning_metadata where items.user_id=excluded.user_id`,
     changedItems.map((row) => [
       row.id,
@@ -876,7 +1026,9 @@ async function writeProjection(
       row.deadline,
       row.deadline_kind,
       row.priority,
+      row.archived,
       row.status,
+      row.completed_at,
       true,
       row.created_at,
       row.updated_at,
@@ -1123,24 +1275,35 @@ export async function syncRoutes(app: FastifyInstance) {
           && ((request.body as Row).data.tasks as Row[]).every(task => Array.isArray(task.tag_ids));
         if (writer_tags_version !== 1 && !tagShapePresent && hasUnrepresentableTags(current.data))
           return { upgradeRequired: true as const, error: "当前计划包含多标签事项，请升级客户端后再同步", code: "tag_writer_upgrade_required" };
-        const comparableBase = base ? normalizeProfilePlaceholders(base) : null;
+        const comparableBase = base
+          ? normalizeBaseTaskLifecycle(normalizeProfilePlaceholders(base), current.data)
+          : null;
         if (current.revision !== expectedRevision || !same(comparableBase, current.data))
           return { conflict: true as const, ...current };
         // 缺失 ≠ 清空：旧写入方/旧文档缺少新字段时保留云端执行关系与容量覆盖。
         // 显式声明新能力的写入方（writer_learning_version=1）才把容量字段缺失当作“未设置”。
         const declaredCapable = writer_learning_version === 1;
         const preserved = PlannerDocumentSchema.parse(
-          preserveLearningData(
-            preservePlanningMetadata(data, current.data),
+          preserveTaskArchived(
+            preserveTaskCompletion(
+              preserveLearningData(
+                preservePlanningMetadata(data, current.data),
+                current.data,
+                { preserveCapacity: !declaredCapable },
+              ),
+              current.data,
+            ),
             current.data,
-            { preserveCapacity: !declaredCapable },
           ),
         );
         await writeProjection(client, user.id, preserved, {
           clearMissingCapacity: declaredCapable,
         });
         const projection = await snapshot(user.id, client);
-        const document = withProjectedProfile(preserved, projection as PlannerDocument | null);
+        const document = withProjectedTaskLifecycle(
+          withProjectedTaskCompletion(withProjectedProfile(preserved, projection as PlannerDocument | null), projection as PlannerDocument | null),
+          projection as PlannerDocument | null,
+        );
         const updated = await client.query<{ revision: string }>(
           "update planner_sync_state set document=$2,projection=$3,revision=revision+1,updated_at=now() where user_id=$1 returning revision",
           [user.id, JSON.stringify(document), JSON.stringify(projection)],

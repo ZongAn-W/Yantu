@@ -23,10 +23,10 @@
       "expected":{"scheduled":30,"unscheduled":60,"instances":1,"last_date":"2026-10-13","issues":["RECURRENCE_SHORTFALL","RECURRENCE_SHORTFALL"]}
     },
     {
-      "name":"budget exhaustion never unlocks a confirmed prerequisite",
+      "name":"time budget exhaustion completes the prerequisite and unlocks the dependent",
       "from":"2026-10-12","to":"2026-10-18",
-      "tasks":[{"id":"chapter","estimated_minutes":30,"completed_minutes":30,"status":"in_progress"},{"id":"assessment","estimated_minutes":30,"planning":{"dependencies":[{"task_id":"chapter","mode":"confirmed"}]}}],
-      "expected":{"scheduled":0,"unscheduled":30,"instances":0,"last_date":null,"issues":["DEPENDENCY_UNCONFIRMED"]}
+      "tasks":[{"id":"chapter","estimated_minutes":30,"completed_minutes":30},{"id":"assessment","estimated_minutes":30,"planning":{"dependencies":[{"task_id":"chapter","mode":"confirmed"}]}}],
+      "expected":{"scheduled":30,"unscheduled":0,"instances":0,"last_date":"2026-10-12","issues":[]}
     },
     {
       "name":"planned prerequisites allocate predecessor before following day",
@@ -59,7 +59,7 @@
       "from":"2026-10-12","to":"2026-10-12",
       "profile":{"planning_mode":"timed","study_start_minute":480,"study_end_minute":660},
       "weekly_minutes":{"0":0,"1":210,"2":0,"3":0,"4":0,"5":0,"6":0},
-      "tasks":[{"id":"legacy","estimated_minutes":90,"status":"completed"},{"id":"exercise","subject_id":"other-course","estimated_minutes":120}],
+      "tasks":[{"id":"legacy","estimated_minutes":90,"completed_at":"2026-10-12T00:00:00.000Z"},{"id":"exercise","subject_id":"other-course","estimated_minutes":120}],
       "blocks":[
         {"id":"overlap-completed","user_id":"fixture-user","task_id":"legacy","date":"2026-10-12","start_minute":480,"duration_minutes":60,"actual_minutes":0,"is_fixed":false,"status":"completed","created_at":"2026-10-12T00:00:00.000Z","updated_at":"2026-10-12T00:00:00.000Z"},
         {"id":"separate-completed","user_id":"fixture-user","task_id":"legacy","date":"2026-10-12","start_minute":600,"duration_minutes":30,"actual_minutes":0,"is_fixed":false,"status":"completed","created_at":"2026-10-12T00:00:00.000Z","updated_at":"2026-10-12T00:00:00.000Z"}
@@ -71,7 +71,7 @@
     {
       "name":"completed legacy blocks without actual history reserve their planned daily load",
       "from":"2026-10-12","to":"2026-10-12",
-      "tasks":[{"id":"legacy","estimated_minutes":60,"status":"completed"},{"id":"exercise","subject_id":"other-course","estimated_minutes":60}],
+      "tasks":[{"id":"legacy","estimated_minutes":60,"completed_at":"2026-10-12T00:00:00.000Z"},{"id":"exercise","subject_id":"other-course","estimated_minutes":60}],
       "blocks":[{"id":"legacy-completed","user_id":"fixture-user","task_id":"legacy","date":"2026-10-12","start_minute":0,"duration_minutes":60,"actual_minutes":0,"is_fixed":false,"status":"completed","created_at":"2026-10-12T00:00:00.000Z","updated_at":"2026-10-12T00:00:00.000Z"}],
       "expected":{"scheduled":30,"unscheduled":30,"instances":0,"last_date":"2026-10-12","issues":["WORK_UNSCHEDULED"]}
     },
@@ -110,11 +110,18 @@
       "expected":{"scheduled":0,"unscheduled":0,"instances":0,"last_date":null,"issues":[]}
     },
     {
-      "name":"explicit content confirmation unlocks a dependency without inferring it from time",
+      "name":"completed_at unlocks a dependency without inferring content from time",
+      "from":"2026-10-12","to":"2026-10-12",
+      "tasks":[{"id":"chapter","estimated_minutes":60,"completed_minutes":0,"completed_at":"2026-10-11T00:00:00.000Z"},
+        {"id":"exercise","estimated_minutes":30,"planning":{"dependencies":[{"task_id":"chapter","mode":"confirmed"}]}}],
+      "expected":{"scheduled":30,"unscheduled":0,"instances":0,"last_date":"2026-10-12","issues":[]}
+    },
+    {
+      "name":"content progress alone no longer unlocks a dependency",
       "from":"2026-10-12","to":"2026-10-12",
       "tasks":[{"id":"chapter","estimated_minutes":60,"completed_minutes":0,"planning":{"content_progress":{"confirmed":true}}},
         {"id":"exercise","estimated_minutes":30,"planning":{"dependencies":[{"task_id":"chapter","mode":"confirmed"}]}}],
-      "expected":{"scheduled":30,"unscheduled":0,"instances":0,"last_date":"2026-10-12","issues":[]}
+      "expected":{"scheduled":60,"unscheduled":30,"instances":0,"last_date":"2026-10-12","issues":["DEPENDENCY_UNCONFIRMED"]}
     }
   ]
 }

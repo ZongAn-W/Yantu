@@ -266,7 +266,7 @@ void main() {
     final taskId = local().tasks.first.id;
     await session.completeTask(taskId, actualMinutes: 60, date: '2026-10-16');
     final task = local().tasks.first;
-    expect(task.status, TaskStatus.completed);
+    expect(task.completedAt, isNotNull);
     expect(task.completedMinutes, 60);
   });
 

@@ -9,6 +9,7 @@ import '../../../core/storage/study_timer_store.dart';
 import '../../../core/sync/merge_plans.dart';
 import '../../../core/sync/planner_coordinator.dart';
 import '../../../shared/models/planner_models.dart';
+import '../../../shared/models/task_lifecycle.dart';
 import '../../auth/application/auth_controller.dart';
 import '../domain/planner_format.dart';
 import '../domain/scheduler/planner_scheduler.dart' as scheduler;
@@ -418,8 +419,8 @@ class StudyTimer extends ChangeNotifier {
     final data = coordinator.data;
     final task = data?.tasks.where((task) => task.id == taskId).firstOrNull;
     if (task == null) throw StateError('事项已不存在，请刷新后重试');
-    if (task.status == TaskStatus.archived) throw StateError('已归档事项不可计时');
-    if (task.status != TaskStatus.completed && data != null) {
+    if (task.isArchived) throw StateError('已归档事项不可计时');
+    if (!task.isCompleted && data != null) {
       final reason = strategy.strategyExecutionError(
         data,
         task,
@@ -1198,8 +1199,8 @@ class StudyTimer extends ChangeNotifier {
     final data = coordinator.data;
     if (data == null) return false;
     final task = data.tasks.where((task) => task.id == taskId).firstOrNull;
-    if (task == null || task.status == TaskStatus.archived) return false;
-    if (task.status == TaskStatus.completed && !allowCompleted) return false;
+    if (task == null || task.isArchived) return false;
+    if (task.isCompleted && !allowCompleted) return false;
     return strategy.strategyExecutionError(data, task, shanghaiToday(_now())) ==
         null;
   }
@@ -1220,8 +1221,8 @@ class StudyTimer extends ChangeNotifier {
     final taskId = active.taskId;
     if (taskId == null) return false;
     final task = data.tasks.where((item) => item.id == taskId).firstOrNull;
-    if (task == null || task.status == TaskStatus.archived) return false;
-    if (task.status == TaskStatus.completed) {
+    if (task == null || task.isArchived) return false;
+    if (task.isCompleted) {
       // A review interval keeps running; an arrangement interval pauses because
       // the item was completed elsewhere.
       return active.intent == TimeLogRelation.extra;

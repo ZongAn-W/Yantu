@@ -1,0 +1,1172 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light">
+<title>不白学 · 月历格子方案示意</title>
+<style>
+  @font-face{
+    font-family:'PlannerUI';
+    src:url('../../../apps/flutter_client/assets/fonts/PlannerSansSC-UI.ttf') format('truetype');
+    font-weight:100 900;
+    font-display:block;
+  }
+  :root{
+    --canvas:#f6f7f9;
+    --surface:#ffffff;
+    --surface-muted:#f0f3f7;
+    --text:#1c2530;
+    --muted:#5a6675;
+    --subtle:#8b96a5;
+    --border:#e4e8ee;
+    --border-strong:#cdd5df;
+    --accent:#2f5d8a;
+    --accent-soft:#e9f1f8;
+    --accent-border:#b8cfe4;
+    --success:#2e7d66;
+    --success-soft:#eef7f2;
+    --success-border:#cfe7db;
+    --success-ink:#1f5f4a;
+    --warning:#b7791f;
+    --warning-ink:#7a4f10;
+    --danger:#b54747;
+    --danger-ink:#8f3733;
+    --upcoming:#9dc0dd;
+    --font:'PlannerUI','Noto Sans SC','Microsoft YaHei UI','Microsoft YaHei','PingFang SC','Segoe UI',sans-serif;
+  }
+  *{box-sizing:border-box}
+  html{ -webkit-text-size-adjust:100% }
+  body{
+    margin:0;
+    background:var(--canvas);
+    color:var(--text);
+    font-family:var(--font);
+    font-size:13px;
+    line-height:1.5;
+    -webkit-font-smoothing:antialiased;
+    text-rendering:optimizeLegibility;
+  }
+  main{width:1120px;margin:0 auto;padding:34px 40px 48px;display:flex;flex-direction:column;gap:36px}
+
+  /* ── 方案说明头 ─────────────────────────────────────────────── */
+  .scheme-head{margin-bottom:14px}
+  .scheme-head-top{display:flex;align-items:center;gap:12px}
+  .scheme-badge{
+    flex:none;padding:2px 10px;border-radius:999px;
+    font-size:11.5px;font-weight:600;letter-spacing:.02em;
+    color:var(--accent);background:var(--accent-soft);
+    border:1px solid var(--accent-border);
+  }
+  .scheme-title{font-size:18px;font-weight:600;letter-spacing:-.2px;line-height:1.35}
+  .scheme-desc{margin:4px 0 0;font-size:12.5px;color:var(--muted)}
+  .scheme-note{margin-left:auto;font-size:11px;color:var(--subtle);white-space:nowrap}
+
+  /* ── 面板 ───────────────────────────────────────────────────── */
+  .panel{background:var(--surface);border:1px solid var(--border);border-radius:12px;padding:16px}
+  .panel-head{display:flex;align-items:baseline;justify-content:space-between;gap:16px;margin-bottom:10px}
+  .panel-title{font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
+  .panel-sum{font-size:11.5px;color:var(--muted);font-variant-numeric:tabular-nums;white-space:nowrap}
+  .panel-sum b{font-weight:500;color:var(--text)}
+
+  /* ── 日历网格 ───────────────────────────────────────────────── */
+  .calendar{border:1px solid var(--border);border-radius:8px;overflow:hidden;background:var(--surface)}
+  .weekdays{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));height:28px;align-items:center;border-bottom:1px solid var(--border)}
+  .weekdays span{text-align:center;font-size:11px;color:var(--subtle)}
+  .grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:110px}
+  .cell{
+    position:relative;display:flex;flex-direction:column;min-width:0;overflow:hidden;
+    padding:7px 9px 8px;
+    border-left:1px solid var(--border);
+    border-top:1px solid var(--border);
+    font-variant-numeric:tabular-nums;
+  }
+  .cell.c0{border-left:0}
+  .cell.r0{border-top:0}
+  .cell.out{background:#fbfcfd}
+  .cell.selected{box-shadow:inset 0 0 0 2px var(--accent);z-index:1}
+  .cell-top{display:flex;align-items:flex-start;justify-content:space-between;height:22px;flex:none}
+  .date{font-size:12.5px;font-weight:600;line-height:22px;color:var(--text)}
+  .cell.future .date{font-weight:500;color:var(--muted)}
+  .cell.today-date .date,
+  .date.today{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:22px;height:22px;margin-left:-2px;border-radius:50%;
+    background:var(--accent);color:#fff;font-size:11.5px;font-weight:600;line-height:1;
+  }
+  .mark-svg{width:12px;height:12px;display:block;margin-top:5px;flex:none}
+  .rest{font-size:10.5px;line-height:22px;color:var(--subtle)}
+
+  .body{display:flex;flex-direction:column;min-height:0;flex:1}
+  .fact-row{display:flex;align-items:baseline;justify-content:space-between;gap:6px;min-width:0;margin-top:1px}
+  .fact-plan{
+    font-size:11px;font-weight:400;color:var(--text);line-height:15px;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:0 1 auto;
+  }
+  .fact-plan b{font-weight:500}
+  .fact-cap{font-size:10px;color:var(--subtle);line-height:15px;white-space:nowrap;flex:none}
+  .fact-actual{font-size:10.5px;color:var(--muted);line-height:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fact-actual b{font-weight:500;color:var(--text)}
+  .fact-actual.danger{color:var(--danger-ink);font-weight:500}
+  .fact-actual.warning{color:var(--warning-ink);font-weight:500}
+  .item-row{display:flex;align-items:center;gap:5px;min-width:0;margin-top:3px}
+  .item{font-size:10.5px;line-height:14px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 auto}
+  .plus{
+    flex:none;padding:0 3px;border-radius:3px;background:var(--surface-muted);
+    font-size:9.5px;line-height:13px;font-weight:600;color:var(--muted);
+  }
+
+  /* 实学热度底色（方案 A / C） */
+  .heat-0{background:var(--surface)}
+  .heat-1{background:#f3f8fc}
+  .heat-2{background:#e6f0f9}
+  .heat-3{background:#d5e6f4}
+  .heat-4{background:#c8dbec}
+
+  /* ── 方案 D / E：纯计划 ─────────────────────────────────────── */
+  .plan-hours{font-size:10.5px;line-height:22px;color:var(--subtle);white-space:nowrap;flex:none}
+  .plan-hours.over{color:var(--warning-ink);font-weight:500}
+  .cell.plan-cell .item{font-size:11px;line-height:16px;color:var(--muted)}
+  .cell.plan-cell .item-row{margin-top:4px}
+  .plan-meter{height:3px;border-radius:2px;background:var(--surface-muted);overflow:hidden;margin-top:auto;flex:none}
+  .plan-meter span{display:block;height:100%;background:#b8cfe4;border-radius:2px}
+  .plan-meter span.over{background:var(--warning)}
+
+  /* ── 方案 F / G：点阵月历（格子里只有日期与圆点） ────────────── */
+  .grid.plain-grid{grid-auto-rows:104px}
+  .cell.plain{align-items:center;justify-content:center;padding:8px}
+  .plain-center{display:flex;flex-direction:column;align-items:center;gap:7px}
+  .cell.plain .date{font-size:13px;line-height:1;font-weight:600;margin:0}
+  .cell.plain.future .date{font-weight:500;color:var(--muted)}
+  .cell.plain.selected .date{color:var(--text);font-weight:600}
+  .cell.plain.today-date .date{width:24px;height:24px;font-size:11.5px;margin:0}
+  .dots{display:flex;gap:3px;height:4px;align-items:center;justify-content:center}
+  .dots i{width:4px;height:4px;border-radius:50%;background:var(--accent);display:block}
+  .dots i.over{background:var(--warning)}
+  .plain-sep{display:none}
+
+  /* 方案 F：网格下方计划条 */
+  .agenda{
+    margin-top:12px;padding:9px 12px 10px;border:1px solid var(--border);
+    border-left:3px solid var(--accent);border-radius:8px;background:#fbfcfe;
+  }
+  .agenda-main{display:flex;align-items:baseline;gap:14px;min-width:0}
+  .agenda-date{font-size:16px;font-weight:600;line-height:1.2;white-space:nowrap}
+  .agenda-date small{font-size:11px;font-weight:400;color:var(--muted);margin-left:5px}
+  .agenda-total{font-size:11.5px;color:var(--muted);white-space:nowrap}
+  .agenda-total b{font-weight:500;color:var(--text)}
+  .agenda-warn{
+    flex:none;padding:1px 8px;border-radius:999px;font-size:10.5px;font-weight:500;
+    color:var(--warning-ink);background:#fdf6e8;border:1px solid #ecd9b0;white-space:nowrap;
+  }
+  .agenda-link{margin-left:auto;font-size:11.5px;font-weight:500;color:var(--accent);white-space:nowrap}
+  .agenda-items{display:flex;flex-wrap:wrap;gap:6px 18px;margin-top:7px}
+  .agenda-item{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted);min-width:0}
+  .agenda-item i{width:4px;height:4px;border-radius:50%;background:var(--accent);flex:none}
+  .agenda-item.over i{background:var(--accent)}
+  .agenda-item em{font-style:normal;font-size:10.5px;color:var(--subtle)}
+
+  /* 方案 G：右侧计划栏 */
+  .month-split{display:flex;gap:18px;align-items:flex-start}
+  .month-split .calendar{flex:1 1 auto;min-width:0}
+  .month-split .grid.plain-grid{grid-auto-rows:96px}
+  .day-panel{flex:0 0 296px;align-self:stretch;padding-left:18px;border-left:1px solid var(--border)}
+  .dp-head{display:flex;align-items:baseline;gap:7px}
+  .dp-num{font-size:26px;font-weight:600;line-height:1.15}
+  .dp-week{font-size:12px;color:var(--muted)}
+  .dp-total{margin-top:5px;font-size:12px;color:var(--muted)}
+  .dp-total b{font-weight:500;color:var(--text)}
+  .dp-warn{
+    display:inline-block;margin-top:6px;padding:1px 8px;border-radius:999px;
+    font-size:10.5px;font-weight:500;color:var(--warning-ink);
+    background:#fdf6e8;border:1px solid #ecd9b0;
+  }
+  .dp-list{margin-top:14px;display:flex;flex-direction:column}
+  .dp-item{
+    display:flex;align-items:center;gap:8px;padding:8px 0;
+    border-top:1px solid var(--border);font-size:11.5px;color:var(--muted);min-width:0;
+  }
+  .dp-item:first-child{border-top:0}
+  .dp-item i{width:4px;height:4px;border-radius:50%;background:var(--accent);flex:none}
+  .dp-item.over i{background:var(--accent)}
+  .dp-item .t{flex:1 1 auto;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dp-item .d{flex:none;font-size:10.5px;color:var(--subtle)}
+  .dp-link{display:block;margin-top:14px;font-size:11.5px;font-weight:500;color:var(--accent)}
+
+  /* ── 方案 H / I / J：替换日历本体（格内仍无文字） ───────────── */
+  .calendar.bare{border:0;border-radius:0;overflow:visible;background:transparent}
+  .calendar.bare .weekdays{border-bottom:0;height:24px}
+  .calendar.bare .weekdays span{font-size:10.5px}
+  .calendar.bare .cell{border:0}
+  .calendar.bare .cell.out{background:transparent}
+
+  /* H · 圆形日格 */
+  .round-grid{grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:82px;gap:0}
+  .cell.round{padding:0;align-items:center;justify-content:center;overflow:visible}
+  .round-day{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;width:100%;height:100%}
+  .round-date{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:34px;height:34px;border-radius:50%;
+    font-size:13px;font-weight:600;line-height:1;color:var(--text);
+  }
+  .cell.round.future .round-date{font-weight:500;color:var(--muted)}
+  .cell.round.today .round-date{background:var(--accent-soft);color:var(--accent)}
+  .cell.round.selected .round-date{background:var(--accent);color:#fff}
+  .cell.round.selected{box-shadow:none}
+  .round-dots{display:flex;gap:4px;height:6px;align-items:center;justify-content:center}
+  .round-dots i{width:5px;height:5px;border-radius:50%;display:block}
+
+  /* I · 软底卡片 */
+  .tile-grid{grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:78px;gap:6px;padding:2px 0}
+  .cell.tile{border-radius:10px;padding:7px 9px;align-items:flex-start;background:transparent}
+  .cell.tile.plan-1{background:#f2f7fc}
+  .cell.tile.plan-2{background:#e8f1fa}
+  .cell.tile.plan-3{background:#dbe9f5}
+  .cell.tile.over{background:#fdf6e8}
+  .cell.tile.today{background:var(--accent-soft)}
+  .cell.tile.today .date{color:var(--accent);font-weight:600}
+  .cell.tile.selected{box-shadow:inset 0 0 0 2px var(--accent)}
+  .cell.tile .date{font-size:12.5px;line-height:18px;font-weight:600;margin:0}
+  .cell.tile.selected .date{color:var(--text)}
+  .tile-dots{display:flex;gap:4px;height:6px;align-items:center;margin-top:auto}
+  .tile-dots i{width:5px;height:5px;border-radius:50%;display:block}
+
+  /* J · 大日期 + 课程配比条 */
+  .stat-grid{grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:78px;gap:0}
+  .cell.stat{padding:7px 9px;align-items:flex-start;justify-content:flex-start}
+  .cell.stat.selected{box-shadow:inset 0 0 0 2px var(--accent);border-radius:8px}
+  .stat-top{display:flex;align-items:center;gap:7px}
+  .stat-date{
+    display:inline-flex;align-items:center;justify-content:flex-start;
+    font-size:19px;font-weight:600;line-height:1.1;letter-spacing:-.2px;
+    color:var(--text);min-height:22px;
+  }
+  .cell.stat.future .stat-date{font-weight:500;color:var(--muted)}
+  .cell.stat.today .stat-date{color:var(--accent);background:var(--accent-soft);border-radius:7px;padding:0 6px;margin-left:-6px}
+  .cell.stat.selected .stat-date{color:var(--text);font-weight:600}
+  .load-track{
+    display:flex;width:100%;height:4px;border-radius:2px;background:var(--surface-muted);
+    margin-top:10px;overflow:hidden;
+  }
+  .load-track.empty{background:transparent}
+  .load-fill{display:flex;height:100%;border-radius:2px;overflow:hidden;min-width:2px}
+  .load-fill .seg{height:100%;display:block}
+  .stat-foot{display:flex;align-items:center;gap:7px;margin-top:10px;width:100%}
+  .stat-foot .load-track{margin-top:0;flex:1 1 auto;width:auto;min-width:0}
+  .warn-dot{width:5px;height:5px;border-radius:50%;border:1.5px solid var(--warning);display:inline-block;flex:none}
+
+  /* ── 方案 K / L：学习马赛克 ─────────────────────────────────── */
+  .mosaic-grid{grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:106px;gap:0}
+  .cell.mosaic{border:0;padding:6px 7px 7px;align-items:stretch;justify-content:flex-start;border-radius:10px}
+  .cell.mosaic.selected{box-shadow:inset 0 0 0 2px var(--accent)}
+  .m-date{font-size:11.5px;line-height:16px;font-weight:600;color:var(--text);flex:none}
+  .cell.mosaic.future .m-date{font-weight:500;color:var(--muted)}
+  .cell.mosaic.today .m-date{
+    display:inline-flex;align-items:center;justify-content:center;
+    width:18px;height:18px;margin-left:-2px;border-radius:50%;
+    background:var(--accent);color:#fff;font-size:10.5px;line-height:1;
+  }
+  .cell.mosaic.selected .m-date{color:var(--text)}
+  .cell.mosaic.today .m-date{color:#fff}
+  .m-tile{
+    position:relative;flex:1;margin-top:4px;border-radius:7px;
+    background:#eef3f9;overflow:hidden;
+  }
+  .m-tile.over{box-shadow:inset 0 0 0 1.5px var(--warning)}
+  .cell.mosaic.over::after,
+  .cell.fullmosaic.over::after{
+    content:'';position:absolute;top:4px;right:4px;width:6px;height:6px;border-radius:50%;
+    background:var(--warning);border:1.5px solid #fff;box-shadow:0 0 0 1px var(--warning);
+    z-index:4;
+  }
+  .m-fill{position:absolute;left:0;right:0;bottom:0;display:block}
+  .m-block{position:absolute;border:2px solid #fff;border-radius:6px;box-sizing:border-box}
+
+  /* L · 满格拼贴 */
+  .fullmosaic-grid{grid-template-columns:repeat(7,minmax(0,1fr));grid-auto-rows:98px;gap:3px;padding:2px 0}
+  .cell.fullmosaic{position:relative;border:0;padding:0;border-radius:8px;overflow:hidden;background:#eef3f9}
+  .cell.fullmosaic .m-fill{position:absolute;left:0;right:0;bottom:0}
+  .cell.fullmosaic .m-block{border-width:2px}
+  .cell.fullmosaic .m-date{
+    position:absolute;top:5px;left:5px;z-index:2;
+    padding:0 4px;border-radius:6px;line-height:16px;font-size:10.5px;
+    background:rgba(255,255,255,.86);color:var(--muted);
+  }
+  .cell.fullmosaic.today .m-date{background:var(--accent);color:#fff}
+  .cell.fullmosaic.selected{box-shadow:inset 0 0 0 2px var(--accent)}
+  .cell.fullmosaic.over{box-shadow:inset 0 0 0 2px var(--warning)}
+  .cell.fullmosaic.selected{box-shadow:inset 0 0 0 2px var(--accent)}
+
+  /* ── 图注 ───────────────────────────────────────────────────── */
+  .legend{display:flex;flex-wrap:wrap;align-items:center;gap:7px 15px;margin-top:12px;font-size:11px;color:var(--muted)}
+  .legend-group{display:flex;align-items:center;gap:5px}
+  .legend-label{color:var(--subtle)}
+  .legend-sep{width:1px;height:12px;background:var(--border);margin:0 1px}
+  .swatch{width:10px;height:10px;border-radius:2px;display:inline-block}
+  .swatch.edge{border:1px solid var(--border)}
+  .legend .mark-svg{width:12px;height:12px;margin-top:0}
+  .footnote{margin-top:8px;font-size:11px;color:var(--subtle)}
+
+  /* ── 方案 B：对照条 ─────────────────────────────────────────── */
+  .scheme-b .grid{grid-auto-rows:112px}
+  .bar{
+    position:relative;height:6px;border-radius:3px;margin-top:auto;
+    background:var(--surface-muted);overflow:hidden;flex:none;
+  }
+  .bar-fill{position:absolute;top:0;left:0;height:100%}
+  .bar-plan{background:#b8cfe4}
+  .bar-actual{background:var(--accent)}
+  .bar-extra{background:var(--warning)}
+  .bar-key{display:inline-flex;align-items:center;gap:5px}
+  .bar-swatch{width:16px;height:5px;border-radius:2px;display:inline-block;background:var(--surface-muted)}
+  .bar-swatch.plan{background:#b8cfe4}
+  .bar-swatch.actual{background:var(--accent)}
+  .bar-swatch.extra{background:var(--warning)}
+
+  /* ── 方案 C：选中日摘要 ─────────────────────────────────────── */
+  .selected-day{
+    margin-top:12px;padding:9px 12px 10px;border:1px solid var(--border);
+    border-left:3px solid var(--accent);border-radius:8px;background:#fbfcfe;
+  }
+  .sd-main{display:flex;align-items:center;gap:14px;min-width:0}
+  .sd-date{display:flex;align-items:baseline;gap:5px;flex:none}
+  .sd-num{font-size:16px;font-weight:600;line-height:1.2}
+  .sd-week{font-size:11px;color:var(--muted)}
+  .sd-chip{
+    display:inline-flex;align-items:center;gap:4px;flex:none;
+    padding:1px 7px;border-radius:999px;font-size:10.5px;font-weight:500;
+    color:var(--success-ink);background:var(--success-soft);border:1px solid var(--success-border);
+  }
+  .sd-chip .mark-svg{width:10px;height:10px;margin:0}
+  .sd-facts{display:flex;gap:16px;font-size:11.5px;color:var(--muted);white-space:nowrap}
+  .sd-facts b{font-weight:500;color:var(--text)}
+  .sd-link{margin-left:auto;font-size:11.5px;font-weight:500;color:var(--accent);white-space:nowrap}
+  .sd-item{display:flex;align-items:center;gap:10px;margin-top:6px;font-size:11px;color:var(--muted);min-width:0}
+  .sd-item .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sd-item .meta{flex:none;font-size:10.5px;color:var(--subtle)}
+</style>
+</head>
+<body>
+<main>
+  <section class="scheme" id="scheme-a">
+    <header class="scheme-head">
+      <div class="scheme-head-top">
+        <span class="scheme-badge">方案 A</span>
+        <span class="scheme-title">信息分层</span>
+        <span class="scheme-note">示意数据 · 浅色主题 · 面板宽 1040</span>
+      </div>
+      <p class="scheme-desc">空白日不再重复 0 值；有安排日固定为「计划 / 容量 → 实学 → 事项」三层；实学热度改成整格底色；状态标记做减法，图注与格子一一对应。</p>
+    </header>
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">2026年10月</span>
+        <span class="panel-sum" id="sum-a"></span>
+      </div>
+      <div class="calendar">
+        <div class="weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+        <div class="grid" id="grid-a"></div>
+      </div>
+      <div class="legend" id="legend-a"></div>
+      <div class="footnote">悬停格子可查看完整数值与事项；空白格表示当天没有计划与记录。</div>
+    </div>
+  </section>
+
+  <section class="scheme scheme-b" id="scheme-b">
+    <header class="scheme-head">
+      <div class="scheme-head-top">
+        <span class="scheme-badge">方案 B</span>
+        <span class="scheme-title">计划–执行对照条</span>
+        <span class="scheme-note">示意数据 · 浅色主题 · 面板宽 1040</span>
+      </div>
+      <p class="scheme-desc">每格底部一条对照条：底轨是当日容量，浅蓝段是已排计划，深蓝段是实学（计划外用琥珀色）；格子不铺底色，扫读主要靠条的长度。</p>
+    </header>
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">2026年10月</span>
+        <span class="panel-sum" id="sum-b"></span>
+      </div>
+      <div class="calendar">
+        <div class="weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+        <div class="grid" id="grid-b"></div>
+      </div>
+      <div class="legend" id="legend-b"></div>
+      <div class="footnote">条形长度 = 占当日容量比例；悬停格子可查看完整数值与事项。</div>
+    </div>
+  </section>
+
+  <section class="scheme scheme-c" id="scheme-c">
+    <header class="scheme-head">
+      <div class="scheme-head-top">
+        <span class="scheme-badge">方案 C</span>
+        <span class="scheme-title">A + 选中日摘要</span>
+        <span class="scheme-note">示意数据 · 浅色主题 · 面板宽 1040</span>
+      </div>
+      <p class="scheme-desc">沿用方案 A 的格子；网格下方新增选中日摘要，让「点日期」在月视图里有结果，并补上「在日视图中查看」的入口。</p>
+    </header>
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">2026年10月</span>
+        <span class="panel-sum" id="sum-c"></span>
+      </div>
+      <div class="calendar">
+        <div class="weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+        <div class="grid" id="grid-c"></div>
+      </div>
+      <div class="selected-day" id="selected-day"></div>
+      <div class="legend" id="legend-c"></div>
+      <div class="footnote">悬停格子可查看完整数值与事项；选中日期后，摘要保持在网格下方。</div>
+    </div>
+  </section>
+
+  <section class="scheme" id="scheme-d">
+    <header class="scheme-head">
+      <div class="scheme-head-top">
+        <span class="scheme-badge">方案 D</span>
+        <span class="scheme-title">纯计划（最简）</span>
+        <span class="scheme-note">示意数据 · 浅色主题 · 面板宽 1040</span>
+      </div>
+      <p class="scheme-desc">只回答「哪天要学、学什么、学多久」：日期 + 计划时长 + 事项标题（最多两条 + N）。没有状态标记、实学、热度、容量，也没有图注。</p>
+    </header>
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">2026年10月</span>
+        <span class="panel-sum" id="sum-d"></span>
+      </div>
+      <div class="calendar">
+        <div class="weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+        <div class="grid" id="grid-d"></div>
+      </div>
+      <div class="footnote">月视图只显示计划：哪天学什么、计划多久；完成度、实学与状态请在日 / 周视图查看。</div>
+    </div>
+  </section>
+
+  <section class="scheme" id="scheme-e">
+    <header class="scheme-head">
+      <div class="scheme-head-top">
+        <span class="scheme-badge">方案 E</span>
+        <span class="scheme-title">纯计划 + 容量刻度</span>
+        <span class="scheme-note">示意数据 · 浅色主题 · 面板宽 1040</span>
+      </div>
+      <p class="scheme-desc">在方案 D 上只加一条 3px 细条：长度是计划占当日容量的比例，超过容量时变琥珀色。只提示「排得下排不下」，不展示完成度。</p>
+    </header>
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">2026年10月</span>
+        <span class="panel-sum" id="sum-e"></span>
+      </div>
+      <div class="calendar">
+        <div class="weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+        <div class="grid" id="grid-e"></div>
+      </div>
+      <div class="footnote">细条 = 计划占当日容量的比例，超过容量时变为琥珀色；月视图不显示完成度与实学。</div>
+    </div>
+  </section>
+
+  <section class="scheme" id="scheme-f">
+    <header class="scheme-head">
+      <div class="scheme-head-top">
+        <span class="scheme-badge">方案 F</span>
+        <span class="scheme-title">点阵月历 + 底部计划条</span>
+        <span class="scheme-note">示意数据 · 浅色主题 · 选中 24 日</span>
+      </div>
+      <p class="scheme-desc">格子里只留日期和圆点：圆点数量 = 当天事项数（最多 3 个），琥珀色圆点表示当天计划超过容量。所有文字移到网格下方的选中日计划条。</p>
+    </header>
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">2026年10月</span>
+        <span class="panel-sum" id="sum-f"></span>
+      </div>
+      <div class="calendar">
+        <div class="weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+        <div class="grid plain-grid" id="grid-f"></div>
+      </div>
+      <div class="agenda" id="agenda-f"></div>
+      <div class="footnote">圆点代表当天安排的事项数量，琥珀色表示当天计划超过容量；点日期在下方查看计划详情。</div>
+    </div>
+  </section>
+
+  <section class="scheme" id="scheme-g">
+    <header class="scheme-head">
+      <div class="scheme-head-top">
+        <span class="scheme-badge">方案 G</span>
+        <span class="scheme-title">点阵月历 + 右侧计划栏</span>
+        <span class="scheme-note">示意数据 · 浅色主题 · 选中 24 日</span>
+      </div>
+      <p class="scheme-desc">同样只有日期和圆点，把选中日计划放到右侧栏，适合桌面宽屏；窄屏时右栏落到网格下方。</p>
+    </header>
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">2026年10月</span>
+        <span class="panel-sum" id="sum-g"></span>
+      </div>
+      <div class="month-split">
+        <div class="calendar">
+          <div class="weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+          <div class="grid plain-grid" id="grid-g"></div>
+        </div>
+        <aside class="day-panel" id="panel-g"></aside>
+      </div>
+      <div class="footnote">圆点代表当天安排的事项数量，琥珀色表示计划超过容量；右侧显示选中日期的计划详情。</div>
+    </div>
+  </section>
+
+  <section class="scheme" id="scheme-h">
+    <header class="scheme-head">
+      <div class="scheme-head-top">
+        <span class="scheme-badge">方案 H</span>
+        <span class="scheme-title">圆形日格</span>
+        <span class="scheme-note">示意数据 · 浅色主题 · 选中 24 日</span>
+      </div>
+      <p class="scheme-desc">去掉表格线与格子边框：日期居中在圆里，下面用课程色圆点表示当天安排；今天浅蓝圆、选中墨蓝实心，未来日期变浅。</p>
+    </header>
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">2026年10月</span>
+        <span class="panel-sum" id="sum-h"></span>
+      </div>
+      <div class="month-split">
+        <div class="calendar bare">
+          <div class="weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+          <div class="grid round-grid" id="grid-h"></div>
+        </div>
+        <aside class="day-panel" id="panel-h"></aside>
+      </div>
+      <div class="footnote">圆点是当天安排的课程颜色；琥珀色空心点表示当天计划超过容量。右侧显示选中日期的计划详情。</div>
+    </div>
+  </section>
+
+  <section class="scheme" id="scheme-i">
+    <header class="scheme-head">
+      <div class="scheme-head-top">
+        <span class="scheme-badge">方案 I</span>
+        <span class="scheme-title">软底卡片</span>
+        <span class="scheme-note">示意数据 · 浅色主题 · 选中 24 日</span>
+      </div>
+      <p class="scheme-desc">每天一张圆角软卡片：有安排的日子按计划负荷上蓝色底纹，课程色圆点表示安排；选中用墨蓝描边。</p>
+    </header>
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">2026年10月</span>
+        <span class="panel-sum" id="sum-i"></span>
+      </div>
+      <div class="month-split">
+        <div class="calendar bare">
+          <div class="weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+          <div class="grid tile-grid" id="grid-i"></div>
+        </div>
+        <aside class="day-panel" id="panel-i"></aside>
+      </div>
+      <div class="footnote">有安排的日子按计划负荷着色，圆点是课程颜色；琥珀色表示计划超过容量。右侧显示选中日期的计划详情。</div>
+    </div>
+  </section>
+
+  <section class="scheme" id="scheme-j">
+    <header class="scheme-head">
+      <div class="scheme-head-top">
+        <span class="scheme-badge">方案 J</span>
+        <span class="scheme-title">大日期 + 课程配比条</span>
+        <span class="scheme-note">示意数据 · 浅色主题 · 选中 24 日</span>
+      </div>
+      <p class="scheme-desc">日期放大，下面一条按课程配比着色的计划条，长度 = 计划占容量；超过容量时日期旁出现琥珀色空心点。</p>
+    </header>
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">2026年10月</span>
+        <span class="panel-sum" id="sum-j"></span>
+      </div>
+      <div class="month-split">
+        <div class="calendar bare">
+          <div class="weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+          <div class="grid stat-grid" id="grid-j"></div>
+        </div>
+        <aside class="day-panel" id="panel-j"></aside>
+      </div>
+      <div class="footnote">日期下方是按课程配比着色的计划条，长度表示计划占容量；琥珀色空心点表示超容量。右侧显示选中日期的计划详情。</div>
+    </div>
+  </section>
+
+  <section class="scheme" id="scheme-k">
+    <header class="scheme-head">
+      <div class="scheme-head-top">
+        <span class="scheme-badge">方案 K</span>
+        <span class="scheme-title">学习马赛克 · 容量方块</span>
+        <span class="scheme-note">示意数据 · 浅色主题 · 选中 24 日</span>
+      </div>
+      <p class="scheme-desc">每格是一个「容量方块」：色块面积 = 当天各课程计划分钟，浅色部分 = 没排满的容量；格内只有日期和色块，没有文字。右侧栏看当天明细。</p>
+    </header>
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">2026年10月</span>
+        <span class="panel-sum" id="sum-k"></span>
+      </div>
+      <div class="month-split">
+        <div class="calendar bare">
+          <div class="weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+          <div class="grid mosaic-grid" id="grid-k"></div>
+        </div>
+        <aside class="day-panel" id="panel-k"></aside>
+      </div>
+      <div class="legend" id="legend-k"></div>
+      <div class="footnote">色块面积 = 当天各课程计划分钟，浅色 = 未排满容量；琥珀描边表示当天计划超过容量。</div>
+    </div>
+  </section>
+
+  <section class="scheme" id="scheme-l">
+    <header class="scheme-head">
+      <div class="scheme-head-top">
+        <span class="scheme-badge">方案 L</span>
+        <span class="scheme-title">学习马赛克 · 满格拼贴</span>
+        <span class="scheme-note">示意数据 · 浅色主题 · 选中 24 日</span>
+      </div>
+      <p class="scheme-desc">同样的课程色块，但铺满整个格子：日期浮在左上角，格子之间用白色间隙隔开。月份像一张色块拼贴海报，容量只作为浅色余量存在。</p>
+    </header>
+    <div class="panel">
+      <div class="panel-head">
+        <span class="panel-title">2026年10月</span>
+        <span class="panel-sum" id="sum-l"></span>
+      </div>
+      <div class="month-split">
+        <div class="calendar bare">
+          <div class="weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
+          <div class="grid fullmosaic-grid" id="grid-l"></div>
+        </div>
+        <aside class="day-panel" id="panel-l"></aside>
+      </div>
+      <div class="legend" id="legend-l"></div>
+      <div class="footnote">色块面积 = 当天各课程计划分钟占比，浅色格子 = 没排计划；琥珀描边表示当天计划超过容量。</div>
+    </div>
+  </section>
+</main>
+<script>
+(() => {
+  const TODAY = '2026-10-21';
+  const SELECTED = '2026-10-18';
+  const MONTH = '2026-10';
+  const REST_DAYS = new Set(['2026-10-12']);
+  const CAP_BY_WEEKDAY = [180, 180, 240, 180, 180, 240, 180]; // 周一..周日
+
+  // 示意数据：与截图同月（2026-10），覆盖完成/部分/中断/计划外/待执行/休息日。
+  const RAW = {
+    '2026-10-01': { plan: 0, actual: 90, items: [] },
+    '2026-10-03': { plan: 0, actual: 380, items: [] },
+    '2026-10-06': { plan: 120, actual: 130, items: [{ t: '操作系统：进程调度与同步', p: 120, a: 130 }] },
+    '2026-10-09': { plan: 90, actual: 40, items: [{ t: '2019 年英语阅读 Text 1-2：限时与精读', p: 90, a: 40 }] },
+    '2026-10-15': { plan: 60, actual: 0, items: [{ t: '数据结构：栈与队列', p: 60, a: 0 }] },
+    '2026-10-18': { plan: 45, actual: 45, items: [{ t: '高数：数列极限与两个重要极限', p: 45, a: 45 }] },
+    '2026-10-19': {
+      plan: 75, actual: 120, items: [
+        { t: '导数与微分：计算方法及错题复盘', p: 45, a: 45 },
+        { t: '栈与队列：循环队列和括号匹配', p: 30, a: 75 },
+      ]
+    },
+    '2026-10-20': {
+      plan: 90, actual: 75, items: [
+        { t: '2019 年英语阅读 Text 1-4：限时与精读', p: 75, a: 75 },
+        { t: '栈与队列：循环队列和括号匹配', p: 15, a: 0 },
+      ]
+    },
+    '2026-10-21': {
+      plan: 60, actual: 55, items: [
+        { t: '随机变量与概率分布', p: 60, a: 55 },
+        { t: '操作系统：虚拟内存', p: 0, a: 0 },
+      ]
+    },
+    '2026-10-22': {
+      plan: 135, actual: 0, items: [
+        { t: '数据结构与算法：图与遍历', p: 75, a: 0 },
+        { t: '操作系统：虚拟内存', p: 60, a: 0 },
+      ]
+    },
+    '2026-10-23': { plan: 30, actual: 0, items: [{ t: '栈与队列：循环队列和括号匹配', p: 30, a: 0 }] },
+    '2026-10-24': {
+      plan: 270, actual: 0, items: [
+        { t: '高数阶段检测与错题整理', p: 120, a: 0 },
+        { t: '英语写作：图表作文', p: 90, a: 0 },
+        { t: '线性代数：相似矩阵', p: 60, a: 0 },
+      ]
+    },
+    '2026-10-25': { plan: 30, actual: 0, items: [{ t: '线性代数：特征值与特征向量', p: 30, a: 0 }] },
+    '2026-10-26': { plan: 60, actual: 0, items: [{ t: '线性代数：二次型', p: 60, a: 0 }] },
+  };
+
+  const pad = (n) => String(n).padStart(2, '0');
+  const fmtFull = (m) => {
+    if (m <= 0) return '0分钟';
+    const h = Math.floor(m / 60), r = m % 60;
+    return h ? (r ? `${h}小时${r}分` : `${h}小时`) : `${m}分钟`;
+  };
+  const fmtCell = (m) => {
+    if (m <= 0) return '0分';
+    const h = Math.floor(m / 60), r = m % 60;
+    return h ? (r ? `${h}时${r}分` : `${h}时`) : `${m}分`;
+  };
+  const weekdayOf = (dateStr) => {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const wd = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0=周日
+    return (wd + 6) % 7; // 0=周一
+  };
+  const capFor = (dateStr) => REST_DAYS.has(dateStr) ? 0 : CAP_BY_WEEKDAY[weekdayOf(dateStr)];
+  const WEEK_LABEL = ['周一', '周二', '周三', '周四', '周五', '周六', '周日'];
+
+  function entryFor(dateStr) {
+    const raw = RAW[dateStr] || { plan: 0, actual: 0, items: [] };
+    const items = raw.items || [];
+    const cap = capFor(dateStr);
+    const scheduled = items.reduce((s, i) => s + (i.a || 0), 0);
+    const future = dateStr > TODAY;
+    let status;
+    if (cap <= 0 && raw.plan === 0 && raw.actual === 0) status = 'rest';
+    else if (future) status = raw.plan > 0 ? 'upcoming' : 'free';
+    else if (raw.plan <= 0) status = raw.actual > 0 ? 'extraOnly' : 'free';
+    else if (scheduled >= raw.plan) status = 'completed';
+    else if (scheduled > 0) status = 'partial';
+    else if (dateStr === TODAY) status = 'pending';
+    else status = 'interrupted';
+    const heat = raw.actual <= 0 ? 0 : Math.min(4, Math.ceil(raw.actual / 120));
+    return {
+      date: dateStr, plan: raw.plan, actual: raw.actual, items, cap, scheduled, status, future,
+      isToday: dateStr === TODAY, isSelected: dateStr === SELECTED,
+      heat: future ? 0 : heat,
+    };
+  }
+
+  const ICON = {
+    completed: '<svg class="mark-svg" viewBox="0 0 12 12" aria-hidden="true"><path d="M2.2 6.4 4.7 8.9 9.8 3.1" fill="none" stroke="#2e7d66" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    partial: '<svg class="mark-svg" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="4.1" fill="none" stroke="#b7791f" stroke-width="1.3"/><path d="M6 1.9a4.1 4.1 0 0 1 0 8.2Z" fill="#b7791f"/></svg>',
+    interrupted: '<svg class="mark-svg" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="2.5" fill="#b54747"/></svg>',
+    extraOnly: '<svg class="mark-svg" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 2.2v7.6M2.2 6h7.6" fill="none" stroke="#b7791f" stroke-width="1.5" stroke-linecap="round"/></svg>',
+    pending: '<svg class="mark-svg" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="3.9" fill="none" stroke="#2f5d8a" stroke-width="1.4"/></svg>',
+    upcoming: '<svg class="mark-svg" viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="3.9" fill="none" stroke="#9dc0dd" stroke-width="1.4"/></svg>',
+  };
+  const marker = (status) => status === 'rest' ? '<span class="rest">休</span>' : (ICON[status] || '');
+
+  // ── 方案 A / C 的格子 ─────────────────────────────────────────
+  function cellA(e, variant) {
+    const cls = ['cell'];
+    if (e.isToday) cls.push('today-date');
+    if (e.future) cls.push('future');
+    if (e.isSelected) cls.push('selected');
+    if (!e.future && e.heat > 0) cls.push(`heat-${e.heat}`);
+    let body = '';
+    if (e.plan > 0) {
+      body += `<div class="fact-row"><span class="fact-plan">计划 <b>${fmtCell(e.plan)}</b></span><span class="fact-cap">容量 ${fmtCell(e.cap)}</span></div>`;
+      if (e.status === 'interrupted') {
+        body += `<div class="fact-actual danger">未执行</div>`;
+      } else if (!e.future) {
+        body += `<div class="fact-actual">实学 <b>${fmtCell(e.actual)}</b></div>`;
+      }
+      const visible = variant === 'c-selected' ? 2 : 2;
+      if (e.items.length) {
+        for (let i = 0; i < Math.min(visible, e.items.length); i++) {
+          const more = i === visible - 1 && e.items.length > visible ? `<span class="plus">+${e.items.length - visible}</span>` : '';
+          body += `<div class="item-row"><span class="item">· ${e.items[i].t}</span>${more}</div>`;
+        }
+      }
+    } else if (e.actual > 0) {
+      body += `<div class="fact-actual warning" style="margin-top:2px">实学 <b>${fmtCell(e.actual)}</b></div>`;
+      if (e.items.length) {
+        body += `<div class="item-row"><span class="item">· ${e.items[0].t}</span></div>`;
+      }
+    }
+    return `<div class="${cls.join(' ')}" data-date="${e.date}">
+      <div class="cell-top"><span class="date">${Number(e.date.slice(8))}</span>${marker(e.status)}</div>
+      <div class="body">${body}</div>
+    </div>`;
+  }
+
+  // ── 方案 B 的格子 ─────────────────────────────────────────────
+  function cellB(e) {
+    const cls = ['cell'];
+    if (e.isToday) cls.push('today-date');
+    if (e.future) cls.push('future');
+    if (e.isSelected) cls.push('selected');
+    let body = '';
+    let bar = '';
+    if (e.plan > 0) {
+      body += `<div class="fact-row"><span class="fact-plan">计划 <b>${fmtCell(e.plan)}</b></span><span class="fact-cap">容量 ${fmtCell(e.cap)}</span></div>`;
+      if (e.future) {
+        // 未来只给计划和容量，不重复「未到」文字。
+      } else if (e.status === 'interrupted') {
+        body += `<div class="fact-actual danger">实学 0分</div>`;
+      } else {
+        body += `<div class="fact-actual">实学 <b>${fmtCell(e.actual)}</b></div>`;
+      }
+      if (e.items.length) {
+        const more = e.items.length > 1 ? `<span class="plus">+${e.items.length - 1}</span>` : '';
+        body += `<div class="item-row"><span class="item">· ${e.items[0].t}</span>${more}</div>`;
+      }
+      const planW = Math.min(100, (e.plan / e.cap) * 100);
+      const actualW = Math.min(100, (e.actual / e.cap) * 100);
+      bar = `<div class="bar"><span class="bar-fill bar-plan" style="width:${planW}%"></span>${e.actual > 0 ? `<span class="bar-fill bar-actual" style="width:${actualW}%"></span>` : ''}</div>`;
+    } else if (e.actual > 0) {
+      body += `<div class="fact-actual warning" style="margin-top:2px">实学 <b>${fmtCell(e.actual)}</b></div>`;
+      const actualW = Math.min(100, (e.actual / e.cap) * 100);
+      bar = `<div class="bar"><span class="bar-fill bar-extra" style="width:${actualW}%"></span></div>`;
+    }
+    return `<div class="${cls.join(' ')}" data-date="${e.date}">
+      <div class="cell-top"><span class="date">${Number(e.date.slice(8))}</span>${marker(e.status)}</div>
+      <div class="body">${body}</div>${bar}
+    </div>`;
+  }
+
+  function monthGrid(builder) {
+    const start = Date.UTC(2026, 8, 28); // 2026-09-28 周一
+    let html = '';
+    for (let i = 0; i < 35; i++) {
+      const d = new Date(start + i * 86400000);
+      const dateStr = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+      if (dateStr.slice(0, 7) !== MONTH) {
+        html += `<div class="cell out r${Math.floor(i / 7)} c${i % 7}"></div>`;
+      } else {
+        const e = entryFor(dateStr);
+        html += builder(e);
+      }
+    }
+    return html;
+  }
+
+  function summary() {
+    let plan = 0, actual = 0, interrupted = 0;
+    for (let d = 1; d <= 31; d++) {
+      const e = entryFor(`${MONTH}-${pad(d)}`);
+      plan += e.plan; actual += e.actual;
+      if (e.date <= TODAY && e.plan > 0 && e.scheduled === 0) interrupted += 1;
+    }
+    return `<b>本月计划 ${fmtFull(plan)}</b> · <b>实学 ${fmtFull(actual)}</b> · <b>中断 ${interrupted} 天</b>`;
+  }
+
+  const heatLegend = [0, 1, 2, 3, 4]
+    .map((l) => `<span class="swatch ${l === 0 ? 'heat-0 edge' : 'heat-' + l}"></span>`).join('');
+
+  function legendA() {
+    return `
+      <span class="legend-group"><span class="legend-label">实学热度</span>${heatLegend}<span class="legend-label">少→多</span></span>
+      <span class="legend-sep"></span>
+      <span class="legend-group">${ICON.completed}完成原定</span>
+      <span class="legend-group">${ICON.partial}部分执行</span>
+      <span class="legend-group">${ICON.interrupted}中断</span>
+      <span class="legend-group">${ICON.extraOnly}计划外学习</span>
+      <span class="legend-group">${ICON.pending}待执行</span>
+      <span class="legend-group">${ICON.upcoming}未到</span>
+      <span class="legend-group"><span class="rest">休</span>休息日</span>`;
+  }
+
+  function legendB() {
+    return `
+      <span class="legend-group"><span class="legend-label">对照条</span>
+        <span class="bar-key"><span class="bar-swatch"></span>容量</span>
+        <span class="bar-key"><span class="bar-swatch plan"></span>计划</span>
+        <span class="bar-key"><span class="bar-swatch actual"></span>实学</span>
+        <span class="bar-key"><span class="bar-swatch extra"></span>计划外</span>
+      </span>
+      <span class="legend-sep"></span>
+      <span class="legend-group">${ICON.completed}完成原定</span>
+      <span class="legend-group">${ICON.partial}部分执行</span>
+      <span class="legend-group">${ICON.interrupted}中断</span>
+      <span class="legend-group">${ICON.extraOnly}计划外学习</span>
+      <span class="legend-group">${ICON.pending}待执行</span>
+      <span class="legend-group">${ICON.upcoming}未到</span>
+      <span class="legend-group"><span class="rest">休</span>休息日</span>`;
+  }
+
+  // ── 渲染 ─────────────────────────────────────────────────────
+  const sumHTML = summary();
+  for (const id of ['a', 'b', 'c']) document.getElementById(`sum-${id}`).innerHTML = sumHTML;
+  document.getElementById('grid-a').innerHTML = monthGrid(cellA);
+  document.getElementById('grid-b').innerHTML = monthGrid(cellB);
+  document.getElementById('grid-c').innerHTML = monthGrid(cellA);
+  document.getElementById('legend-a').innerHTML = legendA();
+  document.getElementById('legend-b').innerHTML = legendB();
+  document.getElementById('legend-c').innerHTML = legendA();
+
+  // 方案 C：选中日摘要
+  const sel = entryFor(SELECTED);
+  const [, , sd] = SELECTED.split('-').map(Number);
+  const weekLabel = WEEK_LABEL[weekdayOf(SELECTED)];
+  const statusChip = sel.status === 'completed'
+    ? `<span class="sd-chip">${ICON.completed}完成原定</span>`
+    : sel.status === 'partial'
+      ? `<span class="sd-chip" style="color:#8a5a12;background:#fdf6e8;border-color:#ecd9b0">${ICON.partial}部分执行</span>`
+      : '';
+  const firstItem = sel.items[0];
+  document.getElementById('selected-day').innerHTML = `
+    <div class="sd-main">
+      <span class="sd-date"><span class="sd-num">${sd}</span><span class="sd-week">${weekLabel}</span></span>
+      ${statusChip}
+      <span class="sd-facts"><span>计划 <b>${fmtCell(sel.plan)}</b></span><span>实学 <b>${fmtCell(sel.actual)}</b></span><span>容量 <b>${fmtCell(sel.cap)}</b></span></span>
+      <span class="sd-link">在日视图中查看 →</span>
+    </div>
+    <div class="sd-item"><span class="t">· ${firstItem ? firstItem.t : '当天没有安排'}</span>${firstItem ? `<span class="meta">计划 ${fmtCell(firstItem.p)} · 实学 ${fmtCell(firstItem.a)}</span>` : ''}</div>`;
+
+  // ── 方案 D / E：纯计划 ───────────────────────────────────────
+  function cellPlan(e, withMeter) {
+    const cls = ['cell', 'plan-cell'];
+    if (e.isToday) cls.push('today-date');
+    if (e.future) cls.push('future');
+    if (e.isSelected) cls.push('selected');
+    const items = e.items.filter((item) => item.p > 0);
+    const over = e.plan > 0 && (e.cap <= 0 || e.plan > e.cap);
+    let body = '';
+    if (items.length) {
+      const visible = Math.min(2, items.length);
+      for (let i = 0; i < visible; i++) {
+        const more = i === visible - 1 && items.length > visible ? `<span class="plus">+${items.length - visible}</span>` : '';
+        body += `<div class="item-row"><span class="item">· ${items[i].t}</span>${more}</div>`;
+      }
+    }
+    const hours = e.plan > 0 ? `<span class="plan-hours${over ? ' over' : ''}">${fmtCell(e.plan)}</span>` : '';
+    let meter = '';
+    if (withMeter && e.plan > 0) {
+      const width = e.cap > 0 ? Math.min(100, (e.plan / e.cap) * 100) : 100;
+      meter = `<div class="plan-meter"><span class="${over ? 'over' : ''}" style="width:${width}%"></span></div>`;
+    }
+    return `<div class="${cls.join(' ')}" data-date="${e.date}">
+      <div class="cell-top"><span class="date">${Number(e.date.slice(8))}</span>${hours}</div>
+      <div class="body">${body}</div>${meter}
+    </div>`;
+  }
+
+  function summaryPlan(withOverload) {
+    let plan = 0, days = 0, over = 0;
+    for (let d = 1; d <= 31; d++) {
+      const e = entryFor(`${MONTH}-${pad(d)}`);
+      if (e.plan <= 0) continue;
+      plan += e.plan;
+      days += 1;
+      if (e.cap <= 0 || e.plan > e.cap) over += 1;
+    }
+    const parts = [`<b>本月计划 ${fmtFull(plan)}</b>`, `<b>${days} 个学习日</b>`];
+    if (withOverload) parts.push(`<b>${over} 天超容量</b>`);
+    return parts.join(' · ');
+  }
+
+  document.getElementById('sum-d').innerHTML = summaryPlan(false);
+  document.getElementById('sum-e').innerHTML = summaryPlan(true);
+  document.getElementById('grid-d').innerHTML = monthGrid((e) => cellPlan(e, false));
+  document.getElementById('grid-e').innerHTML = monthGrid((e) => cellPlan(e, true));
+
+  // ── 方案 F / G：点阵月历（格子里只有日期 + 圆点） ────────────
+  const SELECTED_PLAN = '2026-10-24';
+  const planEntry = (dateStr) => ({ ...entryFor(dateStr), isSelected: dateStr === SELECTED_PLAN });
+
+  function cellPlain(e) {
+    const cls = ['cell', 'plain'];
+    if (e.isToday) cls.push('today-date');
+    if (e.future) cls.push('future');
+    if (e.isSelected) cls.push('selected');
+    const items = e.items.filter((item) => item.p > 0);
+    const over = e.plan > 0 && (e.cap <= 0 || e.plan > e.cap);
+    let dots = '';
+    const count = Math.min(3, items.length);
+    for (let i = 0; i < count; i++) dots += `<i class="${over ? 'over' : ''}"></i>`;
+    return `<div class="${cls.join(' ')}" data-date="${e.date}">
+      <div class="plain-center"><span class="date">${Number(e.date.slice(8))}</span><div class="dots">${dots}</div></div>
+    </div>`;
+  }
+
+  function planOnlyGrid() {
+    return monthGrid((e) => cellPlain(planEntry(e.date)));
+  }
+
+  const selPlan = planEntry(SELECTED_PLAN);
+  const selItems = selPlan.items.filter((item) => item.p > 0);
+  const selOver = selPlan.plan > 0 && (selPlan.cap <= 0 || selPlan.plan > selPlan.cap);
+  const selWeek = WEEK_LABEL[weekdayOf(SELECTED_PLAN)];
+  const selNum = Number(SELECTED_PLAN.slice(8));
+
+  const warnChip = selOver
+    ? `<span class="agenda-warn">超容量 ${fmtCell(selPlan.plan - selPlan.cap)}</span>`
+    : '';
+
+  document.getElementById('sum-f').innerHTML = summaryPlan(true);
+  document.getElementById('sum-g').innerHTML = summaryPlan(true);
+  document.getElementById('grid-f').innerHTML = planOnlyGrid();
+  document.getElementById('grid-g').innerHTML = planOnlyGrid();
+
+  document.getElementById('agenda-f').innerHTML = `
+    <div class="agenda-main">
+      <span class="agenda-date">${selNum}<small>${selWeek}</small></span>
+      <span class="agenda-total">计划 <b>${fmtCell(selPlan.plan)}</b></span>
+      ${warnChip.replace('agenda-warn', 'agenda-warn')}
+      <span class="agenda-link">在日视图中查看 →</span>
+    </div>
+    <div class="agenda-items">
+      ${selItems.map((item) => `<span class="agenda-item${selOver ? ' over' : ''}"><i></i>${item.t}<em>${fmtCell(item.p)}</em></span>`).join('')}
+    </div>`;
+
+  document.getElementById('panel-g').innerHTML = `
+    <div class="dp-head"><span class="dp-num">${selNum}</span><span class="dp-week">${selWeek}</span></div>
+    <div class="dp-total">计划 <b>${fmtCell(selPlan.plan)}</b> · ${selItems.length} 项</div>
+    ${selOver ? `<span class="dp-warn">超容量 ${fmtCell(selPlan.plan - selPlan.cap)}</span>` : ''}
+    <div class="dp-list">
+      ${selItems.map((item) => `<div class="dp-item${selOver ? ' over' : ''}"><i></i><span class="t">${item.t}</span><span class="d">${fmtCell(item.p)}</span></div>`).join('')}
+    </div>
+    <span class="dp-link">在日视图中查看 →</span>`;
+
+  // ── 方案 H / I / J：替换日历本体（格内仍无文字） ─────────────
+  const COURSE_COLOR_RULES = [
+    [/线性代数/, '#7d629f'],
+    [/英语/, '#a06145'],
+    [/数据结构|栈与队列/, '#537e52'],
+    [/操作系统/, '#985c78'],
+    [/随机变量|概率/, '#66739b'],
+    [/高数|导数与微分/, '#537c87'],
+  ];
+  const colorFor = (title) => {
+    for (const [rule, color] of COURSE_COLOR_RULES) {
+      if (rule.test(title)) return color;
+    }
+    return '#66739b';
+  };
+  const planItemsOf = (e) => e.items.filter((item) => item.p > 0);
+  const overPlan = (e) => e.plan > 0 && (e.cap <= 0 || e.plan > e.cap);
+  const coloredDots = (e) => {
+    const items = planItemsOf(e);
+    let html = items.slice(0, 3)
+      .map((item) => `<i style="background:${colorFor(item.t)}"></i>`).join('');
+    if (overPlan(e)) html += '<span class="warn-dot"></span>';
+    return html;
+  };
+
+  function cellRound(e) {
+    const cls = ['cell', 'round'];
+    if (e.future) cls.push('future');
+    if (e.isToday) cls.push('today');
+    if (e.isSelected) cls.push('selected');
+    return `<div class="${cls.join(' ')}" data-date="${e.date}">
+      <div class="round-day"><span class="round-date">${Number(e.date.slice(8))}</span><div class="round-dots">${coloredDots(e)}</div></div>
+    </div>`;
+  }
+
+  function cellTile(e) {
+    const cls = ['cell', 'tile'];
+    if (e.future) cls.push('future');
+    const over = overPlan(e);
+    if (e.plan > 0) {
+      const level = e.cap > 0 ? Math.min(3, Math.max(1, Math.ceil((e.plan / e.cap) * 3))) : 3;
+      cls.push(`plan-${level}`);
+    }
+    if (over) cls.push('over');
+    if (e.isToday) cls.push('today');
+    if (e.isSelected) cls.push('selected');
+    return `<div class="${cls.join(' ')}" data-date="${e.date}">
+      <span class="date">${Number(e.date.slice(8))}</span><div class="tile-dots">${coloredDots(e)}</div>
+    </div>`;
+  }
+
+  function cellStat(e) {
+    const cls = ['cell', 'stat'];
+    if (e.future) cls.push('future');
+    if (e.isToday) cls.push('today');
+    if (e.isSelected) cls.push('selected');
+    const items = planItemsOf(e);
+    const total = items.reduce((sum, item) => sum + item.p, 0) || e.plan;
+    const segs = items.map((item) => `<span class="seg" style="width:${(item.p / total) * 100}%;background:${colorFor(item.t)}"></span>`).join('');
+    const ratio = e.cap > 0 ? Math.min(100, (e.plan / e.cap) * 100) : 100;
+    const track = e.plan > 0
+      ? `<div class="load-track"><span class="load-fill" style="width:${ratio}%">${segs}</span></div>`
+      : `<div class="load-track empty"></div>`;
+    return `<div class="${cls.join(' ')}" data-date="${e.date}">
+      <div class="stat-top"><span class="stat-date">${Number(e.date.slice(8))}</span></div>
+      <div class="stat-foot">${track}${overPlan(e) ? '<span class="warn-dot"></span>' : ''}</div>
+    </div>`;
+  }
+
+  function dayPanelHTML() {
+    const e = planEntry(SELECTED_PLAN);
+    const items = planItemsOf(e);
+    const over = overPlan(e);
+    const week = WEEK_LABEL[weekdayOf(SELECTED_PLAN)];
+    const num = Number(SELECTED_PLAN.slice(8));
+    return `
+      <div class="dp-head"><span class="dp-num">${num}</span><span class="dp-week">${week}</span></div>
+      <div class="dp-total">计划 <b>${fmtCell(e.plan)}</b> · ${items.length} 项</div>
+      ${over ? `<span class="dp-warn">超容量 ${fmtCell(e.plan - e.cap)}</span>` : ''}
+      <div class="dp-list">
+        ${items.map((item) => `<div class="dp-item"><i style="background:${colorFor(item.t)}"></i><span class="t">${item.t}</span><span class="d">${fmtCell(item.p)}</span></div>`).join('')}
+      </div>
+      <span class="dp-link">在日视图中查看 →</span>`;
+  }
+
+  const sharedSummary = summaryPlan(true);
+  const sharedPanel = dayPanelHTML();
+  for (const key of ['h', 'i', 'j']) {
+    document.getElementById(`sum-${key}`).innerHTML = sharedSummary;
+    document.getElementById(`panel-${key}`).innerHTML = sharedPanel;
+  }
+  document.getElementById('grid-h').innerHTML = monthGrid((e) => cellRound(planEntry(e.date)));
+  document.getElementById('grid-i').innerHTML = monthGrid((e) => cellTile(planEntry(e.date)));
+  document.getElementById('grid-j').innerHTML = monthGrid((e) => cellStat(planEntry(e.date)));
+
+  // ── 方案 K / L：学习马赛克 ───────────────────────────────────
+  const MOSAIC_COURSES = [
+    ['高数', '#537c87'],
+    ['线性代数', '#7d629f'],
+    ['英语', '#a06145'],
+    ['数据结构', '#537e52'],
+    ['操作系统', '#985c78'],
+    ['概率统计', '#66739b'],
+  ];
+
+  function mosaicRects(items) {
+    if (!items.length) return [];
+    const total = items.reduce((sum, item) => sum + item.p, 0);
+    if (items.length === 1) return [{ item: items[0], x: 0, y: 0, w: 1, h: 1 }];
+    if (items.length === 2) {
+      const r = items[0].p / total;
+      return [
+        { item: items[0], x: 0, y: 0, w: r, h: 1 },
+        { item: items[1], x: r, y: 0, w: 1 - r, h: 1 },
+      ];
+    }
+    const first = items[0];
+    const rest = items.slice(1);
+    const restTotal = rest.reduce((sum, item) => sum + item.p, 0);
+    const r = first.p / total;
+    return [
+      { item: first, x: 0, y: 0, w: r, h: 1 },
+      { item: rest[0], x: r, y: 0, w: 1 - r, h: rest[0].p / restTotal },
+      { item: rest[1], x: r, y: rest[0].p / restTotal, w: 1 - r, h: rest[1].p / restTotal },
+    ];
+  }
+
+  function mosaicCell(e, mode) {
+    const cls = ['cell', mode === 'k' ? 'mosaic' : 'fullmosaic'];
+    if (e.future) cls.push('future');
+    if (e.isToday) cls.push('today');
+    if (e.isSelected) cls.push('selected');
+    const over = overPlan(e);
+    if (over) cls.push('over');
+    const items = planItemsOf(e).sort((a, b) => b.p - a.p).slice(0, 3);
+    const cap = e.cap > 0 ? e.cap : Math.max(e.plan, 1);
+    const fill = e.plan > 0 ? Math.min(1, e.plan / cap) : 0;
+    const blocks = mosaicRects(items).map((r) => `<span class="m-block" style="left:${(r.x * 100).toFixed(2)}%;top:${(r.y * 100).toFixed(2)}%;width:${(r.w * 100).toFixed(2)}%;height:${(r.h * 100).toFixed(2)}%;background:${colorFor(r.item.t)}"></span>`).join('');
+    const fillHTML = e.plan > 0 ? `<span class="m-fill" style="height:${(fill * 100).toFixed(2)}%">${blocks}</span>` : '';
+    const date = `<span class="m-date">${Number(e.date.slice(8))}</span>`;
+    if (mode === 'k') {
+      return `<div class="${cls.join(' ')}" data-date="${e.date}">${date}<div class="m-tile${over ? ' over' : ''}">${fillHTML}</div></div>`;
+    }
+    return `<div class="${cls.join(' ')}" data-date="${e.date}">${date}${fillHTML}</div>`;
+  }
+
+  function mosaicLegend() {
+    const courses = MOSAIC_COURSES
+      .map(([name, color]) => `<span class="legend-group"><span class="swatch" style="background:${color};border-radius:50%;width:8px;height:8px"></span>${name}</span>`)
+      .join('');
+    return `<span class="legend-group"><span class="legend-label">课程色</span>${courses}</span>
+      <span class="legend-sep"></span>
+      <span class="legend-group"><span class="swatch" style="background:#eef3f9;border:1px solid var(--border)"></span>未排满容量</span>
+      <span class="legend-group"><span class="swatch" style="background:transparent;border:1.5px solid var(--warning)"></span>超容量</span>`;
+  }
+
+  for (const key of ['k', 'l']) {
+    document.getElementById(`sum-${key}`).innerHTML = sharedSummary;
+    document.getElementById(`panel-${key}`).innerHTML = sharedPanel;
+    document.getElementById(`legend-${key}`).innerHTML = mosaicLegend();
+  }
+  document.getElementById('grid-k').innerHTML = monthGrid((e) => mosaicCell(planEntry(e.date), 'k'));
+  document.getElementById('grid-l').innerHTML = monthGrid((e) => mosaicCell(planEntry(e.date), 'l'));
+})();
+</script>
+</body>
+</html>

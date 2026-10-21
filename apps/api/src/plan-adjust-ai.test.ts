@@ -52,13 +52,7 @@ function fixture() {
         deadline: "2027-10-01", deadline_kind: "deadline", earliest_date: "2026-10-01",
         is_fixed: false, status: "in_progress", created_at: STAMP, updated_at: STAMP,
         planning: {
-          workload: {
-            components: [{ id: "ch", label: "章节", quantity: 100, unit: "章", minutes_per_unit: 120 }],
-            source: "教材章节", confidence: "medium", calibration: "完成 3 章后校准",
-          },
           activity: { kind: "finite", starts_on: "2026-10-01", ends_on: "2026-11-14" },
-          content_progress: { completed_units: 2, confirmed: true },
-          feedback: { content_units: 100, content_completed: false, difficulty: "manageable", sampled_at: STAMP },
         },
       },
       {
@@ -212,10 +206,15 @@ describe("buildAdjustmentContext", () => {
       deadline: "2027-10-01",
       deadline_kind: "deadline",
       is_fixed: false,
-      content_progress: { completed_units: 2, confirmed: true },
+      completed_at: null,
+      activity: { kind: "finite", starts_on: "2026-10-01", ends_on: "2026-11-14" },
     });
-    expect(context.tasks[0].workload_components).toEqual([{ label: "章节", quantity: 100, minutes_per_unit: 120 }]);
-    expect(context.tasks[0].feedback).toMatchObject({ content_units: 100, difficulty: "manageable" });
+    // 内容量、内容进度与困难反馈已从 AI 上下文中移除，只保留时间口径字段。
+    expect(context.tasks[0]).not.toHaveProperty("workload_components");
+    expect(context.tasks[0]).not.toHaveProperty("content_progress");
+    expect(context.tasks[0]).not.toHaveProperty("feedback");
+    expect(JSON.stringify(context.tasks)).not.toContain("workload");
+    expect(context.rules.progress).toContain("时间口径");
 
     expect(context.recent_execution.last7_actual_minutes).toBe(120);
     expect(context.recent_execution.last7_planned_minutes).toBe(180);
@@ -264,7 +263,8 @@ describe("generatePlanAdjustment", () => {
     expect(user.goal.target_school).toBe("上海交通大学");
     expect(user.totals.planned_minutes).toBe(15000);
     expect(user.recent_execution.last7_actual_minutes).toBe(120);
-    expect(user.tasks[0].workload_components).toHaveLength(1);
+    expect(user.tasks[0]).not.toHaveProperty("workload_components");
+    expect(user.rules.progress).toContain("时间口径");
     expect(user).not.toHaveProperty("blocks");
     const system = body.messages[0] as { role: string; content: string };
     expect(system.role).toBe("system");

@@ -52,7 +52,6 @@ Task _task(String id, int estimatedMinutes, String deadline) => Task(
   priority: 2,
   deadline: deadline,
   isFixed: false,
-  status: TaskStatus.notStarted,
   createdAt: _stamp,
   updatedAt: _stamp,
 );

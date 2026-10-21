@@ -71,7 +71,12 @@ create table if not exists items (
   deadline_kind text not null default 'deadline' check (deadline_kind in ('deadline','plan_end')),
   priority smallint not null default 2 check (priority between 1 and 3),
   confirmed boolean not null default false,
+  -- 旧状态投影：阶段 3b 起仅作为旧客户端读投影，服务端按 archived/completed_at/实际用时派生。
   status text not null default 'not_started',
+  -- 归档布尔事实（阶段 3b）：与完成正交；旧行回填 status='archived'，暂不删除 status。
+  archived boolean not null default false,
+  -- 完成时间（时间口径）：非空即完成；旧 status 只是兼容投影。
+  completed_at timestamptz,
   planning_metadata jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()

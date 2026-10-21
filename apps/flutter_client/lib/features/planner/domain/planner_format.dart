@@ -123,15 +123,6 @@ const itemDateKindLabels = {
   ItemDateKind.planEnd: '本期安排边界',
 };
 
-const statusLabels = {
-  TaskStatus.notStarted: '未开始',
-  TaskStatus.inProgress: '进行中',
-  TaskStatus.completed: '完成',
-  TaskStatus.delayed: '延期',
-  TaskStatus.conflict: '冲突',
-  TaskStatus.archived: '已归档',
-};
-
 const priorityLabels = {1: '普通', 2: '中高', 3: '高'};
 
 /// `HH:mm` for a minute-of-day value.

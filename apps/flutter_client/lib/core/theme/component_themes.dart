@@ -194,7 +194,7 @@ abstract final class PlannerComponentThemes {
       InputDecorationTheme(
         isDense: true,
         filled: true,
-        fillColor: tokens.surface,
+        fillColor: tokens.surfaceInset,
         contentPadding: const EdgeInsets.symmetric(
           horizontal: 12,
           vertical: 11,

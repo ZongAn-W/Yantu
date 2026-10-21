@@ -74,7 +74,7 @@ PlannerData _plan(DateTime now) {
   final completed = task.copyWith(
     id: 'completed-task',
     title: '已完成的章节',
-    status: TaskStatus.completed,
+    completedAt: '2026-10-16T00:00:00.000Z',
     completedMinutes: task.estimatedMinutes,
   );
   return fixture.copyWith(
@@ -225,9 +225,10 @@ void main() {
         find.descendant(of: alarm, matching: find.byIcon(Icons.pause)),
         findsOneWidget,
       );
-      // 计时中的事项同步出现在「今日加学」，即使今天没有它的原定安排；
-      // 区块标题和加学卡的零秒目标标签都会显示这条文案。
-      expect(find.text('今日加学'), findsWidgets);
+      // 计时中的事项与计划内事项合并在「今日安排」列表，即使今天没有它的
+      // 原定安排；加学分钟数仍由这一行内联展示。
+      expect(find.text('今日安排'), findsWidgets);
+      expect(find.textContaining('今日加学'), findsWidgets);
       expect(
         find.byKey(const Key('extra-minutes-future-task')),
         findsOneWidget,
@@ -262,55 +263,50 @@ void main() {
       );
       expect(find.textContaining('加学时间已保存'), findsOneWidget);
 
-      // 可选的后续只记录内容进度，绝不自动完成内容。
-      await tester.tap(find.text('记录内容进度'));
-      await tester.pumpAndSettle();
-      expect(find.text('记录内容进度与困难'), findsOneWidget);
-      await tester.enterText(
-        find.byKey(const Key('content-feedback-units')),
-        '2',
+      // 加学只累计真实用时，不会自动完成内容；目录展示时间进度标签。
+      expect(
+        find.byKey(const Key('task-progress-future-task')),
+        findsOneWidget,
       );
-      await harness.tap(find.byKey(const Key('content-feedback-save')));
       final future = harness.coordinator.data!.tasks
           .where((task) => task.id == 'future-task')
           .single;
-      expect((future.planning!['feedback'] as Map)['content_units'], 2);
-      expect(future.status, isNot(TaskStatus.completed));
+      expect(future.completedAt, isNull);
     },
   );
 
-  testWidgets(
-    'scheduled overflow shows the extra badge and the extra-study card together',
-    (tester) async {
-      final harness = await _mount(tester);
-      final taskId = harness.coordinator.data!.tasks.first.id;
-      await harness.tap(find.byKey(Key('study-timer-action-$taskId-$today')));
-      expect(harness.timer.activeRelation, TimeLogRelation.scheduled);
-      harness.clock.advance(const Duration(minutes: 40));
-      await harness.tap(find.text('暂停计时'));
+  testWidgets('scheduled overflow merges extra minutes into the planned row', (
+    tester,
+  ) async {
+    final harness = await _mount(tester);
+    final taskId = harness.coordinator.data!.tasks.first.id;
+    await harness.tap(find.byKey(Key('study-timer-action-$taskId-$today')));
+    expect(harness.timer.activeRelation, TimeLogRelation.scheduled);
+    harness.clock.advance(const Duration(minutes: 40));
+    await harness.tap(find.text('暂停计时'));
 
-      final logs = harness.coordinator.data!.logs;
-      expect(logs, hasLength(2));
-      expect(
-        logs
-            .singleWhere((log) => log.relation == TimeLogRelation.scheduled)
-            .minutes,
-        30,
-      );
-      expect(
-        logs
-            .singleWhere((log) => log.relation == TimeLogRelation.extra)
-            .minutes,
-        10,
-      );
-      // 计划内事项的加学同时出现在计划卡的 chip 和「今日加学」卡里。
-      expect(find.byKey(Key('task-extra-chip-$taskId')), findsOneWidget);
-      expect(find.text('+加学 10分钟'), findsOneWidget);
-      expect(find.textContaining('原定完成 30分钟'), findsOneWidget);
-      expect(find.text('今日加学'), findsOneWidget);
-      expect(find.byKey(Key('extra-minutes-$taskId')), findsOneWidget);
-    },
-  );
+    final logs = harness.coordinator.data!.logs;
+    expect(logs, hasLength(2));
+    expect(
+      logs
+          .singleWhere((log) => log.relation == TimeLogRelation.scheduled)
+          .minutes,
+      30,
+    );
+    expect(
+      logs.singleWhere((log) => log.relation == TimeLogRelation.extra).minutes,
+      10,
+    );
+    // 加学只在计划行上以内联标记表达，不再生成重复的「今日加学」卡。
+    expect(find.byKey(Key('task-extra-chip-$taskId')), findsOneWidget);
+    expect(find.text('+加学 10分钟'), findsOneWidget);
+    expect(find.text('今日加学'), findsNothing);
+    expect(find.byKey(Key('extra-minutes-$taskId')), findsNothing);
+    // 原定完成口径收在展开详情里。
+    await tester.tap(find.byTooltip('展开学习详情'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('原定完成 30分钟'), findsOneWidget);
+  });
 
   testWidgets('rolling plans offer completion entry', (tester) async {
     final fixture = plannerFixture();

@@ -141,7 +141,7 @@ void main() {
   );
 
   test(
-    'planned dependencies require actual content confirmation before timing',
+    'planned dependencies unlock only after the predecessor completes by time',
     () async {
       final original = coordinator.data!.tasks.first;
       final dependent = original.copyWith(
@@ -152,24 +152,20 @@ void main() {
           ],
         },
       );
+      // 前置事项的实际用时远低于预算：时间口径下仍未完成，依赖不成立。
       await coordinator.edit(
-        (data) => data.copyWith(
-          tasks: [
-            original.copyWith(
-              completedMinutes: original.estimatedMinutes,
-              status: TaskStatus.inProgress,
-            ),
-            dependent,
-          ],
-        ),
+        (data) => data.copyWith(tasks: [original, dependent]),
       );
       await expectLater(timer.start(dependent.id, date), throwsStateError);
       expect(timer.activeTaskId, isNull);
       expect(coordinator.data!.logs, isEmpty);
+      // 时间口径的完成标记（提前确认或预算耗尽）解锁依赖。
       await coordinator.edit(
         (data) => data.copyWith(
           tasks: [
-            data.tasks.first.copyWith(status: TaskStatus.completed),
+            data.tasks.first.copyWith(
+              completedAt: '2026-10-16T00:00:00.000Z',
+            ),
             dependent,
           ],
         ),
@@ -296,7 +292,7 @@ void main() {
       clock.advance(const Duration(seconds: 90));
       await timer.checkpoint();
       expect(coordinator.data!.blocks.single.status, BlockStatus.completed);
-      expect(coordinator.data!.tasks.single.status, TaskStatus.inProgress);
+      expect(coordinator.data!.tasks.single.completedAt, isNull);
       expect(timer.isRunning(id, date), isTrue);
       clock.advance(const Duration(seconds: 40));
       await timer.pause();
@@ -760,9 +756,10 @@ void main() {
                 ? []
                 : [
                     data.tasks.single.copyWith(
-                      status: change == 'archived'
-                          ? TaskStatus.archived
-                          : TaskStatus.completed,
+                      archived: change == 'archived',
+                      completedAt: change == 'completed'
+                          ? '2026-10-16T00:00:00.000Z'
+                          : null,
                     ),
                   ],
             blocks: change == 'deleted' ? [] : data.blocks,
@@ -980,7 +977,7 @@ void main() {
           (data) => data.copyWith(
             tasks: [
               data.tasks.single.copyWith(
-                status: TaskStatus.completed,
+                completedAt: '2026-10-16T00:00:00.000Z',
                 completedMinutes: data.tasks.single.estimatedMinutes,
               ),
             ],
@@ -992,7 +989,7 @@ void main() {
         await timer.pause();
 
         final task = coordinator.data!.tasks.single;
-        expect(task.status, TaskStatus.completed, reason: '复习不重新打开事项');
+        expect(task.completedAt, isNotNull, reason: '复习不重新打开事项');
         final log = coordinator.data!.logs.single;
         expect(log.relation, TimeLogRelation.extra);
         expect(log.minutes, 2);
@@ -1007,7 +1004,7 @@ void main() {
         final id = taskId();
         await coordinator.edit(
           (data) => data.copyWith(
-            tasks: [data.tasks.single.copyWith(status: TaskStatus.archived)],
+            tasks: [data.tasks.single.copyWith(archived: true)],
           ),
         );
         await expectLater(timer.startExtra(id), throwsStateError);

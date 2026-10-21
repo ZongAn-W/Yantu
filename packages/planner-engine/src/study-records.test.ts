@@ -8,7 +8,7 @@ function fixture(): PlannerData {
     id: `item-${index}`, user_id: "demo", tag_ids: [], title,
     description: "范围与完成标准", estimated_minutes: 120, completed_minutes: 0,
     priority: 3, deadline: "2026-12-31", earliest_date: "2026-10-01",
-    is_fixed: false, status: "not_started", created_at: stamp, updated_at: stamp,
+    is_fixed: false, archived: false, created_at: stamp, updated_at: stamp,
   }));
   return {
     version: 1,
@@ -30,12 +30,12 @@ const total = (data: PlannerData, taskId: string) =>
 describe("course item study records", () => {
   it("corrects archived history without reactivating the task", () => {
     const original = fixture();
-    original.tasks[0].status = "archived";
+    original.tasks[0].archived = true;
     const recorded = recordTaskDayMinutes(original, "item-0", "2026-10-14", 150);
     const corrected = recordTaskDayMinutes(recorded, "item-0", "2026-10-14", 0);
-    expect(recorded.tasks[0].status).toBe("archived");
+    expect(recorded.tasks[0].archived).toBe(true);
     expect(recorded.tasks[0].completed_minutes).toBe(120);
-    expect(corrected.tasks[0].status).toBe("archived");
+    expect(corrected.tasks[0].archived).toBe(true);
     expect(corrected.tasks[0].completed_minutes).toBe(0);
   });
 
@@ -45,8 +45,8 @@ describe("course item study records", () => {
     data = recordTaskDayMinutes(data, "item-0", "2026-10-14", 20);
     expect(total(data, "item-0")).toBe(20);
     expect(total(data, "item-1")).toBe(45);
-    expect(data.tasks[0].status).toBe("in_progress");
-    expect(data.tasks[1].status).toBe("in_progress");
+    expect(data.tasks[0].completed_minutes).toBe(20);
+    expect(data.tasks[1].completed_minutes).toBe(45);
   });
 
   it("merges concurrent edits by item and date", () => {

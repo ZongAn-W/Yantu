@@ -62,7 +62,6 @@ PlannerData _data({String? planEnd}) {
         deadline: addDate(today, 20),
         deadlineKind: ItemDateKind.deadline,
         isFixed: false,
-        status: TaskStatus.inProgress,
         createdAt: _stamp,
         updatedAt: _stamp,
       ),
@@ -78,7 +77,6 @@ PlannerData _data({String? planEnd}) {
         deadline: end,
         deadlineKind: ItemDateKind.planEnd,
         isFixed: false,
-        status: TaskStatus.inProgress,
         createdAt: _stamp,
         updatedAt: _stamp,
       ),
@@ -479,7 +477,8 @@ void main() {
       tester.widget<Text>(find.byKey(const Key('adjust-total-actual'))).data,
       '30分钟',
     );
-    expect(find.textContaining('完成 2小时 / 预算 10小时 · 20%'), findsOneWidget);
+    // 时间口径：进度 = 日志实际用时 / 预算（fixture 记录 30 分钟 / 600 分钟）。
+    expect(find.textContaining('已学 30分钟 / 预算 10小时 · 5%'), findsOneWidget);
 
     // 近期学习时间：今天起 7 天与最近 7 天实际用时。
     for (var index = 0; index < 7; index++) {

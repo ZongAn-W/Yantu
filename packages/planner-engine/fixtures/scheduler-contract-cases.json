@@ -28,11 +28,11 @@
   },
   "cases": [
     {
-      "name": "explicit content confirmation unlocks both automatic and manual placement",
+      "name": "completed_at unlocks both automatic and manual placement",
       "from": "2026-10-12",
       "to": "2026-10-12",
       "tasks": [
-        {"id": "chapter", "estimated_minutes": 60, "completed_minutes": 0, "deadline": "2026-10-18", "planning": {"content_progress": {"confirmed": true}}},
+        {"id": "chapter", "estimated_minutes": 60, "completed_minutes": 0, "deadline": "2026-10-18", "completed_at": "2026-10-11T00:00:00.000Z"},
         {"id": "exercise", "estimated_minutes": 30, "deadline": "2026-10-18", "planning": {"dependencies": [{"task_id": "chapter", "mode": "confirmed"}]}}
       ],
       "expected_auto": {
@@ -57,6 +57,27 @@
       }
     },
     {
+      "name": "content_progress alone no longer unlocks a dependency",
+      "from": "2026-10-12",
+      "to": "2026-10-12",
+      "tasks": [
+        {"id": "chapter", "estimated_minutes": 60, "completed_minutes": 0, "deadline": "2026-10-18", "planning": {"content_progress": {"confirmed": true}}},
+        {"id": "exercise", "estimated_minutes": 30, "deadline": "2026-10-18", "planning": {"dependencies": [{"task_id": "chapter", "mode": "confirmed"}]}}
+      ],
+      "expected_auto": {
+        "scheduled": 60,
+        "unscheduled": 30,
+        "issues": ["DEPENDENCY_UNCONFIRMED"],
+        "new_blocks": [
+          {"task_id": "chapter", "date": "2026-10-12", "start_minute": 0, "duration_minutes": 30},
+          {"task_id": "chapter", "date": "2026-10-12", "start_minute": 0, "duration_minutes": 30}
+        ]
+      },
+      "placements": [
+        {"candidate": {"task_id": "exercise", "date": "2026-10-12", "duration_minutes": 30}, "expected": "前置事项尚未完成"}
+      ]
+    },
+    {
       "name": "timed occupancy counts protected study blocks and ignores legacy events",
       "from": "2026-10-12",
       "to": "2026-10-12",
@@ -67,7 +88,7 @@
         "weekly_minutes": {"0": 0, "1": 210, "2": 0, "3": 0, "4": 0, "5": 0, "6": 0}
       },
       "tasks": [
-        {"id": "legacy", "estimated_minutes": 90, "status": "completed"},
+        {"id": "legacy", "estimated_minutes": 90, "completed_at": "2026-10-12T00:00:00.000Z"},
         {"id": "exercise", "subject_id": "other-course", "estimated_minutes": 120}
       ],
       "blocks": [
@@ -98,7 +119,7 @@
       "from": "2026-10-12",
       "to": "2026-10-12",
       "tasks": [
-        {"id": "legacy", "estimated_minutes": 60, "status": "completed"},
+        {"id": "legacy", "estimated_minutes": 60, "completed_at": "2026-10-12T00:00:00.000Z"},
         {"id": "exercise", "subject_id": "other-course", "estimated_minutes": 60}
       ],
       "blocks": [
@@ -123,7 +144,7 @@
       "to": "2026-10-12",
       "profile": {"plan_end_date": "2026-10-13"},
       "tasks": [
-        {"id": "legacy", "estimated_minutes": 120, "status": "completed"},
+        {"id": "legacy", "estimated_minutes": 120, "completed_at": "2026-10-12T00:00:00.000Z"},
         {"id": "exercise", "estimated_minutes": 30, "deadline": "2026-10-18"}
       ],
       "blocks": [
@@ -161,29 +182,32 @@
         ]
       },
       "post_schedule_placements": [
-        {"candidate": {"task_id": "assessment", "date": "2026-10-12", "duration_minutes": 30}, "expected": "前置内容尚未确认完成"},
+        {"candidate": {"task_id": "assessment", "date": "2026-10-12", "duration_minutes": 30}, "expected": "前置事项尚未完成"},
         {"candidate": {"task_id": "assessment", "date": "2026-10-13", "duration_minutes": 30}, "expected": null}
       ]
     },
     {
-      "name": "time exhaustion alone never confirms content or a planned forecast",
+      "name": "time budget exhaustion completes prerequisites and unlocks both dependency modes",
       "from": "2026-10-12",
       "to": "2026-10-18",
       "tasks": [
-        {"id": "chapter", "estimated_minutes": 30, "completed_minutes": 30, "status": "in_progress"},
+        {"id": "chapter", "estimated_minutes": 30, "completed_minutes": 30},
         {"id": "assessment", "estimated_minutes": 30, "planning": {"dependencies": [{"task_id": "chapter", "mode": "confirmed"}]}},
-        {"id": "reading", "estimated_minutes": 30, "completed_minutes": 30, "status": "in_progress"},
+        {"id": "reading", "estimated_minutes": 30, "completed_minutes": 30},
         {"id": "homework", "estimated_minutes": 30, "planning": {"dependencies": [{"task_id": "reading", "mode": "planned"}]}}
       ],
       "expected_auto": {
-        "scheduled": 0,
-        "unscheduled": 60,
-        "issues": ["DEPENDENCY_UNCONFIRMED", "WORK_UNSCHEDULED"],
-        "new_blocks": []
+        "scheduled": 60,
+        "unscheduled": 0,
+        "issues": [],
+        "new_blocks": [
+          {"task_id": "assessment", "date": "2026-10-12", "start_minute": 0, "duration_minutes": 30},
+          {"task_id": "homework", "date": "2026-10-12", "start_minute": 0, "duration_minutes": 30}
+        ]
       },
       "placements": [
-        {"candidate": {"task_id": "assessment", "date": "2026-10-12", "duration_minutes": 30}, "expected": "前置内容尚未确认完成"},
-        {"candidate": {"task_id": "homework", "date": "2026-10-12", "duration_minutes": 30}, "expected": "前置内容尚未确认完成"}
+        {"candidate": {"task_id": "assessment", "date": "2026-10-12", "duration_minutes": 30}, "expected": null},
+        {"candidate": {"task_id": "homework", "date": "2026-10-12", "duration_minutes": 30}, "expected": null}
       ]
     },
     {

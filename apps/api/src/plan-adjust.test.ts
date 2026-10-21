@@ -76,10 +76,6 @@ function fixture(): PlannerDocument {
         priority: 3, deadline: "2027-10-01", deadline_kind: "deadline", earliest_date: "2026-10-01",
         is_fixed: false, status: "in_progress", created_at: STAMP, updated_at: STAMP,
         planning: {
-          workload: {
-            components: [{ id: "ch", label: "章节", quantity: 100, unit: "章", minutes_per_unit: 120 }],
-            source: "教材章节", confidence: "medium", calibration: "完成 3 章后校准",
-          },
           activity: { kind: "finite", starts_on: "2026-10-01", ends_on: "2026-11-14" },
           dependencies: [],
         },
@@ -108,7 +104,8 @@ function fixture(): PlannerDocument {
         id: "t-done", user_id: OWNER, tag_ids: ["s-math"], title: "线性代数已完成",
         estimated_minutes: 600, completed_minutes: 600, priority: 2,
         deadline: "2026-10-10", deadline_kind: "deadline",
-        is_fixed: false, status: "completed", created_at: STAMP, updated_at: STAMP,
+        is_fixed: false, status: "completed", completed_at: "2026-10-05T00:00:00.000Z",
+        created_at: STAMP, updated_at: STAMP,
       },
       {
         id: "t-arch", user_id: OWNER, tag_ids: ["s-en"], title: "旧计划事项",
@@ -146,7 +143,7 @@ function fixture(): PlannerDocument {
     planning: {
       version: 1,
       prompt_version: "learning-route-2-full",
-      rules_version: "workload-rhythm-2",
+      rules_version: "time-progress-1",
       mode: "full",
       detail_days: 45,
       rolling: false,
@@ -336,13 +333,11 @@ describe("applyPlanAdjustment: task budgets", () => {
     expect(findTask(document, "t-done").estimated_minutes).toBe(600);
     expect(findTask(document, "t-arch").estimated_minutes).toBe(300);
     expect(findTask(document, "t-math").updated_at).toBe(FROZEN_NOW);
-    // 结构化工作量与预算保持一致：数量按比例缩放，单价/单位/标签不变。
-    const workload = findTask(document, "t-math").planning!.workload!;
-    const computed = workload.components
-      .filter((component) => component.selected !== false)
-      .reduce((sum, component) => sum + component.quantity * component.minutes_per_unit, 0);
-    expect(Math.ceil(computed)).toBe(18000);
-    expect(workload.components[0]).toMatchObject({ label: "章节", unit: "章", minutes_per_unit: 120 });
+    // 时间口径：只改 estimated_minutes，不再生成或缩放任何结构化工作量。
+    expect(findTask(document, "t-math").planning).toMatchObject({
+      activity: { kind: "finite", starts_on: "2026-10-01", ends_on: "2027-09-30" },
+    });
+    expect(JSON.stringify(document.tasks)).not.toContain("workload");
     expect(preview.workload.updated_tasks).toEqual([
       { task_id: "t-math", title: "高数基础一轮", tag_names: ["数学"], previous_minutes: 12000, minutes: 18000, reason: "数学需要更多时间" },
       { task_id: "t-en", title: "英语真题", tag_names: ["英语"], previous_minutes: 6000, minutes: 9000, reason: "英语真题量增加" },
@@ -362,14 +357,22 @@ describe("applyPlanAdjustment: task budgets", () => {
       deterministicRuntime(),
     );
     expect(findTask(document, "t-math").estimated_minutes).toBe(600);
-    const workload = findTask(document, "t-math").planning!.workload!;
-    const computed = workload.components
-      .filter((component) => component.selected !== false)
-      .reduce((sum, component) => sum + component.quantity * component.minutes_per_unit, 0);
-    expect(Math.ceil(computed)).toBe(600);
-    expect(findTask(document, "t-math").planning!.workload!.components[0].minutes_per_unit).toBe(120);
     expect(preview.workload.updated_tasks[0]).toMatchObject({ previous_minutes: 12000, minutes: 600 });
     expect(preview.warnings.some((value) => value.includes("低于已完成分钟"))).toBe(true);
+  });
+
+  it("protects tasks completed by completed_at even when the legacy status is stale", () => {
+    const source = fixture();
+    findTask(source, "t-done").status = "in_progress";
+    const { document, preview } = applyPlanAdjustment(
+      source,
+      makeAdjustment({ task_updates: [{ task_id: "t-done", estimated_minutes: 900, reason: "已完成" }] }),
+      TODAY,
+      deterministicRuntime(),
+    );
+    expect(findTask(document, "t-done").estimated_minutes).toBe(600);
+    expect(findTask(document, "t-done").completed_at).toBe("2026-10-05T00:00:00.000Z");
+    expect(preview.warnings.some((value) => value.includes("已完成"))).toBe(true);
   });
 });
 

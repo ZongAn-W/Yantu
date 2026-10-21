@@ -4,10 +4,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets.dart';
 import '../../../shared/models/planner_models.dart';
+import '../../../shared/models/task_lifecycle.dart';
 import '../application/planner_session.dart';
 import '../application/study_timer.dart';
 import '../domain/planner_format.dart';
-import 'planner_dialogs.dart';
 
 String _formatElapsed(Duration value) => [
   value.inHours,
@@ -448,10 +448,10 @@ class _StudyClock extends ConsumerWidget {
   }
 }
 
-/// 事项行闹钟暂停后的可选后续：加学/复习计时保存后提示记录本次内容进度。
+/// 事项行闹钟暂停后的提示：加学/复习计时只累计真实用时。
 ///
-/// 只在本事项当天最后一段计时是 [TimeLogRelation.extra] 时提示，绝不自动完成
-/// 内容或解锁依赖；已完成事项只说明复习计时已记录，内容完成状态保持不变。
+/// 只在本事项当天最后一段计时是 [TimeLogRelation.extra] 时提示；已完成事项
+/// 只说明复习用时已记录，完成状态保持不变。
 void showExtraStudyPauseFollowUp(
   BuildContext context,
   WidgetRef ref,
@@ -464,19 +464,13 @@ void showExtraStudyPauseFollowUp(
   final messenger = ScaffoldMessenger.maybeOf(context);
   final data = ref.read(plannerSessionProvider).data;
   final task = data.tasks.where((item) => item.id == taskId).firstOrNull;
-  if (task == null || task.status == TaskStatus.completed) {
+  if (task == null || task.isCompleted) {
     messenger?.showSnackBar(
-      const SnackBar(content: Text('复习计时已记录：内容完成状态保持不变。')),
+      const SnackBar(content: Text('复习计时已记录：事项保持完成状态。')),
     );
     return;
   }
   messenger?.showSnackBar(
-    SnackBar(
-      content: const Text('加学时间已保存。需要的话可以记录本次内容进度与困难。'),
-      action: SnackBarAction(
-        label: '记录内容进度',
-        onPressed: () => ContentFeedbackDialog.show(context, taskId),
-      ),
-    ),
+    const SnackBar(content: Text('加学时间已保存。')),
   );
 }

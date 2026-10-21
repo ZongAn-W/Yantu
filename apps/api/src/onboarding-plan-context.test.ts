@@ -32,6 +32,21 @@ describe("compact tag-aware planning context", () => {
     expect(result.recent_blocks).toHaveLength(1);
   });
 
+  it("treats the new archived field and legacy status both as archived in model context", () => {
+    const session = newSession();
+    session.current_plan = { tags: [tag("reading", "阅读")],
+      items: [task("active", ["reading"]), task("new-archived", [], { archived: true }),
+        task("legacy-archived", [], { status: "archived" }),
+        task("restored", [], { archived: false, status: "archived" })] };
+    const result = compactPlanContext(session, "items")!;
+    // 归档事项不进入可编辑事项，只作为 archived_items 历史背景；显式 archived=false 覆盖旧 status。
+    expect((result.items as Row[]).map(row => row.id)).toEqual(["active", "restored"]);
+    expect(result.archived_items).toEqual([
+      { id: "new-archived", title: "new-archived", archived: true, status: "not_started", tag_ids: [] },
+      { id: "legacy-archived", title: "legacy-archived", status: "archived", tag_ids: [] },
+    ]);
+  });
+
   it("converts legacy course references into tag names for model context", () => {
     const session = newSession();
     const legacy = task("legacy", []);

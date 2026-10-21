@@ -71,7 +71,7 @@ void main() {
       tasks: [state.tasks.single.copyWith(deadline: '2026-10-17')],
     ),
     'task status': (state) => state.copyWith(
-      tasks: [state.tasks.single.copyWith(status: TaskStatus.completed)],
+      tasks: [state.tasks.single.copyWith(completedAt: '2026-10-16T00:00:00.000Z')],
     ),
     'unlinked logs': (state) => state.copyWith(
       logs: [
@@ -131,13 +131,13 @@ void main() {
         data,
         local.preview(data, today: '2026-10-16'),
       );
-      expect(confirmed.tasks.single.status, data.tasks.single.status);
+      expect(confirmed.tasks.single.archived, data.tasks.single.archived);
       final restored = local.undo(
         PlannerData.fromJson(jsonDecode(confirmed.toJsonString()) as JsonMap),
       );
       expect(restored.blocks, data.blocks);
       expect(restored.logs, data.logs);
-      expect(restored.tasks.single.status, data.tasks.single.status);
+      expect(restored.tasks.single.archived, data.tasks.single.archived);
       expect(restored.replanRuns.single.status, ReplanStatus.undone);
     },
   );
@@ -146,7 +146,7 @@ void main() {
       JsonMap.from(sample['expected']['confirmed'] as Map),
     );
     final restored = service.undo(confirmed);
-    expect(restored.tasks.single.status, data.tasks.single.status);
+    expect(restored.tasks.single.archived, data.tasks.single.archived);
     expect(restored.blocks, data.blocks);
   });
 
@@ -206,7 +206,7 @@ void main() {
       expect(coordinator.data!.replanRuns.single.localUndoGuard, isNotNull);
       await coordinator.undoReplan();
       expect(coordinator.data!.blocks, before.blocks);
-      expect(coordinator.data!.tasks.single.status, before.tasks.single.status);
+      expect(coordinator.data!.tasks.single.archived, before.tasks.single.archived);
       await coordinator.sync();
       api.offline = false;
       await coordinator.sync();

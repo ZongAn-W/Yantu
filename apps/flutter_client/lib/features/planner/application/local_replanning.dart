@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import '../../../shared/models/planner_models.dart';
+import '../../../shared/models/task_lifecycle.dart';
 import '../domain/scheduler/planner_scheduler.dart' as scheduler;
 
 /// A local proposal is deliberately separate from server plan generation/settlement.
@@ -56,13 +57,17 @@ class LocalReplanning {
     if (_stateKey(data.toJson()) != proposal._baseline) {
       throw StateError('计划已发生变化，请重新生成预览');
     }
-    final confirmed = scheduler
-        .confirmReplan(data, proposal.preview)
-        .copyWith(
-          planning: data.planning == null
-              ? null
-              : {...data.planning!, 'needs_review': true, 'quality': null},
-        );
+    // 撤销守卫必须按持久化后的时间口径数据计算，否则 coordinator 在落盘时
+    // 派生 completed_at/status 会让守卫与当前数据永久不一致。
+    final confirmed = normalizeTaskLifecycle(
+      scheduler
+          .confirmReplan(data, proposal.preview)
+          .copyWith(
+            planning: data.planning == null
+                ? null
+                : {...data.planning!, 'needs_review': true, 'quality': null},
+          ),
+    );
     final runs = [...confirmed.replanRuns];
     runs[runs.length - 1] = runs.last.copyWith(
       localUndoGuard: _undoState(confirmed),

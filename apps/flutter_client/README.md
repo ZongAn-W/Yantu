@@ -351,6 +351,14 @@ npm test -- apps/api/src/auth.integration.test.ts
 
 本次升级后，今日页的「智能重排」入口已移除；`PlannerCoordinator.previewReplan/confirmReplan/undoReplan` 及其领域实现只保留给旧数据兼容与共享 golden 对照，不再有用户入口。
 
+### 8.1 事项进度：时间口径（2026-10-21）
+
+- 事项只保留一个进度事实：`estimated_minutes`（预算）与实际计时日志；`progress = 实际用时 / 预计时长`，可超过 100%。
+- 完成：实际用时 ≥ 预计时长时自动完成；也可提前确认完成（任务 JSON 的 `completed_at`）。`completed_minutes` 只是 `min(预计, 实际)` 的工作量核算值。
+- 生命周期：`completed_at` + `archived` 布尔（模型里已无 `TaskStatus`/`status` 字段）；`archived` 表示「不再安排、保留历史」，与完成正交。重排预览的 `postponed`/`conflicts` 只存在于结果中，不写任务状态或状态快照。
+- 旧数据迁移：旧 JSON 的 `status=completed` → `completed_at=updated_at`，`status=archived` → `archived=true`，delayed/conflict 直接丢弃；解码在 `Task.fromJson`/`normalizePlannerJson` 边界完成。旧内容量/内容进度/难度字段不再读取，服务端同步投影会丢弃。
+- 服务端兼容窗口：同步契约仍接受旧客户端发送的 `status`（optional）并派生 `archived`，读响应也为旧客户端回填 4 态派生 status；新客户端只写 `archived`/`completed_at`。阶段 C 可在旧客户端退场后删除 DB `items.status` 列与契约里的 status 兼容分支。
+
 ```dart
 await coordinator.recordDayMinutes(taskId, '2026-10-17', 90);
 ```
@@ -385,8 +393,8 @@ await coordinator.recordDayMinutes(taskId, '2026-10-17', 90);
 
 ```text
 lib/features/
-  shell/app_shell.dart                 侧栏（≥900px）/ 底部导航、同步条（账号入口不再放在全局框架）
-  dashboard/presentation/              今日：计划/已学/剩余、完成环、逐事项行、全部事项目录
+  shell/app_shell.dart                 侧栏（≥900px）/ 顶部操作栏 + 底部导航；新建事项/标签管理在顶部，同步状态在设置页
+  dashboard/presentation/              今日：居中「今日安排」紧凑计时行（计划+纯加学）、全部事项目录
   tasks/presentation/                  事项目录（合并进今日页下半部分）
   calendar/presentation/              日历（只读）：日/周/月计划与实学、月历容量与状态、顶部概览条
   onboarding/presentation/             学习目标访谈 + 事项/可选标签确认 + 日期与容量确认

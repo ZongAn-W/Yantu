@@ -6,6 +6,7 @@ import type { OnboardingSession } from "./onboarding-contracts.js";
 import type { PlannerDocument } from "./sync-contracts.js";
 import type { ItemPlanning, PlanPlanning } from "./planning-contracts.js";
 import { resolveTagIds } from "./tags.js";
+import { deriveTaskStatus, taskArchived, taskCompleted } from "./planning-scheduler.js";
 
 export type ProfileRow = {
   goal_text: string;
@@ -29,12 +30,19 @@ export type ProfileRow = {
   date_capacity_overrides?: Record<string, number> | null;
   planning_metadata?: PlanPlanning | null;
 };
-export type ItemRow = { id: string; tag_ids?: string[]; title: string; description: string; completion_criteria: string; estimated_minutes: number; earliest_date: string | null; deadline: string; deadline_kind: string; priority: number; status: string; planning_metadata?: ItemPlanning | null };
+export type ItemRow = { id: string; tag_ids?: string[]; title: string; description: string; completion_criteria: string; estimated_minutes: number; earliest_date: string | null; deadline: string; deadline_kind: string; priority: number; status: string; /** 归档布尔事实（阶段 3b）：与完成正交；旧行可能缺失，用 status 兼容。 */ archived?: boolean | null; /** pg timestamptz 原生返回 Date；写回文档前统一转 ISO 字符串。 */ completed_at?: string | Date | null; planning_metadata?: ItemPlanning | null };
 type DailyRow = { id: string; item_id: string; date: string; planned_minutes: number; actual_minutes: number; advice_text: string; advice_topics: string[]; completion_status: string; item_title?: string; activity_instance_id?: string | null };
 type LogRow = { id: string; item_id: string; daily_plan_item_id: string | null; date: string; minutes: number; relation: string | null; session_id: string | null; quota_minutes: number | null; created_at: string };
 
 export const PROFILE_COLUMNS = "goal_text,goal_type,goal_subtype,target_date::text,target_date_confirmed,plan_start_date::text,plan_end_date::text,target_school,target_program,current_progress,weekly_minutes,constraints_text,capacity_basis,weekly_baseline_minutes,weekly_range_min_minutes,weekly_range_max_minutes,week_capacity_overrides,date_capacity_overrides";
-const ITEM_COLUMNS = "id,title,description,completion_criteria,estimated_minutes,earliest_date::text,deadline::text,deadline_kind,priority,status,planning_metadata";
+const ITEM_COLUMNS = "id,title,description,completion_criteria,estimated_minutes,earliest_date::text,deadline::text,deadline_kind,priority,status,archived,completed_at,planning_metadata";
+
+/** timestamptz 的数据库值（Date 或字符串）统一成同步契约要求的 ISO 时间字符串。 */
+export function isoTimestamp(value: string | Date | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) ? parsed.toISOString() : null;
+}
 
 export function dateAdd(date: string, days: number) {
   const value = new Date(`${date}T00:00:00Z`);
@@ -99,7 +107,10 @@ export async function saveProfile(userId: string, profile: ProfileRow, client?: 
 }
 
 export function itemToJson(row: ItemRow) {
-  return { id: row.id, tag_ids: row.tag_ids ?? [], title: row.title, description: row.description, completion_criteria: row.completion_criteria, estimated_minutes: row.estimated_minutes, earliest_date: row.earliest_date ?? undefined, deadline: row.deadline, deadline_kind: row.deadline_kind ?? "deadline", priority: row.priority, status: row.status, ...(row.planning_metadata ? { planning: row.planning_metadata } : {}) };
+  const completedAt = isoTimestamp(row.completed_at);
+  // 阶段 3b-A 双形态：archived 缺失的旧行回退 status，返回文档同时保留派生 status 供旧客户端。
+  const archived = row.archived === true || (row.archived == null && row.status === "archived");
+  return { id: row.id, tag_ids: row.tag_ids ?? [], title: row.title, description: row.description, completion_criteria: row.completion_criteria, estimated_minutes: row.estimated_minutes, earliest_date: row.earliest_date ?? undefined, deadline: row.deadline, deadline_kind: row.deadline_kind ?? "deadline", priority: row.priority, archived, status: row.status, ...(completedAt ? { completed_at: completedAt } : {}), ...(row.planning_metadata ? { planning: row.planning_metadata } : {}) };
 }
 
 export async function listTags(userId: string) {
@@ -166,7 +177,15 @@ export async function snapshot(userId: string, client?: pg.PoolClient) {
       foundation: profile.current_progress,
     },
     tags: tags.rows.map((tag) => ({ id: tag.id, user_id: userId, name: tag.name, ...(tag.color ? { color: tag.color } : {}), created_at: tag.created_at, updated_at: tag.updated_at })),
-    tasks: items.rows.map((item) => ({ id: item.id, user_id: userId, tag_ids: tagIdsByItem.get(item.id) ?? [], title: item.title, description: [item.description, item.completion_criteria ? `完成标准：${item.completion_criteria}` : ""].filter(Boolean).join("\n"), estimated_minutes: item.estimated_minutes, completed_minutes: logged.get(item.id) ?? 0, priority: item.priority as 1 | 2 | 3, deadline: item.deadline, deadline_kind: item.deadline_kind ?? "deadline", earliest_date: item.earliest_date ?? undefined, is_fixed: false, status: (item.status === "archived" ? "archived" : item.status === "completed" ? "completed" : (logged.get(item.id) ?? 0) > 0 ? "in_progress" : "not_started") as "not_started" | "in_progress" | "completed" | "archived", created_at: now, updated_at: now, ...(item.planning_metadata ? { planning: item.planning_metadata } : {}) })),
+    tasks: items.rows.map((item) => {
+      const actual = logged.get(item.id) ?? 0;
+      const completedAt = isoTimestamp(item.completed_at);
+      // 归档双形态：新列优先，旧行缺失时回退旧 status；status 只是兼容投影，始终按时间规则派生。
+      const archived = item.archived === true || (item.archived == null && item.status === "archived");
+      const status = deriveTaskStatus({ archived, stored_status: item.status, completed_at: completedAt,
+        actual_minutes: actual, estimated_minutes: item.estimated_minutes });
+      return { id: item.id, user_id: userId, tag_ids: tagIdsByItem.get(item.id) ?? [], title: item.title, description: [item.description, item.completion_criteria ? `完成标准：${item.completion_criteria}` : ""].filter(Boolean).join("\n"), estimated_minutes: item.estimated_minutes, completed_minutes: Math.min(item.estimated_minutes, actual), priority: item.priority as 1 | 2 | 3, deadline: item.deadline, deadline_kind: item.deadline_kind ?? "deadline", earliest_date: item.earliest_date ?? undefined, is_fixed: false, archived, status: status as "not_started" | "in_progress" | "completed" | "archived", ...(completedAt ? { completed_at: completedAt } : {}), created_at: now, updated_at: now, ...(item.planning_metadata ? { planning: item.planning_metadata } : {}) };
+    }),
     blocks: days.rows.map((day) => ({ id: day.id, user_id: userId, task_id: day.item_id, date: day.date, start_minute: 0, duration_minutes: day.planned_minutes, actual_minutes: day.actual_minutes, is_fixed: false, status: (day.completion_status === "completed" ? "completed" : "planned") as "planned" | "completed", created_at: now, updated_at: now, advice_text: day.advice_text, advice_topics: day.advice_topics, completion_status: day.completion_status, ...(day.activity_instance_id ? { activity_instance_id: day.activity_instance_id } : {}) })),
     logs: logs.rows.map((log) => ({ id: log.id, user_id: userId, task_id: log.item_id, block_id: log.daily_plan_item_id, date: log.date, minutes: log.minutes, started_at: log.created_at, ended_at: log.created_at, source: "manual" as const,
       // 旧数据/旧语义保持缺失；只有真实存在的执行关系、会话与额度才投影出来。
@@ -237,7 +256,7 @@ export function replanDocument(current: PlannerDocument, session: OnboardingSess
       return tag.id;
     }))];
     const existing = document.tasks.find(task => task.id === item.id)
-      ?? document.tasks.find(task => !usedTasks.has(task.id) && task.status !== "archived" && normalizedTitle(task.title) === normalizedTitle(item.title));
+      ?? document.tasks.find(task => !usedTasks.has(task.id) && !taskArchived(task) && normalizedTitle(task.title) === normalizedTitle(item.title));
     const id = existing?.id ?? randomUUID();
     if (usedTasks.has(id)) throw new Error("多个草案事项指向同一已有事项，请修改后重试");
     usedTasks.add(id);
@@ -253,10 +272,15 @@ export function replanDocument(current: PlannerDocument, session: OnboardingSess
         throw new Error(`固定事项「${existing.title}」不能在重新规划时修改，请在计划中先解除固定`);
       continue;
     }
+    // 完成只按时间口径；completed_minutes 始终是 min(estimated, actual)。
+    const completedMinutes = Math.min(item.estimated_minutes, completed);
+    const done = existing?.completed_at != null || existing?.status === "completed" || completedMinutes >= item.estimated_minutes;
     const task: PlannerDocument["tasks"][number] = { ...existing, id, user_id: owner, tag_ids: tagIds,
-      title: item.title, description, estimated_minutes: item.estimated_minutes, completed_minutes: completed,
+      title: item.title, description, estimated_minutes: item.estimated_minutes, completed_minutes: completedMinutes,
       priority: item.priority as 1 | 2 | 3, earliest_date: item.earliest_date, deadline, deadline_kind: item.deadline_kind ?? "deadline", is_fixed: false,
-      status: existing?.status === "completed" ? "completed" : completed > 0 ? "in_progress" : "not_started",
+      // 重新规划保留的事项重新进入本期计划：归档解除，完成事实仍由 completed_at/时间预算保留。
+      archived: false,
+      status: done ? "completed" : completedMinutes > 0 ? "in_progress" : "not_started",
       created_at: existing?.created_at ?? now, updated_at: now };
     if (existing) Object.assign(existing, task);
     else document.tasks.push(task);
@@ -264,13 +288,18 @@ export function replanDocument(current: PlannerDocument, session: OnboardingSess
   for (const task of document.tasks) {
     if (usedTasks.has(task.id)) continue;
     if (fixedTaskIds.has(task.id)) throw new Error(`请保留固定事项「${task.title}」，或先在计划中解除固定`);
-    if (task.status !== "completed") task.status = "archived";
+    // 阶段 3b-A：归档用 archived 表达；已完成（含时间预算用完）保留完成事实，不再进入本期计划。
+    task.archived = taskCompleted(task) ? false : true;
+    task.status = taskCompleted(task) ? "completed" : "archived";
   }
+  // 文档始终输出显式 archived，新客户端只依赖该字段；旧客户端继续读派生 status。
+  for (const task of document.tasks)
+    if (task.archived === undefined || task.archived === null) task.archived = taskArchived(task);
   const loggedBlocks = new Set(document.logs.map(log => log.block_id).filter(Boolean));
   const protectedTaskIds = new Set(document.tasks.filter(task => task.is_fixed).map(task => task.id));
   document.blocks = document.blocks.filter(block => block.date < session.start_date || block.is_fixed
     || protectedTaskIds.has(block.task_id) || block.status === "completed" || block.actual_minutes > 0 || loggedBlocks.has(block.id));
-  const remaining = new Map(document.tasks.filter(task => usedTasks.has(task.id) && !task.is_fixed && task.status !== "completed")
+  const remaining = new Map(document.tasks.filter(task => usedTasks.has(task.id) && !task.is_fixed && !taskCompleted(task))
     .map(task => [task.id, Math.max(0, task.estimated_minutes - task.completed_minutes - document.blocks
       .filter(block => block.task_id === task.id && block.date >= session.start_date && block.status !== "completed")
       .reduce((sum, block) => sum + Math.max(0, block.duration_minutes - block.actual_minutes), 0))]));
@@ -459,7 +488,7 @@ export async function settleDay(userId: string, date: string, entries: Array<{ i
       await client.query("update daily_plan_items set actual_minutes=$1, completion_status=$2, updated_at=now() where id=$3 and user_id=$4", [entry.actual_minutes, entry.completion_status, daily.rows[0].id, userId]);
       await client.query("delete from study_logs where user_id=$1 and item_id=$2 and date=$3", [userId, entry.item_id, date]);
       await client.query("insert into study_logs(user_id,item_id,daily_plan_item_id,date,minutes,feedback) values($1,$2,$3,$4,$5,$6)", [userId, entry.item_id, daily.rows[0].id, date, entry.actual_minutes, entry.feedback]);
-      if (entry.completion_status === "completed") await client.query("update items set status='completed', updated_at=now() where id=$1 and user_id=$2", [entry.item_id, userId]);
+      if (entry.completion_status === "completed") await client.query("update items set status='completed', completed_at=coalesce(completed_at,now()), updated_at=now() where id=$1 and user_id=$2", [entry.item_id, userId]);
     }
     await client.query("insert into daily_reviews(user_id,date,feedback,result) values($1,$2,$3,$4) on conflict(user_id,date) do update set feedback=excluded.feedback,result=excluded.result,settled_at=now()", [userId, date, feedback, JSON.stringify({ entries })]);
     const profile = (await client.query<ProfileRow>(`select ${PROFILE_COLUMNS} from profiles where user_id=$1`, [userId])).rows[0];

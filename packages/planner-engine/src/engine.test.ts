@@ -46,7 +46,7 @@ const task = (id: string, overrides: Partial<Task> = {}): Task => ({
   priority: 3,
   deadline: "2026-10-27",
   is_fixed: false,
-  status: "not_started",
+  archived: false,
   created_at: timestamp,
   updated_at: timestamp,
   ...overrides,
@@ -133,7 +133,7 @@ describe("archived task history", () => {
       const source = input({
         mode,
         excess_minutes: 60,
-        tasks: [task("math", { status: "archived", completed_minutes: 120 })],
+        tasks: [task("math", { archived: true, completed_minutes: 120 })],
         blocks: [...history, block("unstarted"), block("future", "math", { date: addDays(TODAY, 1) })],
         logs: [log(20, { block_id: "actual" })],
       });
@@ -143,9 +143,9 @@ describe("archived task history", () => {
       expect(preview.after).toEqual(history);
       expect(preview.conflicts).toEqual([]);
       const confirmed = confirmReplan(original, preview);
-      expect(confirmed.tasks[0].status).toBe("archived");
+      expect(confirmed.tasks[0].archived).toBe(true);
       expect(confirmed.logs).toEqual(original.logs);
-      expect(undoLastReplan(confirmed).tasks[0].status).toBe("archived");
+      expect(undoLastReplan(confirmed).tasks[0].archived).toBe(true);
     },
   );
 });
@@ -153,7 +153,7 @@ describe("archived task history", () => {
 describe("保守重排", () => {
   it("120分钟完成60分钟后保护整条计时安排，不改写或重复预留剩余量", () => {
     const source = input({
-      tasks: [task("math", { completed_minutes: 60, status: "in_progress" })],
+      tasks: [task("math", { completed_minutes: 60 })],
       blocks: [
         block("today", "math", { duration_minutes: 120, actual_minutes: 60 }),
       ],
@@ -381,7 +381,7 @@ describe("保守重排", () => {
 
   it("已完成任务或实际日志已完成的任务不再进入待排队列", () => {
     for (const completedTask of [
-      task("math", { status: "completed" }),
+      task("math", { completed_at: timestamp }),
       task("math", { completed_minutes: 120 }),
       task("math"),
     ]) {
@@ -389,13 +389,13 @@ describe("保守重排", () => {
         input({
           tasks: [completedTask],
           logs:
-            completedTask.status === "completed" ||
+            completedTask.completed_at != null ||
             completedTask.completed_minutes === 120
               ? []
               : [log(180)],
         }),
       );
-      const protectedHistory = completedTask.status !== "completed" && completedTask.completed_minutes !== 120;
+      const protectedHistory = completedTask.completed_at == null && completedTask.completed_minutes !== 120;
       expect(planned(preview.after)).toHaveLength(protectedHistory ? 1 : 0);
       if (protectedHistory) expect(preview.after[0].id).toBe("today");
       expect(preview.conflicts).toHaveLength(0);
@@ -428,7 +428,7 @@ describe("超额完成后的有限提前", () => {
       mode: "overcompleted",
       excess_minutes: 60,
       tasks: [
-        task("math", { completed_minutes: 180, status: "completed" }),
+        task("math", { completed_minutes: 180, completed_at: timestamp }),
         task("low", { priority: 1 }),
         task("high", { priority: 3 }),
         task("far", { priority: 3 }),
@@ -577,7 +577,7 @@ describe("超额完成后的有限提前", () => {
 });
 
 describe("确认、变更记录与撤销", () => {
-  it("确认重排产生完整变更记录、前后快照及延期状态", () => {
+  it("确认重排产生完整变更记录与前后快照，但不写任务状态", () => {
     const initial = data(input());
     const preview = generateReplanPreview(input());
     const confirmed = confirmReplan(initial, preview);
@@ -594,14 +594,16 @@ describe("确认、变更记录与撤销", () => {
           change.run_id === preview.id && change.user_id === profile.user_id,
       ),
     ).toBe(true);
-    expect(confirmed.tasks[0].status).toBe("delayed");
+    // 时间口径：冲突/延期只是预览结果，任务状态不变、也没有状态快照。
+    expect(confirmed.tasks[0].archived).toBe(initial.tasks[0].archived);
+    expect(confirmed.replan_runs[0]).not.toHaveProperty("task_status_before");
     expect(initial.blocks).toEqual(preview.before);
   });
 
   it("撤销恢复原计划和任务状态，并保留计时日志", () => {
     const source = input({
       logs: [log(30)],
-      tasks: [task("math", { completed_minutes: 30, status: "in_progress" })],
+      tasks: [task("math", { completed_minutes: 30 })],
       blocks: [
         block("today", "math", { duration_minutes: 120, actual_minutes: 30 }),
       ],
@@ -610,7 +612,7 @@ describe("确认、变更记录与撤销", () => {
     const confirmed = confirmReplan(initial, generateReplanPreview(source));
     const undone = undoLastReplan(confirmed);
     expect(undone.blocks).toEqual(initial.blocks);
-    expect(undone.tasks[0].status).toBe(initial.tasks[0].status);
+    expect(undone.tasks[0].archived).toBe(initial.tasks[0].archived);
     expect(undone.logs).toEqual(initial.logs);
     expect(undone.replan_runs[0].status).toBe("undone");
     expect(confirmed.replan_runs[0].status).toBe("confirmed");

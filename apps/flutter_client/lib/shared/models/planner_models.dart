@@ -56,16 +56,6 @@ enum GoalType { exam, course, skill, selfStudy, other }
 @JsonEnum(fieldRename: FieldRename.snake)
 enum ItemDateKind { deadline, planEnd }
 
-@JsonEnum(fieldRename: FieldRename.snake)
-enum TaskStatus {
-  notStarted,
-  inProgress,
-  completed,
-  delayed,
-  conflict,
-  archived,
-}
-
 enum PlanningMode { daily, timed }
 
 enum BlockStatus { planned, completed }
@@ -177,6 +167,9 @@ JsonMap normalizePlannerJson(JsonMap json) {
             }
             task.remove('subjectId');
             task.remove('subject_id');
+            // 旧文档的 status 在此映射为 archived/completed_at；之后模型只认
+            // archived + completed_at。
+            _mapTaskLifecycleFields(task);
             return task;
           }(),
     ];
@@ -319,12 +312,32 @@ abstract class Task with _$Task {
     @Default(ItemDateKind.deadline) ItemDateKind deadlineKind,
     String? earliestDate,
     required bool isFixed,
-    required TaskStatus status,
+    /// 不再安排但保留历史；与完成正交（替代旧 status 六态）。
+    @Default(false) bool archived,
     required String createdAt,
     required String updatedAt,
+    /// 完成标记。用户提前确认完成、时间预算用完或旧数据迁移时写入；
+    /// 非空即完成（粘性）。旧 `status` 只在反序列化边界映射到这里。
+    @JsonKey(name: 'completed_at') String? completedAt,
     JsonMap? planning,
   }) = _Task;
-  factory Task.fromJson(JsonMap json) => _$TaskFromJson(json);
+  factory Task.fromJson(JsonMap json) =>
+      _$TaskFromJson(_mapTaskLifecycleFields(JsonMap.from(json)));
+}
+
+/// Legacy decode: documents before the archived migration carry `status` instead
+/// of `archived`. Old `completed` becomes `completed_at`; delayed/conflict and
+/// not_started/in_progress are dropped because progress is derived from time.
+JsonMap _mapTaskLifecycleFields(JsonMap task) {
+  final legacy = task.remove('status');
+  if (!task.containsKey('archived')) {
+    task['archived'] = legacy == 'archived';
+  }
+  if (legacy == 'completed' && task['completed_at'] == null) {
+    final updated = task['updated_at'] ?? task['updatedAt'];
+    if (updated is String && updated.isNotEmpty) task['completed_at'] = updated;
+  }
+  return task;
 }
 
 typedef Item = Task;
@@ -482,16 +495,6 @@ abstract class DayChange with _$DayChange {
 }
 
 @freezed
-abstract class TaskStatusSnapshot with _$TaskStatusSnapshot {
-  const factory TaskStatusSnapshot({
-    required String id,
-    required TaskStatus status,
-  }) = _TaskStatusSnapshot;
-  factory TaskStatusSnapshot.fromJson(JsonMap json) =>
-      _$TaskStatusSnapshotFromJson(json);
-}
-
-@freezed
 abstract class ReplanPreview with _$ReplanPreview {
   const factory ReplanPreview({
     required String id,
@@ -522,8 +525,6 @@ abstract class ReplanRun with _$ReplanRun {
     required List<Conflict> conflicts,
     required List<DayChange> dailyChanges,
     required ReplanStatus status,
-    List<TaskStatusSnapshot>? taskStatusBefore,
-    List<TaskStatusSnapshot>? taskStatusAfter,
 
     /// Local application guard; old TypeScript runs omit it and use block protection.
     JsonMap? localUndoGuard,

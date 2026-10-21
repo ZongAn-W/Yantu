@@ -47,7 +47,6 @@ PlannerData openGoalPlan({
         deadlineKind: ItemDateKind.planEnd,
         earliestDate: start,
         isFixed: false,
-        status: TaskStatus.notStarted,
         createdAt: '2026-10-01T00:00:00Z',
         updatedAt: '2026-10-01T00:00:00Z',
       ),

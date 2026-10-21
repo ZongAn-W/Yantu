@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import '../../../shared/models/planner_models.dart';
+import '../../../shared/models/task_lifecycle.dart';
 import 'planner_format.dart';
 import 'scheduler/planner_scheduler.dart' as scheduler;
 import 'study_day.dart';
@@ -16,7 +17,7 @@ class TaskDraft {
     required this.deadline,
     required this.earliestDate,
     required this.isFixed,
-    required this.status,
+    this.archived = false,
     this.deadlineKind = ItemDateKind.deadline,
   });
 
@@ -28,7 +29,8 @@ class TaskDraft {
   final String deadline;
   final String earliestDate;
   final bool isFixed;
-  final TaskStatus status;
+  /// 归档标记；新建默认 false，编辑保留原值。
+  final bool archived;
 
   /// 截止日期是真实日期，还是仅表示本期安排边界。
   final ItemDateKind deadlineKind;
@@ -42,7 +44,7 @@ class TaskDraft {
     String? deadline,
     String? earliestDate,
     bool? isFixed,
-    TaskStatus? status,
+    bool? archived,
     ItemDateKind? deadlineKind,
   }) => TaskDraft(
     title: title ?? this.title,
@@ -53,7 +55,7 @@ class TaskDraft {
     deadline: deadline ?? this.deadline,
     earliestDate: earliestDate ?? this.earliestDate,
     isFixed: isFixed ?? this.isFixed,
-    status: status ?? this.status,
+    archived: archived ?? this.archived,
     deadlineKind: deadlineKind ?? this.deadlineKind,
   );
 
@@ -66,7 +68,6 @@ class TaskDraft {
     deadline: today,
     earliestDate: today,
     isFixed: false,
-    status: TaskStatus.notStarted,
   );
 
   static TaskDraft from(Task task) => TaskDraft(
@@ -78,7 +79,7 @@ class TaskDraft {
     deadline: task.deadline,
     earliestDate: task.earliestDate ?? task.deadline,
     isFixed: task.isFixed,
-    status: task.status,
+    archived: task.archived,
     deadlineKind: task.deadlineKind,
   );
 }
@@ -136,7 +137,7 @@ PlannerData applyTaskDraft(
           deadlineKind: draft.deadlineKind,
           earliestDate: draft.earliestDate,
           isFixed: draft.isFixed,
-          status: draft.status,
+          archived: draft.archived,
           createdAt: updatedAt,
           updatedAt: updatedAt,
         ),
@@ -159,7 +160,7 @@ PlannerData applyTaskDraft(
                 deadlineKind: draft.deadlineKind,
                 earliestDate: draft.earliestDate,
                 isFixed: draft.isFixed,
-                status: draft.status,
+                archived: draft.archived,
                 updatedAt: updatedAt,
               )
             : task,
@@ -202,7 +203,7 @@ ScheduleResult scheduleTaskDay(
 }) {
   final task = data.tasks.where((item) => item.id == taskId).firstOrNull;
   if (task == null) throw StateError('请先创建并选择事项');
-  if (task.status == TaskStatus.archived) throw StateError('已归档事项不可安排');
+  if (task.isArchived) throw StateError('已归档事项不可安排');
   final remaining = unscheduledTaskMinutes(data, task, from: date);
   final requested = minutes == null ? remaining : math.min(remaining, minutes);
   if (requested <= 0) {
@@ -260,15 +261,8 @@ ScheduleResult scheduleTaskDay(
     scheduled += chunk;
   }
   final conflict = scheduled < requested;
-  final updated = data.copyWith(
-    blocks: next,
-    tasks: [
-      for (final item in data.tasks)
-        item.id == taskId && conflict
-            ? item.copyWith(status: TaskStatus.conflict, updatedAt: stamp)
-            : item,
-    ],
-  );
+  // 时间口径下容量不足只作为本次安排的结果提示，不再写入事项状态。
+  final updated = data.copyWith(blocks: next);
   final String message;
   if (remaining == 0) {
     message = '该事项的剩余时长已全部安排';

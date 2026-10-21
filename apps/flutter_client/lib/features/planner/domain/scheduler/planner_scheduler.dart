@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import '../../../../shared/models/planner_models.dart';
+import '../../../../shared/models/task_lifecycle.dart';
 import '../capacity.dart' as capacity_core;
 import 'strategy_scheduler.dart' as strategy;
 
@@ -110,12 +111,10 @@ int _blockPending(ScheduleBlock block, List<TimeLog> logs) =>
 // helpers are the single implementation of both rules in this language.
 // ---------------------------------------------------------------------------
 
-/// Real content confirmation: completed status or an explicit planning confirmation.
-bool contentConfirmed(Task task) {
-  if (task.status == TaskStatus.completed) return true;
-  final content = task.planning?['content_progress'];
-  return content is Map && content['confirmed'] == true;
-}
+/// Time-only completion: a task is done when its legacy status is completed
+/// (derived from `completed_at` or the time budget by normalization). The old
+/// content-progress confirmation is ignored and never unlocks dependencies.
+bool contentConfirmed(Task task) => task.isCompleted;
 
 /// Minutes a block reserves for capacity: recorded work when known, otherwise the
 /// planned duration. A completed block without actual history still holds its slot.
@@ -208,13 +207,14 @@ int forecastRemainingMinutes(
   return math.max(0, _finite(task.estimatedMinutes) - completed - pending);
 }
 
-/// Three-state prerequisite rule reused by automatic scheduling, manual placement and
-/// execution (see [strategyExecutionError] which passes [allowForecast] false):
+/// Prerequisite rule reused by automatic scheduling, manual placement and execution
+/// (see [strategyExecutionError] which passes [allowForecast] false). Time-only:
 ///
-/// 1. completed status or explicit content confirmation satisfies any dependency;
+/// 1. a completed predecessor (completed_at or time budget exhausted) satisfies any
+///    dependency; content-progress confirmation is no longer consulted;
 /// 2. a "planned" dependency may also be met by a forecast: the predecessor's remaining
 ///    minutes are zero and every one of its blocks is before the target date;
-/// 3. merely exhausting the estimated time never confirms content.
+/// 3. there is no separate content-confirmation gate.
 bool dependencySatisfied({
   required Task prior,
   required JsonMap dependency,
@@ -288,7 +288,7 @@ String? _placementError(
       .where((item) => item.id == candidate.taskId)
       .firstOrNull;
   if (task == null) return '找不到对应任务';
-  if (task.status == TaskStatus.archived) return '已归档事项不可安排';
+  if (task.isArchived) return '已归档事项不可安排';
   if (_parseDate(candidate.date) == null) {
     return '日期格式无效';
   }
@@ -304,7 +304,7 @@ String? _placementError(
     return '开始时间需要对齐计划时间粒度';
   }
   if (enforceTask &&
-      (task.status == TaskStatus.completed ||
+      (task.isCompleted ||
           remainingTaskMinutes(task, input.logs) == 0)) {
     return '已完成任务无需再次安排';
   }
@@ -336,8 +336,8 @@ String? _placementError(
         .firstOrNull;
     if (prior == null ||
         prior.userId != task.userId ||
-        prior.status == TaskStatus.archived) {
-      return '前置内容尚未确认完成';
+        prior.isArchived) {
+      return '前置事项尚未完成';
     }
     final priorBlocks = input.blocks
         .where((block) => block.taskId == prior.id)
@@ -349,7 +349,7 @@ String? _placementError(
       date: candidate.date,
       remaining: forecastRemainingMinutes(prior, input.logs, priorBlocks),
     )) {
-      return '前置内容尚未确认完成';
+      return '前置事项尚未完成';
     }
   }
   final dayBlocks = blocks
@@ -398,6 +398,9 @@ String? validateBlockPlacement(
   ScheduleBlock block, {
   String? ignoreId,
 }) {
+  // Contract fixtures and legacy callers may pass un-normalized tasks; derive the
+  // time-only lifecycle (completed_at/time budget → completed) before validating.
+  data = normalizeTaskLifecycle(data);
   final old = ignoreId == null
       ? null
       : data.blocks.where((item) => item.id == ignoreId).firstOrNull;
@@ -631,6 +634,15 @@ ReplanPreview generateReplanPreview(
   ReplanInput input, {
   SchedulerRuntime runtime = const SchedulerRuntime(),
 }) {
+  // Normalize once so completed_at/time-budget completion behaves like the
+  // canonical document (the shared contract fixture carries raw task rows).
+  input = input.copyWith(
+    tasks: normalizeTaskRows(
+      input.tasks,
+      loggedMinutesByTask(input.logs),
+      now: '${input.today}T00:00:00.000Z',
+    ),
+  );
   final timestamp = runtime.timestamp();
   final id = runtime.ids;
   final horizon = addDays(
@@ -652,7 +664,7 @@ ReplanPreview generateReplanPreview(
                 log.taskId == block.taskId &&
                 log.date == block.date,
       ) ||
-      (tasks[block.taskId]?.status == TaskStatus.archived &&
+      ((tasks[block.taskId]?.isArchived ?? false) &&
           _blockActual(block, input.logs) > 0) ||
       tasks[block.taskId]?.isFixed == true ||
       block.date.compareTo(input.today) < 0 ||
@@ -726,9 +738,9 @@ ReplanPreview generateReplanPreview(
           final task = tasks[block.taskId];
           return immutable(block) ||
               task == null ||
-              (task.status != TaskStatus.archived &&
+              (!task.isArchived &&
                   (block.date == input.today ||
-                      (task.status != TaskStatus.completed &&
+                      (!task.isCompleted &&
                           remainingTaskMinutes(task, input.logs) > 0)));
         })
         .map(_copyBlock)
@@ -757,8 +769,8 @@ ReplanPreview generateReplanPreview(
     for (final source in eligible) {
       final task = tasks[source.taskId];
       if (task == null ||
-          task.status == TaskStatus.archived ||
-          task.status == TaskStatus.completed ||
+          task.isArchived ||
+          task.isCompleted ||
           remainingTaskMinutes(task, input.logs) == 0) {
         continue;
       }
@@ -850,8 +862,8 @@ ReplanPreview generateReplanPreview(
         ),
       );
     }
-    if (task.status != TaskStatus.archived &&
-        task.status != TaskStatus.completed &&
+    if (!task.isArchived &&
+        !task.isCompleted &&
         remainingTaskMinutes(task, input.logs) > 0 &&
         _blockPending(block, input.logs) > 0) {
       (candidates[task.id] ??= []).add(block);
@@ -954,29 +966,16 @@ PlannerData confirmReplan(PlannerData data, ReplanPreview preview) {
   if (_snapshotKey(data.blocks) != _snapshotKey(preview.before)) {
     throw StateError('计划已发生变化，请重新生成预览');
   }
-  final before = data.tasks
-      .map((task) => TaskStatusSnapshot(id: task.id, status: task.status))
-      .toList();
+  // 时间口径下重排只改计划块；事项完成度由实际用时/预算派生。冲突与延期只作为
+  // 本次预览结果（ReplanRun.conflicts/postponed）保留，不再写事项状态，也不需要
+  // 任务状态快照。
   final tasks = data.tasks.map((task) {
-    final complete = task.status == TaskStatus.completed;
-    final status = task.status == TaskStatus.archived
-        ? TaskStatus.archived
-        : complete
-        ? TaskStatus.completed
-        : preview.conflicts.any((conflict) => conflict.taskId == task.id)
-        ? TaskStatus.conflict
-        : preview.postponed.contains(task.id)
-        ? TaskStatus.delayed
-        : task.status;
     final touched =
         preview.changes.any(
           (change) => (change.after ?? change.before)?.taskId == task.id,
         ) ||
         preview.conflicts.any((conflict) => conflict.taskId == task.id);
-    return task.copyWith(
-      status: status,
-      updatedAt: touched ? preview.createdAt : task.updatedAt,
-    );
+    return touched ? task.copyWith(updatedAt: preview.createdAt) : task;
   }).toList();
   final run = ReplanRun(
     id: preview.id,
@@ -990,10 +989,6 @@ PlannerData confirmReplan(PlannerData data, ReplanPreview preview) {
     conflicts: preview.conflicts,
     dailyChanges: preview.dailyChanges,
     status: ReplanStatus.confirmed,
-    taskStatusBefore: before,
-    taskStatusAfter: tasks
-        .map((task) => TaskStatusSnapshot(id: task.id, status: task.status))
-        .toList(),
   );
   return data.copyWith(
     blocks: preview.after.map(_copyBlock).toList(),
@@ -1011,17 +1006,10 @@ PlannerData undoLastReplan(PlannerData data) {
   if (_snapshotKey(data.blocks) != _snapshotKey(run.after)) {
     throw StateError('调整后计划已被修改，请先恢复该版本再撤销');
   }
-  final tasks = data.tasks.map((task) {
-    final previous = run.taskStatusBefore
-        ?.where((item) => item.id == task.id)
-        .firstOrNull;
-    return previous == null ? task : task.copyWith(status: previous.status);
-  }).toList();
   final runs = [...data.replanRuns];
   runs[index] = run.copyWith(status: ReplanStatus.undone);
   return data.copyWith(
     blocks: run.before.map(_copyBlock).toList(),
-    tasks: tasks,
     replanRuns: runs,
   );
 }
@@ -1109,13 +1097,6 @@ PlannerData recordTaskDayMinutes(
           (item) => item.id == taskId
               ? item.copyWith(
                   completedMinutes: math.min(item.estimatedMinutes, total),
-                  status:
-                      item.status == TaskStatus.archived ||
-                          item.status == TaskStatus.completed
-                      ? item.status
-                      : total > 0
-                      ? TaskStatus.inProgress
-                      : TaskStatus.notStarted,
                   updatedAt: stamp,
                 )
               : item,

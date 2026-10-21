@@ -21,6 +21,9 @@ PlannerData largePerfPlan({
   final base = plannerFixture();
   final task = base.tasks.single;
   final owner = base.profile.userId;
+  // 时间口径下 1,000 段 × 20 分钟会超过 fixture 的默认预算并自动完成事项，
+  // 计时性能样本需要保持事项未完成，因此显式放大预算（不影响测量的数据规模）。
+  final taskRow = task.copyWith(estimatedMinutes: 1000000);
   final firstDay = DateTime.utc(2024, 1, 1);
   final schedules = <ScheduleBlock>[];
   final timeLogs = <TimeLog>[];
@@ -58,7 +61,7 @@ PlannerData largePerfPlan({
       ),
     );
   }
-  return base.copyWith(blocks: schedules, logs: timeLogs);
+  return base.copyWith(tasks: [taskRow], blocks: schedules, logs: timeLogs);
 }
 
 /// JSON 线上字节数（UTF-8），用于“响应字节数/请求字节数”口径。

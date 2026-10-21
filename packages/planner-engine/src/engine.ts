@@ -27,6 +27,16 @@ const copy = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 const finiteMinutes = (value: number) =>
   Number.isFinite(value) ? Math.max(0, value) : 0;
 
+/** Time-only lifecycle: archived is independent; completion comes from time. */
+function taskArchived(task: Task | undefined | null): boolean {
+  return task?.archived === true;
+}
+function taskCompleted(task: Task): boolean {
+  return task.completed_at != null ||
+    (task.estimated_minutes > 0 &&
+      task.completed_minutes >= task.estimated_minutes);
+}
+
 /** Date-only arithmetic uses UTC, so daylight-saving transitions cannot shift a plan. */
 export function addDays(date: string, days: number): string {
   const timestamp = Date.parse(`${date}T00:00:00Z`);
@@ -135,7 +145,7 @@ function placementError(
 ): string | null {
   const task = input.tasks.find((item) => item.id === candidate.task_id);
   if (!task) return "找不到对应任务";
-  if (task.status === "archived") return "已归档事项不可安排";
+  if (taskArchived(task)) return "已归档事项不可安排";
   if (
     !/^\d{4}-\d{2}-\d{2}$/.test(candidate.date) ||
     !Number.isFinite(Date.parse(`${candidate.date}T00:00:00Z`))
@@ -159,7 +169,7 @@ function placementError(
     return "开始时间需要对齐计划时间粒度";
   if (
     enforceTask &&
-    (task.status === "completed" ||
+    (taskCompleted(task) ||
       remainingTaskMinutes(task, input.logs) === 0)
   )
     return "已完成任务无需再次安排";
@@ -174,8 +184,8 @@ function placementError(
     || (activity?.ends_on && candidate.date > activity.ends_on)) return "时间块超出活动有效日期";
   for (const dependency of task.planning?.dependencies ?? []) {
     const prior = input.tasks.find((item) => item.id === dependency.task_id);
-    if (!prior || prior.user_id !== task.user_id || prior.status === "archived")
-      return "前置内容尚未确认完成";
+    if (!prior || prior.user_id !== task.user_id || taskArchived(prior))
+      return "前置事项尚未完成";
     const priorBlocks = input.blocks.filter(
       (block) => block.task_id === prior.id,
     );
@@ -188,7 +198,7 @@ function placementError(
         remaining: forecastRemainingMinutes(prior, input.logs, priorBlocks),
       })
     )
-      return "前置内容尚未确认完成";
+      return "前置事项尚未完成";
   }
   const dayBlocks = blocks.filter((block) => block.date === candidate.date);
   if (
@@ -437,7 +447,7 @@ export function generateReplanPreview(input: ReplanInput, runtime: PlannerRuntim
     input.mode === "overcompleted" && tasks.get(block.task_id)?.planning?.activity?.kind === "recurring" ||
     blockActual(block, input.logs) > 0 ||
     input.logs.some(log => log.block_id === block.id || !log.block_id && log.task_id === block.task_id && log.date === block.date) ||
-    (tasks.get(block.task_id)?.status === "archived" &&
+    (taskArchived(tasks.get(block.task_id)) &&
       blockActual(block, input.logs) > 0) ||
     tasks.get(block.task_id)?.is_fixed ||
     block.date < input.today ||
@@ -465,9 +475,9 @@ export function generateReplanPreview(input: ReplanInput, runtime: PlannerRuntim
         return (
           immutable(block) ||
           !task ||
-          (task.status !== "archived" &&
+          (!taskArchived(task) &&
             (block.date === input.today ||
-              (task.status !== "completed" &&
+              (!taskCompleted(task) &&
                 remainingTaskMinutes(task, input.logs) > 0)))
         );
       }),
@@ -496,8 +506,8 @@ export function generateReplanPreview(input: ReplanInput, runtime: PlannerRuntim
       const task = tasks.get(source.task_id);
       if (
         !task ||
-        task.status === "archived" ||
-        task.status === "completed" ||
+        taskArchived(task) ||
+        taskCompleted(task) ||
         remainingTaskMinutes(task, input.logs) === 0
       )
         continue;
@@ -588,8 +598,8 @@ export function generateReplanPreview(input: ReplanInput, runtime: PlannerRuntim
       });
     }
     if (
-      task.status !== "archived" &&
-      task.status !== "completed" &&
+      !taskArchived(task) &&
+      !taskCompleted(task) &&
       remainingTaskMinutes(task, input.logs) > 0 &&
       blockPending(block, input.logs) > 0
     )
@@ -688,11 +698,6 @@ export function generateReplanPreview(input: ReplanInput, runtime: PlannerRuntim
   return makePreview(input, after, conflicts, timestamp, runtime);
 }
 
-type RunWithTaskSnapshot = ReplanRun & {
-  task_status_before?: Array<{ id: string; status: Task["status"] }>;
-  task_status_after?: Array<{ id: string; status: Task["status"] }>;
-};
-
 export function confirmReplan(
   data: PlannerData,
   preview: ReplanPreview,
@@ -705,22 +710,11 @@ export function confirmReplan(
     throw new Error("计划已发生变化，请重新生成预览");
   const result = copy(data);
   result.blocks = copy(preview.after);
-  const before = result.tasks.map((task) => ({
-    id: task.id,
-    status: task.status,
-  }));
+  // Time-only progress: a replan only moves scheduled blocks. Conflicts and
+  // postponements remain preview/run facts; task status is derived from
+  // completed_at or the time budget by the client/server, never written here.
   result.tasks = result.tasks.map((task) => ({
     ...task,
-    status:
-      task.status === "archived"
-        ? "archived"
-        : task.status === "completed"
-        ? "completed"
-        : preview.conflicts.some((conflict) => conflict.task_id === task.id)
-          ? "conflict"
-          : preview.postponed.includes(task.id)
-            ? "delayed"
-            : task.status,
     updated_at:
       preview.changes.some(
         (change) => (change.after ?? change.before)?.task_id === task.id,
@@ -728,16 +722,7 @@ export function confirmReplan(
         ? preview.created_at
         : task.updated_at,
   }));
-  const run: RunWithTaskSnapshot = {
-    ...copy(preview),
-    status: "confirmed",
-    task_status_before: before,
-    task_status_after: result.tasks.map((task) => ({
-      id: task.id,
-      status: task.status,
-    })),
-  };
-  result.replan_runs.push(run);
+  result.replan_runs.push({ ...copy(preview), status: "confirmed" });
   return result;
 }
 
@@ -746,18 +731,11 @@ export function undoLastReplan(data: PlannerData): PlannerData {
     .map((run) => run.status)
     .lastIndexOf("confirmed");
   if (index < 0) throw new Error("没有可撤销的调整");
-  const run = data.replan_runs[index] as RunWithTaskSnapshot;
+  const run = data.replan_runs[index];
   if (snapshotKey(data.blocks) !== snapshotKey(run.after))
     throw new Error("调整后计划已被修改，请先恢复该版本再撤销");
   const result = copy(data);
   result.blocks = copy(run.before);
   result.replan_runs[index].status = "undone";
-  if (run.task_status_before)
-    result.tasks = result.tasks.map((task) => {
-      const previous = run.task_status_before!.find(
-        (item) => item.id === task.id,
-      );
-      return previous ? { ...task, status: previous.status } : task;
-    });
   return result;
 }

@@ -31,10 +31,12 @@ PlannerData _monthData({required String today}) {
   final base = fixture.blocks.single;
   final month = today.substring(0, 7);
   final first = '$month-01';
+  final second = addDate(first, 1);
   final future = addDate(today, 1);
   return fixture.copyWith(
     blocks: [
       base.copyWith(id: 'b-first', date: first, durationMinutes: 60),
+      base.copyWith(id: 'b-second', date: second, durationMinutes: 90),
       if (future.substring(0, 7) == month)
         base.copyWith(id: 'b-future', date: future, durationMinutes: 45),
     ],
@@ -99,36 +101,51 @@ Future<ProviderContainer> _pumpMonthPage(
 
 void main() {
   testWidgets(
-    'month scope shows plan/capacity grid, selects a day and keeps the date',
+    'month scope shows plan-only mosaic, selected day panel and keeps the date',
     (tester) async {
       final today = shanghaiToday();
       final month = today.substring(0, 7);
       final first = '$month-01';
       final second = addDate(first, 1);
+      final fixture = plannerFixture();
+      final taskTitle = fixture.tasks.single.title;
       await _pumpMonthPage(tester, _monthData(today: today));
 
       // Day is the default scope; switching to the month scope keeps today.
-      expect(find.byKey(const ValueKey('calendar-day-chart')), findsNWidgets(2));
+      expect(
+        find.byKey(const ValueKey('calendar-day-chart')),
+        findsNWidgets(2),
+      );
       await tester.tap(find.text('月'));
       await tester.pumpAndSettle();
       expect(find.byType(CalendarMonthChart), findsOneWidget);
       expect(find.byKey(ValueKey('calendar-month-$month')), findsOneWidget);
-      expect(find.byKey(const ValueKey('calendar-month-chart')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('calendar-month-chart')),
+        findsOneWidget,
+      );
       final summary = tester
           .widget<Text>(find.byKey(const ValueKey('calendar-month-summary')))
           .data!;
       expect(summary, contains('本月计划'));
-      expect(summary, contains('实学'));
-      expect(summary, contains('中断'));
+      expect(summary, contains('个学习日'));
+      expect(summary, contains('天超容量'));
+      expect(summary, isNot(contains('实学')));
+      expect(summary, isNot(contains('中断')));
       expect(find.byKey(ValueKey('calendar-month-day-$today')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('calendar-month-day-panel')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('calendar-month-legend')),
+        findsOneWidget,
+      );
       // The former 当天安排 detail panel was removed from the month scope.
       expect(find.text('当天安排'), findsNothing);
-      expect(
-        find.byKey(const ValueKey('calendar-day-detail-totals')),
-        findsNothing,
-      );
 
-      // Tapping another day still changes the shared selected date.
+      // Tapping another day changes the shared selected date and updates the
+      // plan panel with that day's plan, entirely outside the calendar cells.
       await tester.tap(find.byKey(ValueKey('calendar-month-day-$second')));
       await tester.pumpAndSettle();
       expect(
@@ -137,11 +154,42 @@ void main() {
             .selectedDate,
         second,
       );
+      expect(
+        tester
+            .widget<Text>(
+              find.byKey(const ValueKey('calendar-month-day-total')),
+            )
+            .data,
+        '计划 1小时30分 · 1 项',
+      );
+      expect(find.text(taskTitle), findsWidgets);
+      expect(
+        find.byKey(
+          ValueKey('calendar-month-day-item-task:${fixture.tasks.single.id}'),
+        ),
+        findsOneWidget,
+      );
+
+      // The panel link switches to the day scope and keeps the selected date.
+      await tester.tap(find.byKey(const ValueKey('calendar-month-open-day')));
+      await tester.pumpAndSettle();
+      expect(find.byKey(ValueKey('calendar-day-$second')), findsOneWidget);
+
+      // Back to month for the navigation checks.
+      await tester.tap(find.text('月'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('calendar-month-chart')),
+        findsOneWidget,
+      );
 
       // Month navigation steps whole months and 本月 returns to today.
       await tester.tap(find.byKey(const ValueKey('calendar-previous-month')));
       await tester.pumpAndSettle();
-      expect(find.byKey(const ValueKey('calendar-month-chart')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('calendar-month-chart')),
+        findsOneWidget,
+      );
       await tester.tap(find.byKey(const ValueKey('calendar-this-month')));
       await tester.pumpAndSettle();
 
@@ -161,7 +209,7 @@ void main() {
     },
   );
 
-  testWidgets('month grid fits 320px without horizontal overflow', (
+  testWidgets('month mosaic fits 320px without horizontal overflow', (
     tester,
   ) async {
     final today = shanghaiToday();
@@ -178,6 +226,11 @@ void main() {
       lessThanOrEqualTo(320),
     );
     expect(find.byType(CalendarMonthChart), findsOneWidget);
-    expect(find.byType(LinearProgressIndicator), findsWidgets);
+    expect(find.byKey(const ValueKey('calendar-month-legend')), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('calendar-month-day-panel')),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
   });
 }

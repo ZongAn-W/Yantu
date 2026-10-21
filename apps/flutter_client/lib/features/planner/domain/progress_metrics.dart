@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import '../../../shared/models/planner_models.dart';
+import '../../../shared/models/task_lifecycle.dart';
 import 'planner_format.dart';
 import 'study_day.dart';
 
@@ -126,7 +127,7 @@ ProgressMetrics progressMetrics(
   final week = [for (var index = 6; index >= 0; index--) addDate(date, -index)];
   final weekSet = week.toSet();
   final activeTasks = data.tasks
-      .where((task) => task.status != TaskStatus.archived)
+      .where((task) => !task.isArchived)
       .toList();
 
   final totalActual = data.logs.fold<int>(0, (sum, log) => sum + log.minutes);

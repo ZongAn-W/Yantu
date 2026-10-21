@@ -4,12 +4,13 @@ import type { PlanPlanning } from "./planning-contracts.js";
 import type { PlannerDocument } from "./sync-contracts.js";
 import { dateAdd, isReliableWeek, normalizeWeek, replanDocument } from "./planner.js";
 import {
-  mondayOf, recurringDemand, resolveDayCapacity, resolveWeeksInRange, scheduleStrategy, weekdayOf,
+  mondayOf, recurringDemand, resolveDayCapacity, resolveWeeksInRange, scheduleStrategy, taskArchived, weekdayOf,
   type CapacityBasis,
 } from "./planning-scheduler.js";
 
 export const PLANNING_PROMPT_VERSION = "learning-route-2-full";
-export const PLANNING_RULES_VERSION = "workload-rhythm-2";
+/** 纯时间口径：进度=实际学习分钟/预计总时长，内容量与内容反馈不再参与规划规则。 */
+export const PLANNING_RULES_VERSION = "time-progress-1";
 /** Hard ceiling of the finite planning cycle; full mode never truncates below it. */
 export const PLAN_CYCLE_MAX_DAYS = 1095;
 export type PlanMode = "rolling" | "full";
@@ -63,11 +64,6 @@ function canonical(value: unknown): unknown {
   return value;
 }
 export const planningHash = (value: unknown) => createHash("sha256").update(JSON.stringify(canonical(value))).digest("hex");
-
-export function workloadMinutes(workload: NonNullable<OnboardingSession["items"][number]["planning"]>["workload"]) {
-  return workload ? Math.ceil(workload.components.filter(component => component.selected !== false)
-    .reduce((total, component) => total + component.quantity * component.minutes_per_unit, 0)) : null;
-}
 
 export function newPlanning(): PlanPlanning {
   // New plans generate the whole finite cycle; old rolling metadata keeps its own mode.
@@ -325,49 +321,22 @@ export function checkLearningStrategy(session: OnboardingSession): QualityIssue[
   const issues: QualityIssue[] = [];
   const report = (code: string, message: string, item_id?: string, expected?: unknown, actual?: unknown) =>
     issues.push({ code, severity: "error", item_id, expected, actual, message,
-      evidence: "已确认事项及结构化学习范围", repair: "核对工作量或事项引用后重新检查；缩减范围需明确说明" });
+      evidence: "已确认事项、时间预算与结构化学习策略", repair: "核对事项日期、依赖与时间预算后重新检查；缩减范围需明确说明" });
   const ids = new Set(session.items.map(item => item.id));
   const existing = Array.isArray(session.current_plan?.items) ? session.current_plan.items as Array<Record<string, unknown>> : [];
-  const evidenceIds = new Set([...session.answers.map((_, index) => `answer:${index}`), ...session.research.sources.map(source => source.url)]);
   if (ids.size !== session.items.length) report("DUPLICATE_ITEM", "事项编号重复");
   for (const item of session.items) {
     if (item.earliest_date && item.earliest_date > item.deadline) report("DATE_ORDER", "事项开始日期晚于截止日期", item.id);
     const old = existing.find(row => row.id === item.id);
     if (old && old.deadline_kind !== "plan_end" && (old.deadline !== item.deadline || item.deadline_kind === "plan_end"))
       report("HARD_DEADLINE_CHANGED", "真实截止日期及其类型不能被生成结果修改", item.id, old.deadline, item.deadline);
-    const planning = item.planning;
-    const previousPlanning = old?.planning as Record<string, unknown> | undefined;
-    if (planning?.content_progress && planningHash(planning.content_progress) !== planningHash(previousPlanning?.content_progress ?? null)
-      || planning?.feedback && planningHash(planning.feedback) !== planningHash(previousPlanning?.feedback ?? null))
-      report("EXECUTION_FACT_CHANGED", "规划草案不能虚构或修改已经发生的内容进度和困难反馈", item.id);
-    if (!planning) {
-      issues.push({ code: "LEGACY_ESTIMATE", severity: "warning", item_id: item.id, message: `「${item.title}」仍使用总时长估算，范围需要核对`,
-        evidence: "未提供结构化工作量", repair: "补充学习单位和数量，或先校准少量内容" });
-      continue;
-    }
-    const a = planning.activity;
-    if (a?.kind === "recurring" && (!a.starts_on || !a.ends_on || !a.sessions_per_week || !a.session_minutes))
+    // 进度只有时间口径：estimated_minutes 是唯一预算参数，内容量与内容反馈字段已移除。
+    const activity = item.planning?.activity;
+    if (activity?.kind === "recurring" && (!activity.starts_on || !activity.ends_on || !activity.sessions_per_week || !activity.session_minutes))
       report("RECURRENCE_DEFINITION", "持续活动需要有限窗口、每周次数和每次时长", item.id);
-    if (a?.starts_on && a.ends_on && a.starts_on > a.ends_on) report("ACTIVITY_WINDOW", "活动有效区间顺序有误", item.id);
-    const expected = workloadMinutes(planning.workload);
-    if (expected !== null) {
-      for (const ref of planning.workload!.evidence_refs ?? []) if (!evidenceIds.has(ref))
-        report("EVIDENCE_REFERENCE", "工作量引用的回答或资料不存在", item.id, [...evidenceIds], ref);
-      const declared = a?.kind === "recurring" ? a.session_minutes : item.estimated_minutes;
-      if (expected !== declared) report("WORKLOAD_MISMATCH", `「${item.title}」的工作量计算为${expected}分钟，与声明时长不一致`, item.id, expected, declared);
-      const components = planning.workload!.components;
-      if (new Set(components.map(c => c.id)).size !== components.length) report("COMPONENT_DUPLICATE", "工作量组成编号重复", item.id);
-      if (!components.some(c => c.selected !== false)) report("WORKLOAD_EMPTY", "至少选择一种实际学习范围", item.id);
-      for (const component of components) {
-        if (component.range_min !== undefined && component.minutes_per_unit < component.range_min
-          || component.range_max !== undefined && component.minutes_per_unit > component.range_max
-          || component.range_min !== undefined && component.range_max !== undefined && component.range_min > component.range_max)
-          report("WORKLOAD_RANGE", "采用的单位时长不在声明区间内", item.id);
-      }
-    } else issues.push({ code: "WORKLOAD_UNKNOWN", severity: "warning", item_id: item.id,
-      message: `「${item.title}」的单位工作量尚待校准`, evidence: "缺少材料或学习速度", repair: "先做少量诊断，再根据实际内容进度调整" });
-    for (const dependency of planning.dependencies ?? []) {
-      if (!ids.has(dependency.task_id) && !existing.some(row => row.id === dependency.task_id && row.status !== "archived"))
+    if (activity?.starts_on && activity.ends_on && activity.starts_on > activity.ends_on) report("ACTIVITY_WINDOW", "活动有效区间顺序有误", item.id);
+    for (const dependency of item.planning?.dependencies ?? []) {
+      if (!ids.has(dependency.task_id) && !existing.some(row => row.id === dependency.task_id && !(row.archived === true || (row.archived === undefined && row.status === "archived"))))
         report("DEPENDENCY_MISSING", "前置事项不存在或已归档", item.id, dependency.task_id);
     }
   }
@@ -442,7 +411,7 @@ export function buildPlanningDocument(session: OnboardingSession, current?: Plan
   };
   for (const item of session.items) {
     const task = document.tasks.find(task => task.id === item.id) ?? document.tasks.find(task => !claimed.has(task.id)
-      && task.status !== "archived" && task.title === item.title);
+      && !taskArchived(task) && task.title === item.title);
     if (task) { mapping.set(item.id, task.id); claimed.add(task.id); resolveItemTags(item, task); }
   }
   const metadata = normalizePlanningMetadata(structuredClone(session.planning ?? newPlanning()), {
@@ -465,9 +434,6 @@ export function buildPlanningDocument(session: OnboardingSession, current?: Plan
       continue;
     }
     task.planning = planning;
-    if (previous?.planning?.feedback || previous?.planning?.content_progress) task.planning = { ...task.planning,
-      ...(previous.planning.feedback ? { feedback: structuredClone(previous.planning.feedback) } : {}),
-      ...(previous.planning.content_progress ? { content_progress: structuredClone(previous.planning.content_progress) } : {}) };
     if (task.planning?.activity?.kind === "recurring") {
       const cycleDemand = recurringDemand(task, session.start_date, session.end_date).reduce((sum, week) => sum + week.minutes, 0);
       if (cycleDemand > 0) task.estimated_minutes = cycleDemand;

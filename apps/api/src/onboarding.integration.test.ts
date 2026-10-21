@@ -79,8 +79,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)("persisted onboarding", () 
     expect(session.constraints_confirmed).toBe(true);
     expect(session.items.every(item => item.deadline === end && item.deadline_kind === "plan_end")).toBe(true);
     await next({ type: "confirm_items", items: session.items.map(i => ({ ...i, tag_names: ["数学", "考试备考"], estimated_minutes: 300, earliest_date: start, deadline: end,
-      planning: { workload: { components: [{ id: "practice", label: "练习", quantity: 1, unit: "份", minutes_per_unit: 300 }],
-        source: "测试确认范围", confidence: "medium", calibration: "完成后核对" }, activity: { kind: "finite", starts_on: start, ends_on: end } } })) });
+      planning: { activity: { kind: "finite", starts_on: start, ends_on: end } } })) });
     expect((await act(user, session, { type: "finish", start_date: start, end_date: end, weekly_minutes: week })).statusCode).toBe(400);
     await next({ type: "preview_schedule", start_date: start, end_date: end, weekly_minutes: week });
     expect(session.preview?.status).toBe("ready");

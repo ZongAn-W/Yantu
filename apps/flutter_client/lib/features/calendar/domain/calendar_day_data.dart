@@ -31,6 +31,7 @@ class CalendarDayItem {
     required this.id,
     required this.title,
     required this.tagNames,
+    required this.tagColor,
     required this.plannedMinutes,
     required this.actualMinutes,
     required this.scheduledMinutes,
@@ -40,6 +41,13 @@ class CalendarDayItem {
   final String id;
   final String title;
   final List<String> tagNames;
+
+  /// The explicit `#rrggbb` colour of the task's first tag that carries one.
+  ///
+  /// Colour is presentation metadata only: it never changes an item's minutes,
+  /// order or plan attribution. Task owners without tags stay `null` so the
+  /// caller can pick a stable fallback colour.
+  final String? tagColor;
   final int plannedMinutes;
   final int actualMinutes;
 
@@ -93,13 +101,19 @@ CalendarDayData buildCalendarDayData(PlannerData data, String date) {
     final id = 'task:$taskId';
     return builders.putIfAbsent(id, () {
       final task = tasks[taskId];
+      final tagNames = <String>[];
+      String? tagColor;
+      for (final tagId in task?.tagIds ?? const <String>[]) {
+        if (tags[tagId] case final tag?) {
+          tagNames.add(tag.name);
+          tagColor ??= tag.color;
+        }
+      }
       return _DayItemBuilder(
         id: id,
         title: task?.title ?? '已删除事项',
-        tagNames: [
-          for (final tagId in task?.tagIds ?? const <String>[])
-            if (tags[tagId] case final tag?) tag.name,
-        ],
+        tagNames: tagNames,
+        tagColor: tagColor,
       );
     });
   }
@@ -125,7 +139,12 @@ CalendarDayData buildCalendarDayData(PlannerData data, String date) {
       final id = 'log:${log.id}';
       owner = builders.putIfAbsent(
         id,
-        () => _DayItemBuilder(id: id, title: '历史学习记录', tagNames: const []),
+        () => _DayItemBuilder(
+          id: id,
+          title: '历史学习记录',
+          tagNames: const [],
+          tagColor: null,
+        ),
       );
     }
     owner.actual += log.minutes;
@@ -186,11 +205,13 @@ class _DayItemBuilder {
     required this.id,
     required this.title,
     required this.tagNames,
+    required this.tagColor,
   });
 
   final String id;
   final String title;
   final List<String> tagNames;
+  final String? tagColor;
   int planned = 0;
   int actual = 0;
   int scheduled = 0;
@@ -203,6 +224,7 @@ class _DayItemBuilder {
     id: id,
     title: title,
     tagNames: List.unmodifiable(tagNames),
+    tagColor: tagColor,
     plannedMinutes: planned,
     actualMinutes: actual,
     scheduledMinutes: scheduled,

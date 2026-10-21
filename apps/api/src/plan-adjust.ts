@@ -1,5 +1,5 @@
 import { adoptedWeeklyCapacity, plusDays } from "./capacity.js";
-import { scheduleStrategy } from "./planning-scheduler.js";
+import { scheduleStrategy, taskArchived } from "./planning-scheduler.js";
 import {
   PLAN_CYCLE_MAX_DAYS,
   checkScheduledPlan,
@@ -117,6 +117,9 @@ const clampInt = (value: number, min: number, max: number) =>
   Math.min(max, Math.max(min, Math.floor(value)));
 const remainingOf = (task: Task) => Math.max(0, task.estimated_minutes - task.completed_minutes);
 const deadlineKind = (task: Task) => task.deadline_kind ?? "deadline";
+/** 时间口径完成：已完成标记/完成时间/时间预算已用完。已完成事项在任何调整中受保护。 */
+const taskCompleted = (task: Task) =>
+  task.status === "completed" || task.completed_at != null || task.completed_minutes >= task.estimated_minutes;
 const isPlainDate = (value: unknown): value is string =>
   typeof value === "string" &&
   /^\d{4}-\d{2}-\d{2}$/.test(value) &&
@@ -124,7 +127,7 @@ const isPlainDate = (value: unknown): value is string =>
   new Date(dateValue(value)).toISOString().slice(0, 10) === value;
 
 function activeTasks(document: PlannerDocument): Task[] {
-  return document.tasks.filter((task) => task.status !== "archived");
+  return document.tasks.filter((task) => !taskArchived(task));
 }
 
 function tagStats(document: PlannerDocument): Map<string, { task_count: number; minutes: number }> {
@@ -140,29 +143,9 @@ function tagStats(document: PlannerDocument): Map<string, { task_count: number; 
 }
 
 /**
- * 同步结构化工作量与预算。
- *
- * `PlannerDocumentSchema` 要求 finite 事项满足 `ceil(Σ quantity*minutes_per_unit) === estimated_minutes`；
- * AI 只被允许改总预算、不编造单价，所以按比例缩放各部分数量（保留单价、单位与标签）让两者继续一致。
- * 持续活动（recurring）的一致性基准是单次组成 `session_minutes`，不随总预算变化，这里不调整。
+ * 计划调整只修改 estimated_minutes（时间预算）、周期、强度与新增事项。
+ * 内容量机制已移除：不再按比例缩放结构工作量，也不再需要预算-工作量一致性。
  */
-function rebalanceFiniteWorkload(task: Task): boolean {
-  const workload = task.planning?.workload;
-  if (!workload || task.planning?.activity?.kind === "recurring") return false;
-  const selected = workload.components.filter((component) => component.selected !== false);
-  if (!selected.length) return false;
-  const computed = selected.reduce(
-    (sum, component) => sum + component.quantity * component.minutes_per_unit,
-    0,
-  );
-  if (Math.ceil(computed) === task.estimated_minutes) return false;
-  // 目标总和取 estimated-0.5：ceil 恰好等于预算，浮点误差也不会进到下一个整数。
-  const target = Math.max(0.0001, task.estimated_minutes - 0.5);
-  const factor = target / computed;
-  for (const component of selected)
-    component.quantity = Math.max(0.0001, component.quantity * factor);
-  return true;
-}
 
 /** True when [end] is an acceptable plan boundary: ≥ today, within the goal date and the 1095-day cap. */
 function resolveEndDate(
@@ -244,7 +227,7 @@ export function applyPlanAdjustment(
   let followedPlanEnd = 0;
   for (const task of document.tasks) {
     if (deadlineKind(task) !== "plan_end") continue;
-    if (task.is_fixed || task.status === "archived" || task.status === "completed") continue;
+    if (task.is_fixed || taskArchived(task) || taskCompleted(task)) continue;
     if (task.earliest_date && endDate < task.earliest_date) {
       warnings.push(`「${task.title}」的最早开始日期晚于新周期结束日期，保留原截止日期 ${task.deadline}`);
       continue;
@@ -264,7 +247,7 @@ export function applyPlanAdjustment(
   let extendedWindows = 0;
   for (const task of document.tasks) {
     if (deadlineKind(task) !== "deadline") continue;
-    if (task.is_fixed || task.status === "archived" || task.status === "completed") continue;
+    if (task.is_fixed || taskArchived(task) || taskCompleted(task)) continue;
     const activity = task.planning?.activity;
     if (!activity?.ends_on || activity.ends_on !== previousEnd || activity.ends_on >= endDate) continue;
     activity.ends_on = endDate;
@@ -305,7 +288,6 @@ export function applyPlanAdjustment(
     string,
     { previous: number; minutes: number; reason: string }
   >();
-  let rebalancedWorkloads = 0;
   for (const update of ai.task_updates) {
     const task = document.tasks.find((row) => row.id === update.task_id);
     if (!task) {
@@ -316,11 +298,11 @@ export function applyPlanAdjustment(
       warnings.push(`「${task.title}」是固定事项，预算未改动`);
       continue;
     }
-    if (task.status === "archived") {
+    if (taskArchived(task)) {
       warnings.push(`「${task.title}」已归档，预算未改动`);
       continue;
     }
-    if (task.status === "completed") {
+    if (taskCompleted(task)) {
       warnings.push(`「${task.title}」已完成，预算未改动`);
       continue;
     }
@@ -330,8 +312,6 @@ export function applyPlanAdjustment(
     if (value !== task.estimated_minutes) {
       task.estimated_minutes = value;
       task.updated_at = stamp;
-      // 文档带 planning 元数据时 schema 会校验工作量一致性，必须同时缩放结构化组成。
-      if (document.planning && rebalanceFiniteWorkload(task)) rebalancedWorkloads++;
     }
     const original = beforeTaskById.get(task.id)?.estimated_minutes ?? value;
     if (task.estimated_minutes !== original) {
@@ -343,9 +323,6 @@ export function applyPlanAdjustment(
       });
     }
   }
-
-  if (rebalancedWorkloads)
-    notes.push(`${rebalancedWorkloads} 个事项的结构化工作量已按新预算等比例同步`);
 
   // AI returns names only. Resolve existing labels case-insensitively and assign server IDs.
   const tagByName = new Map(document.tags.map(tag => [tag.name.trim().toLowerCase(), tag]));
@@ -395,6 +372,7 @@ export function applyPlanAdjustment(
       deadline_kind: spec.deadline_kind,
       ...(spec.earliest_date ? { earliest_date: spec.earliest_date } : {}),
       is_fixed: false,
+      archived: false,
       status: "not_started",
       created_at: stamp,
       updated_at: stamp,
@@ -454,8 +432,8 @@ export function applyPlanAdjustment(
       loggedTaskDates.has(`${block.task_id}:${block.date}`) ||
       !task ||
       task.is_fixed ||
-      task.status === "completed" ||
-      task.status === "archived";
+      taskCompleted(task) ||
+      taskArchived(task);
     if (guarded) protectedIds.add(block.id);
   }
   const released: Block[] = document.blocks.filter((block) => !protectedIds.has(block.id));

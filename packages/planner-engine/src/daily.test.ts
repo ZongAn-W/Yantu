@@ -44,7 +44,7 @@ const task = (id = "math", overrides: Partial<Task> = {}): Task => ({
   priority: 3,
   deadline: "2026-10-28",
   is_fixed: false,
-  status: "not_started",
+  archived: false,
   created_at: timestamp,
   updated_at: timestamp,
   ...overrides,

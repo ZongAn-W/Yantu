@@ -35,7 +35,13 @@ export {
 export interface StrategyTask {
   id: string; user_id: string; title: string;
   estimated_minutes: number; completed_minutes: number; priority: number;
-  deadline: string; earliest_date?: string; is_fixed: boolean; status: string;
+  deadline: string; earliest_date?: string; is_fixed: boolean;
+  /** 旧 status 兼容字段（可选）：新文档可只给 archived；派生规则见 taskArchived/deriveTaskStatus。 */
+  status?: string | null;
+  /** 归档布尔事实（阶段 3b 目标字段）：与 completion 正交；缺失时兼容旧 status。 */
+  archived?: boolean | null;
+  /** 完成时间（ISO 时间戳）；null/缺失表示未完成。 */
+  completed_at?: string | null;
   planning?: {
     activity?: { kind: "finite" | "recurring"; starts_on?: string; ends_on?: string;
       sessions_per_week?: number; session_minutes?: number; state?: "active" | "paused" | "ended" };
@@ -121,10 +127,40 @@ export function occupiedDayMinutes(profile: StrategyInput["profile"], _legacyEve
   ], profile.study_start_minute, profile.study_end_minute);
 }
 
-/** Real content confirmation: completed status or an explicit planning confirmation. */
+/**
+ * 归档双形态真值（阶段 3b-A）：新 `archived` 显式优先；
+ * 缺失（undefined/null）时才回退旧 `status === "archived"`。
+ */
+export function taskArchived(task: { archived?: boolean | null; status?: string | null }): boolean {
+  if (task.archived === true) return true;
+  if (task.archived === false) return false;
+  return task.status === "archived";
+}
+
+/** 时间口径完成：已完成标记（或旧 status）、completed_at，或已用时间达到预计时长。 */
+export function taskCompleted(task: Pick<StrategyTask, "estimated_minutes" | "completed_minutes">
+  & { status?: string | null; completed_at?: string | null }): boolean {
+  return task.status === "completed" || task.completed_at != null || task.completed_minutes >= task.estimated_minutes;
+}
+
+export type DerivedTaskStatus = "not_started" | "in_progress" | "completed" | "archived";
+/**
+ * 从关系表重建同步文档时的旧 status 兼容投影（阶段 3 删除 status 前的唯一派生口径）：
+ * archived→archived；completed_at 非空或已用分钟>=预计→completed；实际>0→in_progress；否则 not_started。
+ * 归档优先取新 `archived` 字段；字段缺失时才用旧 `stored_status` 兜底。
+ */
+export function deriveTaskStatus(input: {
+  archived?: boolean | null; stored_status?: string | null; completed_at?: string | null;
+  actual_minutes: number; estimated_minutes: number;
+}): DerivedTaskStatus {
+  if (taskArchived({ archived: input.archived, status: input.stored_status })) return "archived";
+  if (input.completed_at != null || input.actual_minutes >= input.estimated_minutes) return "completed";
+  return input.actual_minutes > 0 ? "in_progress" : "not_started";
+}
+
+/** 依赖满足（时间口径）：完成标记/预算用完即完成；内容确认机制已移除。 */
 export function contentConfirmed(task: StrategyTask): boolean {
-  if (task.status === "completed") return true;
-  return (task.planning?.content_progress as { confirmed?: boolean } | undefined)?.confirmed === true;
+  return taskCompleted(task);
 }
 
 /**
@@ -143,11 +179,10 @@ export function forecastRemainingMinutes(task: StrategyTask, logs: StrategyInput
 }
 
 /**
- * Three-state prerequisite rule reused by scheduling, manual placement and execution:
- * 1. completed status or explicit content confirmation satisfies any dependency;
- * 2. a "planned" dependency may also be met by a forecast: the predecessor's remaining
- *    minutes are zero and every one of its blocks is before the target date;
- * 3. merely exhausting the estimated time never confirms content.
+ * 依赖满足规则（时间口径），排程、手动放置与执行共用：
+ * 1. 前置事项已完成（completed_at 非空、旧 status completed 或已用时间达到预计）即满足；
+ * 2. planned 依赖还可由预测满足：剩余分钟为 0 且其所有安排都在目标日期之前；
+ * 3. 内容确认机制已移除，不再需要额外确认。
  */
 export function dependencySatisfied(options: {
   prior: StrategyTask;
@@ -229,7 +264,7 @@ export function scheduleStrategy(input: StrategyInput, from: string, to: string,
     visiting.add(task.id);
     for (const dependency of task.planning?.dependencies ?? []) {
       const prior = byId.get(dependency.task_id);
-      if (!prior || prior.user_id !== task.user_id || prior.status === "archived") invalid.add(task.id);
+      if (!prior || prior.user_id !== task.user_id || taskArchived(prior)) invalid.add(task.id);
       else { visit(prior); if (invalid.has(prior.id)) invalid.add(task.id); }
     }
     visiting.delete(task.id); visited.add(task.id); ordered.push(task);
@@ -245,7 +280,8 @@ export function scheduleStrategy(input: StrategyInput, from: string, to: string,
       remaining: remaining(byId.get(dependency.task_id)!),
     }));
   }
-  const active = ordered.filter(task => task.user_id === input.profile.user_id && !["completed", "archived"].includes(task.status)
+  const active = ordered.filter(task => task.user_id === input.profile.user_id && !taskArchived(task)
+    && task.status !== "completed"
     && !contentConfirmed(task)
     && task.planning?.activity?.state !== "paused" && task.planning?.activity?.state !== "ended");
   function fillFinite(task: StrategyTask, date: string) {
@@ -385,9 +421,9 @@ export function scheduleStrategy(input: StrategyInput, from: string, to: string,
   for (const task of finite) {
     const left = remaining(task);
     unscheduled += left;
-    if (left > 0) issues.push({ code: invalid.has(task.id) ? "DEPENDENCY_INVALID" : (task.planning?.dependencies ?? []).some(d => d.mode === "confirmed" && byId.get(d.task_id)?.status !== "completed") ? "DEPENDENCY_UNCONFIRMED" : "WORK_UNSCHEDULED",
+    if (left > 0) issues.push({ code: invalid.has(task.id) ? "DEPENDENCY_INVALID" : (task.planning?.dependencies ?? []).some(d => d.mode === "confirmed" && !taskCompleted(byId.get(d.task_id)!)) ? "DEPENDENCY_UNCONFIRMED" : "WORK_UNSCHEDULED",
       task_id: task.id, expected: task.estimated_minutes, actual: task.estimated_minutes - left,
-      message: `还有${left}分钟未安排；请核对容量、事项日期和前置内容进度` });
+      message: `还有${left}分钟未安排；请核对容量、事项日期和前置事项完成情况` });
   }
   return { blocks, added, scheduled_minutes: scheduled, unscheduled_minutes: unscheduled, issues };
 }

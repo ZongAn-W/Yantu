@@ -1048,7 +1048,10 @@ as String,
 /// @nodoc
 mixin _$Task {
 
- String get id; String get userId;@JsonKey(name: 'tag_ids') List<String> get tagIds; String get title; String? get description; int get estimatedMinutes; int get completedMinutes;@JsonKey(fromJson: _priority) int get priority; String get deadline; ItemDateKind get deadlineKind; String? get earliestDate; bool get isFixed; TaskStatus get status; String get createdAt; String get updatedAt; JsonMap? get planning;
+ String get id; String get userId;@JsonKey(name: 'tag_ids') List<String> get tagIds; String get title; String? get description; int get estimatedMinutes; int get completedMinutes;@JsonKey(fromJson: _priority) int get priority; String get deadline; ItemDateKind get deadlineKind; String? get earliestDate; bool get isFixed;/// 不再安排但保留历史；与完成正交（替代旧 status 六态）。
+ bool get archived; String get createdAt; String get updatedAt;/// 完成标记。用户提前确认完成、时间预算用完或旧数据迁移时写入；
+/// 非空即完成（粘性）。旧 `status` 只在反序列化边界映射到这里。
+@JsonKey(name: 'completed_at') String? get completedAt; JsonMap? get planning;
 /// Create a copy of Task
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -1061,16 +1064,16 @@ $TaskCopyWith<Task> get copyWith => _$TaskCopyWithImpl<Task>(this as Task, _$ide
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Task&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&const DeepCollectionEquality().equals(other.tagIds, tagIds)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.estimatedMinutes, estimatedMinutes) || other.estimatedMinutes == estimatedMinutes)&&(identical(other.completedMinutes, completedMinutes) || other.completedMinutes == completedMinutes)&&(identical(other.priority, priority) || other.priority == priority)&&(identical(other.deadline, deadline) || other.deadline == deadline)&&(identical(other.deadlineKind, deadlineKind) || other.deadlineKind == deadlineKind)&&(identical(other.earliestDate, earliestDate) || other.earliestDate == earliestDate)&&(identical(other.isFixed, isFixed) || other.isFixed == isFixed)&&(identical(other.status, status) || other.status == status)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&const DeepCollectionEquality().equals(other.planning, planning));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Task&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&const DeepCollectionEquality().equals(other.tagIds, tagIds)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.estimatedMinutes, estimatedMinutes) || other.estimatedMinutes == estimatedMinutes)&&(identical(other.completedMinutes, completedMinutes) || other.completedMinutes == completedMinutes)&&(identical(other.priority, priority) || other.priority == priority)&&(identical(other.deadline, deadline) || other.deadline == deadline)&&(identical(other.deadlineKind, deadlineKind) || other.deadlineKind == deadlineKind)&&(identical(other.earliestDate, earliestDate) || other.earliestDate == earliestDate)&&(identical(other.isFixed, isFixed) || other.isFixed == isFixed)&&(identical(other.archived, archived) || other.archived == archived)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.completedAt, completedAt) || other.completedAt == completedAt)&&const DeepCollectionEquality().equals(other.planning, planning));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,userId,const DeepCollectionEquality().hash(tagIds),title,description,estimatedMinutes,completedMinutes,priority,deadline,deadlineKind,earliestDate,isFixed,status,createdAt,updatedAt,const DeepCollectionEquality().hash(planning));
+int get hashCode => Object.hash(runtimeType,id,userId,const DeepCollectionEquality().hash(tagIds),title,description,estimatedMinutes,completedMinutes,priority,deadline,deadlineKind,earliestDate,isFixed,archived,createdAt,updatedAt,completedAt,const DeepCollectionEquality().hash(planning));
 
 @override
 String toString() {
-  return 'Task(id: $id, userId: $userId, tagIds: $tagIds, title: $title, description: $description, estimatedMinutes: $estimatedMinutes, completedMinutes: $completedMinutes, priority: $priority, deadline: $deadline, deadlineKind: $deadlineKind, earliestDate: $earliestDate, isFixed: $isFixed, status: $status, createdAt: $createdAt, updatedAt: $updatedAt, planning: $planning)';
+  return 'Task(id: $id, userId: $userId, tagIds: $tagIds, title: $title, description: $description, estimatedMinutes: $estimatedMinutes, completedMinutes: $completedMinutes, priority: $priority, deadline: $deadline, deadlineKind: $deadlineKind, earliestDate: $earliestDate, isFixed: $isFixed, archived: $archived, createdAt: $createdAt, updatedAt: $updatedAt, completedAt: $completedAt, planning: $planning)';
 }
 
 
@@ -1081,7 +1084,7 @@ abstract mixin class $TaskCopyWith<$Res>  {
   factory $TaskCopyWith(Task value, $Res Function(Task) _then) = _$TaskCopyWithImpl;
 @useResult
 $Res call({
- String id, String userId,@JsonKey(name: 'tag_ids') List<String> tagIds, String title, String? description, int estimatedMinutes, int completedMinutes,@JsonKey(fromJson: _priority) int priority, String deadline, ItemDateKind deadlineKind, String? earliestDate, bool isFixed, TaskStatus status, String createdAt, String updatedAt, JsonMap? planning
+ String id, String userId,@JsonKey(name: 'tag_ids') List<String> tagIds, String title, String? description, int estimatedMinutes, int completedMinutes,@JsonKey(fromJson: _priority) int priority, String deadline, ItemDateKind deadlineKind, String? earliestDate, bool isFixed, bool archived, String createdAt, String updatedAt,@JsonKey(name: 'completed_at') String? completedAt, JsonMap? planning
 });
 
 
@@ -1098,7 +1101,7 @@ class _$TaskCopyWithImpl<$Res>
 
 /// Create a copy of Task
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? userId = null,Object? tagIds = null,Object? title = null,Object? description = freezed,Object? estimatedMinutes = null,Object? completedMinutes = null,Object? priority = null,Object? deadline = null,Object? deadlineKind = null,Object? earliestDate = freezed,Object? isFixed = null,Object? status = null,Object? createdAt = null,Object? updatedAt = null,Object? planning = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? userId = null,Object? tagIds = null,Object? title = null,Object? description = freezed,Object? estimatedMinutes = null,Object? completedMinutes = null,Object? priority = null,Object? deadline = null,Object? deadlineKind = null,Object? earliestDate = freezed,Object? isFixed = null,Object? archived = null,Object? createdAt = null,Object? updatedAt = null,Object? completedAt = freezed,Object? planning = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
@@ -1112,10 +1115,11 @@ as int,deadline: null == deadline ? _self.deadline : deadline // ignore: cast_nu
 as String,deadlineKind: null == deadlineKind ? _self.deadlineKind : deadlineKind // ignore: cast_nullable_to_non_nullable
 as ItemDateKind,earliestDate: freezed == earliestDate ? _self.earliestDate : earliestDate // ignore: cast_nullable_to_non_nullable
 as String?,isFixed: null == isFixed ? _self.isFixed : isFixed // ignore: cast_nullable_to_non_nullable
-as bool,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
-as TaskStatus,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as bool,archived: null == archived ? _self.archived : archived // ignore: cast_nullable_to_non_nullable
+as bool,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
-as String,planning: freezed == planning ? _self.planning : planning // ignore: cast_nullable_to_non_nullable
+as String,completedAt: freezed == completedAt ? _self.completedAt : completedAt // ignore: cast_nullable_to_non_nullable
+as String?,planning: freezed == planning ? _self.planning : planning // ignore: cast_nullable_to_non_nullable
 as JsonMap?,
   ));
 }
@@ -1201,10 +1205,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String userId, @JsonKey(name: 'tag_ids')  List<String> tagIds,  String title,  String? description,  int estimatedMinutes,  int completedMinutes, @JsonKey(fromJson: _priority)  int priority,  String deadline,  ItemDateKind deadlineKind,  String? earliestDate,  bool isFixed,  TaskStatus status,  String createdAt,  String updatedAt,  JsonMap? planning)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String userId, @JsonKey(name: 'tag_ids')  List<String> tagIds,  String title,  String? description,  int estimatedMinutes,  int completedMinutes, @JsonKey(fromJson: _priority)  int priority,  String deadline,  ItemDateKind deadlineKind,  String? earliestDate,  bool isFixed,  bool archived,  String createdAt,  String updatedAt, @JsonKey(name: 'completed_at')  String? completedAt,  JsonMap? planning)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Task() when $default != null:
-return $default(_that.id,_that.userId,_that.tagIds,_that.title,_that.description,_that.estimatedMinutes,_that.completedMinutes,_that.priority,_that.deadline,_that.deadlineKind,_that.earliestDate,_that.isFixed,_that.status,_that.createdAt,_that.updatedAt,_that.planning);case _:
+return $default(_that.id,_that.userId,_that.tagIds,_that.title,_that.description,_that.estimatedMinutes,_that.completedMinutes,_that.priority,_that.deadline,_that.deadlineKind,_that.earliestDate,_that.isFixed,_that.archived,_that.createdAt,_that.updatedAt,_that.completedAt,_that.planning);case _:
   return orElse();
 
 }
@@ -1222,10 +1226,10 @@ return $default(_that.id,_that.userId,_that.tagIds,_that.title,_that.description
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String userId, @JsonKey(name: 'tag_ids')  List<String> tagIds,  String title,  String? description,  int estimatedMinutes,  int completedMinutes, @JsonKey(fromJson: _priority)  int priority,  String deadline,  ItemDateKind deadlineKind,  String? earliestDate,  bool isFixed,  TaskStatus status,  String createdAt,  String updatedAt,  JsonMap? planning)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String userId, @JsonKey(name: 'tag_ids')  List<String> tagIds,  String title,  String? description,  int estimatedMinutes,  int completedMinutes, @JsonKey(fromJson: _priority)  int priority,  String deadline,  ItemDateKind deadlineKind,  String? earliestDate,  bool isFixed,  bool archived,  String createdAt,  String updatedAt, @JsonKey(name: 'completed_at')  String? completedAt,  JsonMap? planning)  $default,) {final _that = this;
 switch (_that) {
 case _Task():
-return $default(_that.id,_that.userId,_that.tagIds,_that.title,_that.description,_that.estimatedMinutes,_that.completedMinutes,_that.priority,_that.deadline,_that.deadlineKind,_that.earliestDate,_that.isFixed,_that.status,_that.createdAt,_that.updatedAt,_that.planning);case _:
+return $default(_that.id,_that.userId,_that.tagIds,_that.title,_that.description,_that.estimatedMinutes,_that.completedMinutes,_that.priority,_that.deadline,_that.deadlineKind,_that.earliestDate,_that.isFixed,_that.archived,_that.createdAt,_that.updatedAt,_that.completedAt,_that.planning);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -1242,10 +1246,10 @@ return $default(_that.id,_that.userId,_that.tagIds,_that.title,_that.description
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String userId, @JsonKey(name: 'tag_ids')  List<String> tagIds,  String title,  String? description,  int estimatedMinutes,  int completedMinutes, @JsonKey(fromJson: _priority)  int priority,  String deadline,  ItemDateKind deadlineKind,  String? earliestDate,  bool isFixed,  TaskStatus status,  String createdAt,  String updatedAt,  JsonMap? planning)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String userId, @JsonKey(name: 'tag_ids')  List<String> tagIds,  String title,  String? description,  int estimatedMinutes,  int completedMinutes, @JsonKey(fromJson: _priority)  int priority,  String deadline,  ItemDateKind deadlineKind,  String? earliestDate,  bool isFixed,  bool archived,  String createdAt,  String updatedAt, @JsonKey(name: 'completed_at')  String? completedAt,  JsonMap? planning)?  $default,) {final _that = this;
 switch (_that) {
 case _Task() when $default != null:
-return $default(_that.id,_that.userId,_that.tagIds,_that.title,_that.description,_that.estimatedMinutes,_that.completedMinutes,_that.priority,_that.deadline,_that.deadlineKind,_that.earliestDate,_that.isFixed,_that.status,_that.createdAt,_that.updatedAt,_that.planning);case _:
+return $default(_that.id,_that.userId,_that.tagIds,_that.title,_that.description,_that.estimatedMinutes,_that.completedMinutes,_that.priority,_that.deadline,_that.deadlineKind,_that.earliestDate,_that.isFixed,_that.archived,_that.createdAt,_that.updatedAt,_that.completedAt,_that.planning);case _:
   return null;
 
 }
@@ -1257,7 +1261,7 @@ return $default(_that.id,_that.userId,_that.tagIds,_that.title,_that.description
 @JsonSerializable()
 
 class _Task implements Task {
-  const _Task({required this.id, required this.userId, @JsonKey(name: 'tag_ids') final  List<String> tagIds = const [], required this.title, this.description, required this.estimatedMinutes, required this.completedMinutes, @JsonKey(fromJson: _priority) required this.priority, required this.deadline, this.deadlineKind = ItemDateKind.deadline, this.earliestDate, required this.isFixed, required this.status, required this.createdAt, required this.updatedAt, final  JsonMap? planning}): _tagIds = tagIds,_planning = planning;
+  const _Task({required this.id, required this.userId, @JsonKey(name: 'tag_ids') final  List<String> tagIds = const [], required this.title, this.description, required this.estimatedMinutes, required this.completedMinutes, @JsonKey(fromJson: _priority) required this.priority, required this.deadline, this.deadlineKind = ItemDateKind.deadline, this.earliestDate, required this.isFixed, this.archived = false, required this.createdAt, required this.updatedAt, @JsonKey(name: 'completed_at') this.completedAt, final  JsonMap? planning}): _tagIds = tagIds,_planning = planning;
   factory _Task.fromJson(Map<String, dynamic> json) => _$TaskFromJson(json);
 
 @override final  String id;
@@ -1278,9 +1282,13 @@ class _Task implements Task {
 @override@JsonKey() final  ItemDateKind deadlineKind;
 @override final  String? earliestDate;
 @override final  bool isFixed;
-@override final  TaskStatus status;
+/// 不再安排但保留历史；与完成正交（替代旧 status 六态）。
+@override@JsonKey() final  bool archived;
 @override final  String createdAt;
 @override final  String updatedAt;
+/// 完成标记。用户提前确认完成、时间预算用完或旧数据迁移时写入；
+/// 非空即完成（粘性）。旧 `status` 只在反序列化边界映射到这里。
+@override@JsonKey(name: 'completed_at') final  String? completedAt;
  final  JsonMap? _planning;
 @override JsonMap? get planning {
   final value = _planning;
@@ -1304,16 +1312,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Task&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&const DeepCollectionEquality().equals(other._tagIds, _tagIds)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.estimatedMinutes, estimatedMinutes) || other.estimatedMinutes == estimatedMinutes)&&(identical(other.completedMinutes, completedMinutes) || other.completedMinutes == completedMinutes)&&(identical(other.priority, priority) || other.priority == priority)&&(identical(other.deadline, deadline) || other.deadline == deadline)&&(identical(other.deadlineKind, deadlineKind) || other.deadlineKind == deadlineKind)&&(identical(other.earliestDate, earliestDate) || other.earliestDate == earliestDate)&&(identical(other.isFixed, isFixed) || other.isFixed == isFixed)&&(identical(other.status, status) || other.status == status)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&const DeepCollectionEquality().equals(other._planning, _planning));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _Task&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&const DeepCollectionEquality().equals(other._tagIds, _tagIds)&&(identical(other.title, title) || other.title == title)&&(identical(other.description, description) || other.description == description)&&(identical(other.estimatedMinutes, estimatedMinutes) || other.estimatedMinutes == estimatedMinutes)&&(identical(other.completedMinutes, completedMinutes) || other.completedMinutes == completedMinutes)&&(identical(other.priority, priority) || other.priority == priority)&&(identical(other.deadline, deadline) || other.deadline == deadline)&&(identical(other.deadlineKind, deadlineKind) || other.deadlineKind == deadlineKind)&&(identical(other.earliestDate, earliestDate) || other.earliestDate == earliestDate)&&(identical(other.isFixed, isFixed) || other.isFixed == isFixed)&&(identical(other.archived, archived) || other.archived == archived)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt)&&(identical(other.completedAt, completedAt) || other.completedAt == completedAt)&&const DeepCollectionEquality().equals(other._planning, _planning));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,userId,const DeepCollectionEquality().hash(_tagIds),title,description,estimatedMinutes,completedMinutes,priority,deadline,deadlineKind,earliestDate,isFixed,status,createdAt,updatedAt,const DeepCollectionEquality().hash(_planning));
+int get hashCode => Object.hash(runtimeType,id,userId,const DeepCollectionEquality().hash(_tagIds),title,description,estimatedMinutes,completedMinutes,priority,deadline,deadlineKind,earliestDate,isFixed,archived,createdAt,updatedAt,completedAt,const DeepCollectionEquality().hash(_planning));
 
 @override
 String toString() {
-  return 'Task(id: $id, userId: $userId, tagIds: $tagIds, title: $title, description: $description, estimatedMinutes: $estimatedMinutes, completedMinutes: $completedMinutes, priority: $priority, deadline: $deadline, deadlineKind: $deadlineKind, earliestDate: $earliestDate, isFixed: $isFixed, status: $status, createdAt: $createdAt, updatedAt: $updatedAt, planning: $planning)';
+  return 'Task(id: $id, userId: $userId, tagIds: $tagIds, title: $title, description: $description, estimatedMinutes: $estimatedMinutes, completedMinutes: $completedMinutes, priority: $priority, deadline: $deadline, deadlineKind: $deadlineKind, earliestDate: $earliestDate, isFixed: $isFixed, archived: $archived, createdAt: $createdAt, updatedAt: $updatedAt, completedAt: $completedAt, planning: $planning)';
 }
 
 
@@ -1324,7 +1332,7 @@ abstract mixin class _$TaskCopyWith<$Res> implements $TaskCopyWith<$Res> {
   factory _$TaskCopyWith(_Task value, $Res Function(_Task) _then) = __$TaskCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String userId,@JsonKey(name: 'tag_ids') List<String> tagIds, String title, String? description, int estimatedMinutes, int completedMinutes,@JsonKey(fromJson: _priority) int priority, String deadline, ItemDateKind deadlineKind, String? earliestDate, bool isFixed, TaskStatus status, String createdAt, String updatedAt, JsonMap? planning
+ String id, String userId,@JsonKey(name: 'tag_ids') List<String> tagIds, String title, String? description, int estimatedMinutes, int completedMinutes,@JsonKey(fromJson: _priority) int priority, String deadline, ItemDateKind deadlineKind, String? earliestDate, bool isFixed, bool archived, String createdAt, String updatedAt,@JsonKey(name: 'completed_at') String? completedAt, JsonMap? planning
 });
 
 
@@ -1341,7 +1349,7 @@ class __$TaskCopyWithImpl<$Res>
 
 /// Create a copy of Task
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? userId = null,Object? tagIds = null,Object? title = null,Object? description = freezed,Object? estimatedMinutes = null,Object? completedMinutes = null,Object? priority = null,Object? deadline = null,Object? deadlineKind = null,Object? earliestDate = freezed,Object? isFixed = null,Object? status = null,Object? createdAt = null,Object? updatedAt = null,Object? planning = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? userId = null,Object? tagIds = null,Object? title = null,Object? description = freezed,Object? estimatedMinutes = null,Object? completedMinutes = null,Object? priority = null,Object? deadline = null,Object? deadlineKind = null,Object? earliestDate = freezed,Object? isFixed = null,Object? archived = null,Object? createdAt = null,Object? updatedAt = null,Object? completedAt = freezed,Object? planning = freezed,}) {
   return _then(_Task(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
@@ -1355,10 +1363,11 @@ as int,deadline: null == deadline ? _self.deadline : deadline // ignore: cast_nu
 as String,deadlineKind: null == deadlineKind ? _self.deadlineKind : deadlineKind // ignore: cast_nullable_to_non_nullable
 as ItemDateKind,earliestDate: freezed == earliestDate ? _self.earliestDate : earliestDate // ignore: cast_nullable_to_non_nullable
 as String?,isFixed: null == isFixed ? _self.isFixed : isFixed // ignore: cast_nullable_to_non_nullable
-as bool,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
-as TaskStatus,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as bool,archived: null == archived ? _self.archived : archived // ignore: cast_nullable_to_non_nullable
+as bool,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as String,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
-as String,planning: freezed == planning ? _self._planning : planning // ignore: cast_nullable_to_non_nullable
+as String,completedAt: freezed == completedAt ? _self.completedAt : completedAt // ignore: cast_nullable_to_non_nullable
+as String?,planning: freezed == planning ? _self._planning : planning // ignore: cast_nullable_to_non_nullable
 as JsonMap?,
   ));
 }
@@ -3988,272 +3997,6 @@ as int,
 
 
 /// @nodoc
-mixin _$TaskStatusSnapshot {
-
- String get id; TaskStatus get status;
-/// Create a copy of TaskStatusSnapshot
-/// with the given fields replaced by the non-null parameter values.
-@JsonKey(includeFromJson: false, includeToJson: false)
-@pragma('vm:prefer-inline')
-$TaskStatusSnapshotCopyWith<TaskStatusSnapshot> get copyWith => _$TaskStatusSnapshotCopyWithImpl<TaskStatusSnapshot>(this as TaskStatusSnapshot, _$identity);
-
-  /// Serializes this TaskStatusSnapshot to a JSON map.
-  Map<String, dynamic> toJson();
-
-
-@override
-bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is TaskStatusSnapshot&&(identical(other.id, id) || other.id == id)&&(identical(other.status, status) || other.status == status));
-}
-
-@JsonKey(includeFromJson: false, includeToJson: false)
-@override
-int get hashCode => Object.hash(runtimeType,id,status);
-
-@override
-String toString() {
-  return 'TaskStatusSnapshot(id: $id, status: $status)';
-}
-
-
-}
-
-/// @nodoc
-abstract mixin class $TaskStatusSnapshotCopyWith<$Res>  {
-  factory $TaskStatusSnapshotCopyWith(TaskStatusSnapshot value, $Res Function(TaskStatusSnapshot) _then) = _$TaskStatusSnapshotCopyWithImpl;
-@useResult
-$Res call({
- String id, TaskStatus status
-});
-
-
-
-
-}
-/// @nodoc
-class _$TaskStatusSnapshotCopyWithImpl<$Res>
-    implements $TaskStatusSnapshotCopyWith<$Res> {
-  _$TaskStatusSnapshotCopyWithImpl(this._self, this._then);
-
-  final TaskStatusSnapshot _self;
-  final $Res Function(TaskStatusSnapshot) _then;
-
-/// Create a copy of TaskStatusSnapshot
-/// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? status = null,}) {
-  return _then(_self.copyWith(
-id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
-as String,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
-as TaskStatus,
-  ));
-}
-
-}
-
-
-/// Adds pattern-matching-related methods to [TaskStatusSnapshot].
-extension TaskStatusSnapshotPatterns on TaskStatusSnapshot {
-/// A variant of `map` that fallback to returning `orElse`.
-///
-/// It is equivalent to doing:
-/// ```dart
-/// switch (sealedClass) {
-///   case final Subclass value:
-///     return ...;
-///   case _:
-///     return orElse();
-/// }
-/// ```
-
-@optionalTypeArgs TResult maybeMap<TResult extends Object?>(TResult Function( _TaskStatusSnapshot value)?  $default,{required TResult orElse(),}){
-final _that = this;
-switch (_that) {
-case _TaskStatusSnapshot() when $default != null:
-return $default(_that);case _:
-  return orElse();
-
-}
-}
-/// A `switch`-like method, using callbacks.
-///
-/// Callbacks receives the raw object, upcasted.
-/// It is equivalent to doing:
-/// ```dart
-/// switch (sealedClass) {
-///   case final Subclass value:
-///     return ...;
-///   case final Subclass2 value:
-///     return ...;
-/// }
-/// ```
-
-@optionalTypeArgs TResult map<TResult extends Object?>(TResult Function( _TaskStatusSnapshot value)  $default,){
-final _that = this;
-switch (_that) {
-case _TaskStatusSnapshot():
-return $default(_that);case _:
-  throw StateError('Unexpected subclass');
-
-}
-}
-/// A variant of `map` that fallback to returning `null`.
-///
-/// It is equivalent to doing:
-/// ```dart
-/// switch (sealedClass) {
-///   case final Subclass value:
-///     return ...;
-///   case _:
-///     return null;
-/// }
-/// ```
-
-@optionalTypeArgs TResult? mapOrNull<TResult extends Object?>(TResult? Function( _TaskStatusSnapshot value)?  $default,){
-final _that = this;
-switch (_that) {
-case _TaskStatusSnapshot() when $default != null:
-return $default(_that);case _:
-  return null;
-
-}
-}
-/// A variant of `when` that fallback to an `orElse` callback.
-///
-/// It is equivalent to doing:
-/// ```dart
-/// switch (sealedClass) {
-///   case Subclass(:final field):
-///     return ...;
-///   case _:
-///     return orElse();
-/// }
-/// ```
-
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  TaskStatus status)?  $default,{required TResult orElse(),}) {final _that = this;
-switch (_that) {
-case _TaskStatusSnapshot() when $default != null:
-return $default(_that.id,_that.status);case _:
-  return orElse();
-
-}
-}
-/// A `switch`-like method, using callbacks.
-///
-/// As opposed to `map`, this offers destructuring.
-/// It is equivalent to doing:
-/// ```dart
-/// switch (sealedClass) {
-///   case Subclass(:final field):
-///     return ...;
-///   case Subclass2(:final field2):
-///     return ...;
-/// }
-/// ```
-
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  TaskStatus status)  $default,) {final _that = this;
-switch (_that) {
-case _TaskStatusSnapshot():
-return $default(_that.id,_that.status);case _:
-  throw StateError('Unexpected subclass');
-
-}
-}
-/// A variant of `when` that fallback to returning `null`
-///
-/// It is equivalent to doing:
-/// ```dart
-/// switch (sealedClass) {
-///   case Subclass(:final field):
-///     return ...;
-///   case _:
-///     return null;
-/// }
-/// ```
-
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  TaskStatus status)?  $default,) {final _that = this;
-switch (_that) {
-case _TaskStatusSnapshot() when $default != null:
-return $default(_that.id,_that.status);case _:
-  return null;
-
-}
-}
-
-}
-
-/// @nodoc
-@JsonSerializable()
-
-class _TaskStatusSnapshot implements TaskStatusSnapshot {
-  const _TaskStatusSnapshot({required this.id, required this.status});
-  factory _TaskStatusSnapshot.fromJson(Map<String, dynamic> json) => _$TaskStatusSnapshotFromJson(json);
-
-@override final  String id;
-@override final  TaskStatus status;
-
-/// Create a copy of TaskStatusSnapshot
-/// with the given fields replaced by the non-null parameter values.
-@override @JsonKey(includeFromJson: false, includeToJson: false)
-@pragma('vm:prefer-inline')
-_$TaskStatusSnapshotCopyWith<_TaskStatusSnapshot> get copyWith => __$TaskStatusSnapshotCopyWithImpl<_TaskStatusSnapshot>(this, _$identity);
-
-@override
-Map<String, dynamic> toJson() {
-  return _$TaskStatusSnapshotToJson(this, );
-}
-
-@override
-bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _TaskStatusSnapshot&&(identical(other.id, id) || other.id == id)&&(identical(other.status, status) || other.status == status));
-}
-
-@JsonKey(includeFromJson: false, includeToJson: false)
-@override
-int get hashCode => Object.hash(runtimeType,id,status);
-
-@override
-String toString() {
-  return 'TaskStatusSnapshot(id: $id, status: $status)';
-}
-
-
-}
-
-/// @nodoc
-abstract mixin class _$TaskStatusSnapshotCopyWith<$Res> implements $TaskStatusSnapshotCopyWith<$Res> {
-  factory _$TaskStatusSnapshotCopyWith(_TaskStatusSnapshot value, $Res Function(_TaskStatusSnapshot) _then) = __$TaskStatusSnapshotCopyWithImpl;
-@override @useResult
-$Res call({
- String id, TaskStatus status
-});
-
-
-
-
-}
-/// @nodoc
-class __$TaskStatusSnapshotCopyWithImpl<$Res>
-    implements _$TaskStatusSnapshotCopyWith<$Res> {
-  __$TaskStatusSnapshotCopyWithImpl(this._self, this._then);
-
-  final _TaskStatusSnapshot _self;
-  final $Res Function(_TaskStatusSnapshot) _then;
-
-/// Create a copy of TaskStatusSnapshot
-/// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? status = null,}) {
-  return _then(_TaskStatusSnapshot(
-id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
-as String,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
-as TaskStatus,
-  ));
-}
-
-
-}
-
-
-/// @nodoc
 mixin _$ReplanPreview {
 
  String get id; String get userId; String get createdAt; List<ScheduleBlock> get before; List<ScheduleBlock> get after; List<ReplanChange> get changes; List<String> get postponed; List<String> get advanced; List<Conflict> get conflicts; List<DayChange> get dailyChanges;
@@ -4588,7 +4331,7 @@ as List<DayChange>,
 /// @nodoc
 mixin _$ReplanRun {
 
- String get id; String get userId; String get createdAt; List<ScheduleBlock> get before; List<ScheduleBlock> get after; List<ReplanChange> get changes; List<String> get postponed; List<String> get advanced; List<Conflict> get conflicts; List<DayChange> get dailyChanges; ReplanStatus get status; List<TaskStatusSnapshot>? get taskStatusBefore; List<TaskStatusSnapshot>? get taskStatusAfter;/// Local application guard; old TypeScript runs omit it and use block protection.
+ String get id; String get userId; String get createdAt; List<ScheduleBlock> get before; List<ScheduleBlock> get after; List<ReplanChange> get changes; List<String> get postponed; List<String> get advanced; List<Conflict> get conflicts; List<DayChange> get dailyChanges; ReplanStatus get status;/// Local application guard; old TypeScript runs omit it and use block protection.
  JsonMap? get localUndoGuard;
 /// Create a copy of ReplanRun
 /// with the given fields replaced by the non-null parameter values.
@@ -4602,16 +4345,16 @@ $ReplanRunCopyWith<ReplanRun> get copyWith => _$ReplanRunCopyWithImpl<ReplanRun>
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is ReplanRun&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&const DeepCollectionEquality().equals(other.before, before)&&const DeepCollectionEquality().equals(other.after, after)&&const DeepCollectionEquality().equals(other.changes, changes)&&const DeepCollectionEquality().equals(other.postponed, postponed)&&const DeepCollectionEquality().equals(other.advanced, advanced)&&const DeepCollectionEquality().equals(other.conflicts, conflicts)&&const DeepCollectionEquality().equals(other.dailyChanges, dailyChanges)&&(identical(other.status, status) || other.status == status)&&const DeepCollectionEquality().equals(other.taskStatusBefore, taskStatusBefore)&&const DeepCollectionEquality().equals(other.taskStatusAfter, taskStatusAfter)&&const DeepCollectionEquality().equals(other.localUndoGuard, localUndoGuard));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is ReplanRun&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&const DeepCollectionEquality().equals(other.before, before)&&const DeepCollectionEquality().equals(other.after, after)&&const DeepCollectionEquality().equals(other.changes, changes)&&const DeepCollectionEquality().equals(other.postponed, postponed)&&const DeepCollectionEquality().equals(other.advanced, advanced)&&const DeepCollectionEquality().equals(other.conflicts, conflicts)&&const DeepCollectionEquality().equals(other.dailyChanges, dailyChanges)&&(identical(other.status, status) || other.status == status)&&const DeepCollectionEquality().equals(other.localUndoGuard, localUndoGuard));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,userId,createdAt,const DeepCollectionEquality().hash(before),const DeepCollectionEquality().hash(after),const DeepCollectionEquality().hash(changes),const DeepCollectionEquality().hash(postponed),const DeepCollectionEquality().hash(advanced),const DeepCollectionEquality().hash(conflicts),const DeepCollectionEquality().hash(dailyChanges),status,const DeepCollectionEquality().hash(taskStatusBefore),const DeepCollectionEquality().hash(taskStatusAfter),const DeepCollectionEquality().hash(localUndoGuard));
+int get hashCode => Object.hash(runtimeType,id,userId,createdAt,const DeepCollectionEquality().hash(before),const DeepCollectionEquality().hash(after),const DeepCollectionEquality().hash(changes),const DeepCollectionEquality().hash(postponed),const DeepCollectionEquality().hash(advanced),const DeepCollectionEquality().hash(conflicts),const DeepCollectionEquality().hash(dailyChanges),status,const DeepCollectionEquality().hash(localUndoGuard));
 
 @override
 String toString() {
-  return 'ReplanRun(id: $id, userId: $userId, createdAt: $createdAt, before: $before, after: $after, changes: $changes, postponed: $postponed, advanced: $advanced, conflicts: $conflicts, dailyChanges: $dailyChanges, status: $status, taskStatusBefore: $taskStatusBefore, taskStatusAfter: $taskStatusAfter, localUndoGuard: $localUndoGuard)';
+  return 'ReplanRun(id: $id, userId: $userId, createdAt: $createdAt, before: $before, after: $after, changes: $changes, postponed: $postponed, advanced: $advanced, conflicts: $conflicts, dailyChanges: $dailyChanges, status: $status, localUndoGuard: $localUndoGuard)';
 }
 
 
@@ -4622,7 +4365,7 @@ abstract mixin class $ReplanRunCopyWith<$Res>  {
   factory $ReplanRunCopyWith(ReplanRun value, $Res Function(ReplanRun) _then) = _$ReplanRunCopyWithImpl;
 @useResult
 $Res call({
- String id, String userId, String createdAt, List<ScheduleBlock> before, List<ScheduleBlock> after, List<ReplanChange> changes, List<String> postponed, List<String> advanced, List<Conflict> conflicts, List<DayChange> dailyChanges, ReplanStatus status, List<TaskStatusSnapshot>? taskStatusBefore, List<TaskStatusSnapshot>? taskStatusAfter, JsonMap? localUndoGuard
+ String id, String userId, String createdAt, List<ScheduleBlock> before, List<ScheduleBlock> after, List<ReplanChange> changes, List<String> postponed, List<String> advanced, List<Conflict> conflicts, List<DayChange> dailyChanges, ReplanStatus status, JsonMap? localUndoGuard
 });
 
 
@@ -4639,7 +4382,7 @@ class _$ReplanRunCopyWithImpl<$Res>
 
 /// Create a copy of ReplanRun
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? userId = null,Object? createdAt = null,Object? before = null,Object? after = null,Object? changes = null,Object? postponed = null,Object? advanced = null,Object? conflicts = null,Object? dailyChanges = null,Object? status = null,Object? taskStatusBefore = freezed,Object? taskStatusAfter = freezed,Object? localUndoGuard = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? userId = null,Object? createdAt = null,Object? before = null,Object? after = null,Object? changes = null,Object? postponed = null,Object? advanced = null,Object? conflicts = null,Object? dailyChanges = null,Object? status = null,Object? localUndoGuard = freezed,}) {
   return _then(_self.copyWith(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
@@ -4652,9 +4395,7 @@ as List<String>,advanced: null == advanced ? _self.advanced : advanced // ignore
 as List<String>,conflicts: null == conflicts ? _self.conflicts : conflicts // ignore: cast_nullable_to_non_nullable
 as List<Conflict>,dailyChanges: null == dailyChanges ? _self.dailyChanges : dailyChanges // ignore: cast_nullable_to_non_nullable
 as List<DayChange>,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
-as ReplanStatus,taskStatusBefore: freezed == taskStatusBefore ? _self.taskStatusBefore : taskStatusBefore // ignore: cast_nullable_to_non_nullable
-as List<TaskStatusSnapshot>?,taskStatusAfter: freezed == taskStatusAfter ? _self.taskStatusAfter : taskStatusAfter // ignore: cast_nullable_to_non_nullable
-as List<TaskStatusSnapshot>?,localUndoGuard: freezed == localUndoGuard ? _self.localUndoGuard : localUndoGuard // ignore: cast_nullable_to_non_nullable
+as ReplanStatus,localUndoGuard: freezed == localUndoGuard ? _self.localUndoGuard : localUndoGuard // ignore: cast_nullable_to_non_nullable
 as JsonMap?,
   ));
 }
@@ -4740,10 +4481,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String userId,  String createdAt,  List<ScheduleBlock> before,  List<ScheduleBlock> after,  List<ReplanChange> changes,  List<String> postponed,  List<String> advanced,  List<Conflict> conflicts,  List<DayChange> dailyChanges,  ReplanStatus status,  List<TaskStatusSnapshot>? taskStatusBefore,  List<TaskStatusSnapshot>? taskStatusAfter,  JsonMap? localUndoGuard)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String userId,  String createdAt,  List<ScheduleBlock> before,  List<ScheduleBlock> after,  List<ReplanChange> changes,  List<String> postponed,  List<String> advanced,  List<Conflict> conflicts,  List<DayChange> dailyChanges,  ReplanStatus status,  JsonMap? localUndoGuard)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _ReplanRun() when $default != null:
-return $default(_that.id,_that.userId,_that.createdAt,_that.before,_that.after,_that.changes,_that.postponed,_that.advanced,_that.conflicts,_that.dailyChanges,_that.status,_that.taskStatusBefore,_that.taskStatusAfter,_that.localUndoGuard);case _:
+return $default(_that.id,_that.userId,_that.createdAt,_that.before,_that.after,_that.changes,_that.postponed,_that.advanced,_that.conflicts,_that.dailyChanges,_that.status,_that.localUndoGuard);case _:
   return orElse();
 
 }
@@ -4761,10 +4502,10 @@ return $default(_that.id,_that.userId,_that.createdAt,_that.before,_that.after,_
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String userId,  String createdAt,  List<ScheduleBlock> before,  List<ScheduleBlock> after,  List<ReplanChange> changes,  List<String> postponed,  List<String> advanced,  List<Conflict> conflicts,  List<DayChange> dailyChanges,  ReplanStatus status,  List<TaskStatusSnapshot>? taskStatusBefore,  List<TaskStatusSnapshot>? taskStatusAfter,  JsonMap? localUndoGuard)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String userId,  String createdAt,  List<ScheduleBlock> before,  List<ScheduleBlock> after,  List<ReplanChange> changes,  List<String> postponed,  List<String> advanced,  List<Conflict> conflicts,  List<DayChange> dailyChanges,  ReplanStatus status,  JsonMap? localUndoGuard)  $default,) {final _that = this;
 switch (_that) {
 case _ReplanRun():
-return $default(_that.id,_that.userId,_that.createdAt,_that.before,_that.after,_that.changes,_that.postponed,_that.advanced,_that.conflicts,_that.dailyChanges,_that.status,_that.taskStatusBefore,_that.taskStatusAfter,_that.localUndoGuard);case _:
+return $default(_that.id,_that.userId,_that.createdAt,_that.before,_that.after,_that.changes,_that.postponed,_that.advanced,_that.conflicts,_that.dailyChanges,_that.status,_that.localUndoGuard);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -4781,10 +4522,10 @@ return $default(_that.id,_that.userId,_that.createdAt,_that.before,_that.after,_
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String userId,  String createdAt,  List<ScheduleBlock> before,  List<ScheduleBlock> after,  List<ReplanChange> changes,  List<String> postponed,  List<String> advanced,  List<Conflict> conflicts,  List<DayChange> dailyChanges,  ReplanStatus status,  List<TaskStatusSnapshot>? taskStatusBefore,  List<TaskStatusSnapshot>? taskStatusAfter,  JsonMap? localUndoGuard)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String userId,  String createdAt,  List<ScheduleBlock> before,  List<ScheduleBlock> after,  List<ReplanChange> changes,  List<String> postponed,  List<String> advanced,  List<Conflict> conflicts,  List<DayChange> dailyChanges,  ReplanStatus status,  JsonMap? localUndoGuard)?  $default,) {final _that = this;
 switch (_that) {
 case _ReplanRun() when $default != null:
-return $default(_that.id,_that.userId,_that.createdAt,_that.before,_that.after,_that.changes,_that.postponed,_that.advanced,_that.conflicts,_that.dailyChanges,_that.status,_that.taskStatusBefore,_that.taskStatusAfter,_that.localUndoGuard);case _:
+return $default(_that.id,_that.userId,_that.createdAt,_that.before,_that.after,_that.changes,_that.postponed,_that.advanced,_that.conflicts,_that.dailyChanges,_that.status,_that.localUndoGuard);case _:
   return null;
 
 }
@@ -4796,7 +4537,7 @@ return $default(_that.id,_that.userId,_that.createdAt,_that.before,_that.after,_
 @JsonSerializable()
 
 class _ReplanRun implements ReplanRun {
-  const _ReplanRun({required this.id, required this.userId, required this.createdAt, required final  List<ScheduleBlock> before, required final  List<ScheduleBlock> after, required final  List<ReplanChange> changes, required final  List<String> postponed, required final  List<String> advanced, required final  List<Conflict> conflicts, required final  List<DayChange> dailyChanges, required this.status, final  List<TaskStatusSnapshot>? taskStatusBefore, final  List<TaskStatusSnapshot>? taskStatusAfter, final  JsonMap? localUndoGuard}): _before = before,_after = after,_changes = changes,_postponed = postponed,_advanced = advanced,_conflicts = conflicts,_dailyChanges = dailyChanges,_taskStatusBefore = taskStatusBefore,_taskStatusAfter = taskStatusAfter,_localUndoGuard = localUndoGuard;
+  const _ReplanRun({required this.id, required this.userId, required this.createdAt, required final  List<ScheduleBlock> before, required final  List<ScheduleBlock> after, required final  List<ReplanChange> changes, required final  List<String> postponed, required final  List<String> advanced, required final  List<Conflict> conflicts, required final  List<DayChange> dailyChanges, required this.status, final  JsonMap? localUndoGuard}): _before = before,_after = after,_changes = changes,_postponed = postponed,_advanced = advanced,_conflicts = conflicts,_dailyChanges = dailyChanges,_localUndoGuard = localUndoGuard;
   factory _ReplanRun.fromJson(Map<String, dynamic> json) => _$ReplanRunFromJson(json);
 
 @override final  String id;
@@ -4852,24 +4593,6 @@ class _ReplanRun implements ReplanRun {
 }
 
 @override final  ReplanStatus status;
- final  List<TaskStatusSnapshot>? _taskStatusBefore;
-@override List<TaskStatusSnapshot>? get taskStatusBefore {
-  final value = _taskStatusBefore;
-  if (value == null) return null;
-  if (_taskStatusBefore is EqualUnmodifiableListView) return _taskStatusBefore;
-  // ignore: implicit_dynamic_type
-  return EqualUnmodifiableListView(value);
-}
-
- final  List<TaskStatusSnapshot>? _taskStatusAfter;
-@override List<TaskStatusSnapshot>? get taskStatusAfter {
-  final value = _taskStatusAfter;
-  if (value == null) return null;
-  if (_taskStatusAfter is EqualUnmodifiableListView) return _taskStatusAfter;
-  // ignore: implicit_dynamic_type
-  return EqualUnmodifiableListView(value);
-}
-
 /// Local application guard; old TypeScript runs omit it and use block protection.
  final  JsonMap? _localUndoGuard;
 /// Local application guard; old TypeScript runs omit it and use block protection.
@@ -4895,16 +4618,16 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ReplanRun&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&const DeepCollectionEquality().equals(other._before, _before)&&const DeepCollectionEquality().equals(other._after, _after)&&const DeepCollectionEquality().equals(other._changes, _changes)&&const DeepCollectionEquality().equals(other._postponed, _postponed)&&const DeepCollectionEquality().equals(other._advanced, _advanced)&&const DeepCollectionEquality().equals(other._conflicts, _conflicts)&&const DeepCollectionEquality().equals(other._dailyChanges, _dailyChanges)&&(identical(other.status, status) || other.status == status)&&const DeepCollectionEquality().equals(other._taskStatusBefore, _taskStatusBefore)&&const DeepCollectionEquality().equals(other._taskStatusAfter, _taskStatusAfter)&&const DeepCollectionEquality().equals(other._localUndoGuard, _localUndoGuard));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is _ReplanRun&&(identical(other.id, id) || other.id == id)&&(identical(other.userId, userId) || other.userId == userId)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&const DeepCollectionEquality().equals(other._before, _before)&&const DeepCollectionEquality().equals(other._after, _after)&&const DeepCollectionEquality().equals(other._changes, _changes)&&const DeepCollectionEquality().equals(other._postponed, _postponed)&&const DeepCollectionEquality().equals(other._advanced, _advanced)&&const DeepCollectionEquality().equals(other._conflicts, _conflicts)&&const DeepCollectionEquality().equals(other._dailyChanges, _dailyChanges)&&(identical(other.status, status) || other.status == status)&&const DeepCollectionEquality().equals(other._localUndoGuard, _localUndoGuard));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
-int get hashCode => Object.hash(runtimeType,id,userId,createdAt,const DeepCollectionEquality().hash(_before),const DeepCollectionEquality().hash(_after),const DeepCollectionEquality().hash(_changes),const DeepCollectionEquality().hash(_postponed),const DeepCollectionEquality().hash(_advanced),const DeepCollectionEquality().hash(_conflicts),const DeepCollectionEquality().hash(_dailyChanges),status,const DeepCollectionEquality().hash(_taskStatusBefore),const DeepCollectionEquality().hash(_taskStatusAfter),const DeepCollectionEquality().hash(_localUndoGuard));
+int get hashCode => Object.hash(runtimeType,id,userId,createdAt,const DeepCollectionEquality().hash(_before),const DeepCollectionEquality().hash(_after),const DeepCollectionEquality().hash(_changes),const DeepCollectionEquality().hash(_postponed),const DeepCollectionEquality().hash(_advanced),const DeepCollectionEquality().hash(_conflicts),const DeepCollectionEquality().hash(_dailyChanges),status,const DeepCollectionEquality().hash(_localUndoGuard));
 
 @override
 String toString() {
-  return 'ReplanRun(id: $id, userId: $userId, createdAt: $createdAt, before: $before, after: $after, changes: $changes, postponed: $postponed, advanced: $advanced, conflicts: $conflicts, dailyChanges: $dailyChanges, status: $status, taskStatusBefore: $taskStatusBefore, taskStatusAfter: $taskStatusAfter, localUndoGuard: $localUndoGuard)';
+  return 'ReplanRun(id: $id, userId: $userId, createdAt: $createdAt, before: $before, after: $after, changes: $changes, postponed: $postponed, advanced: $advanced, conflicts: $conflicts, dailyChanges: $dailyChanges, status: $status, localUndoGuard: $localUndoGuard)';
 }
 
 
@@ -4915,7 +4638,7 @@ abstract mixin class _$ReplanRunCopyWith<$Res> implements $ReplanRunCopyWith<$Re
   factory _$ReplanRunCopyWith(_ReplanRun value, $Res Function(_ReplanRun) _then) = __$ReplanRunCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String userId, String createdAt, List<ScheduleBlock> before, List<ScheduleBlock> after, List<ReplanChange> changes, List<String> postponed, List<String> advanced, List<Conflict> conflicts, List<DayChange> dailyChanges, ReplanStatus status, List<TaskStatusSnapshot>? taskStatusBefore, List<TaskStatusSnapshot>? taskStatusAfter, JsonMap? localUndoGuard
+ String id, String userId, String createdAt, List<ScheduleBlock> before, List<ScheduleBlock> after, List<ReplanChange> changes, List<String> postponed, List<String> advanced, List<Conflict> conflicts, List<DayChange> dailyChanges, ReplanStatus status, JsonMap? localUndoGuard
 });
 
 
@@ -4932,7 +4655,7 @@ class __$ReplanRunCopyWithImpl<$Res>
 
 /// Create a copy of ReplanRun
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? userId = null,Object? createdAt = null,Object? before = null,Object? after = null,Object? changes = null,Object? postponed = null,Object? advanced = null,Object? conflicts = null,Object? dailyChanges = null,Object? status = null,Object? taskStatusBefore = freezed,Object? taskStatusAfter = freezed,Object? localUndoGuard = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? userId = null,Object? createdAt = null,Object? before = null,Object? after = null,Object? changes = null,Object? postponed = null,Object? advanced = null,Object? conflicts = null,Object? dailyChanges = null,Object? status = null,Object? localUndoGuard = freezed,}) {
   return _then(_ReplanRun(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,userId: null == userId ? _self.userId : userId // ignore: cast_nullable_to_non_nullable
@@ -4945,9 +4668,7 @@ as List<String>,advanced: null == advanced ? _self._advanced : advanced // ignor
 as List<String>,conflicts: null == conflicts ? _self._conflicts : conflicts // ignore: cast_nullable_to_non_nullable
 as List<Conflict>,dailyChanges: null == dailyChanges ? _self._dailyChanges : dailyChanges // ignore: cast_nullable_to_non_nullable
 as List<DayChange>,status: null == status ? _self.status : status // ignore: cast_nullable_to_non_nullable
-as ReplanStatus,taskStatusBefore: freezed == taskStatusBefore ? _self._taskStatusBefore : taskStatusBefore // ignore: cast_nullable_to_non_nullable
-as List<TaskStatusSnapshot>?,taskStatusAfter: freezed == taskStatusAfter ? _self._taskStatusAfter : taskStatusAfter // ignore: cast_nullable_to_non_nullable
-as List<TaskStatusSnapshot>?,localUndoGuard: freezed == localUndoGuard ? _self._localUndoGuard : localUndoGuard // ignore: cast_nullable_to_non_nullable
+as ReplanStatus,localUndoGuard: freezed == localUndoGuard ? _self._localUndoGuard : localUndoGuard // ignore: cast_nullable_to_non_nullable
 as JsonMap?,
   ));
 }

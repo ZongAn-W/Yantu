@@ -8,6 +8,7 @@ import '../../../core/theme.dart';
 import '../../../core/widgets.dart';
 import '../../../shared/models/planner_models.dart';
 import '../application/calendar_view_preference.dart';
+import '../domain/calendar_completion_data.dart';
 import '../domain/calendar_day_data.dart';
 import '../domain/calendar_month_data.dart';
 import '../domain/calendar_view.dart';
@@ -17,6 +18,7 @@ import '../../planner/domain/capacity.dart';
 import '../../planner/domain/planner_format.dart';
 import '../../planner/domain/progress_metrics.dart';
 import '../../planner/presentation/planner_page_state.dart';
+import 'calendar_completion_pie.dart';
 import 'calendar_day_chart.dart';
 import 'calendar_month_chart.dart';
 import 'calendar_overview.dart';
@@ -310,6 +312,10 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
       key: ValueKey('calendar-day-$_selectedDate'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // The period composition opens every scope; the day totals and the two
+        // day graphics below stay one shared read-only view of the same facts.
+        CalendarCompletionPie(data: buildCalendarCompletionData([day])),
+        const SizedBox(height: PlannerSpace.md),
         CalendarDayTotals(
           key: const ValueKey('calendar-day-totals'),
           day: day,
@@ -332,22 +338,45 @@ class _CalendarPageState extends ConsumerState<CalendarPage> {
 
   Widget _weekScope(PlannerData data, CalendarWeekView weekView) {
     final week = buildCalendarWeekData(data, _selectedDate);
-    return CalendarWeekChart(
-      key: ValueKey('calendar-week-${calendarWeekStart(_selectedDate)}'),
-      week: week,
-      view: weekView,
-      selectedDate: _selectedDate,
-      onSelectDate: _chooseDate,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        CalendarCompletionPie(
+          data: buildCalendarCompletionData([
+            for (final day in week.days) day.day,
+          ]),
+        ),
+        const SizedBox(height: PlannerSpace.md),
+        CalendarWeekChart(
+          key: ValueKey('calendar-week-${calendarWeekStart(_selectedDate)}'),
+          week: week,
+          view: weekView,
+          selectedDate: _selectedDate,
+          onSelectDate: _chooseDate,
+        ),
+      ],
     );
   }
 
   Widget _monthScope(PlannerData data, String today) {
     final month = buildCalendarMonthData(data, _selectedDate, today: today);
-    return CalendarMonthChart(
-      key: ValueKey('calendar-month-${month.month}'),
-      month: month,
-      selectedDate: _selectedDate,
-      onSelectDate: _chooseDate,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        CalendarCompletionPie(
+          data: buildCalendarCompletionData([
+            for (final day in month.days) day.day,
+          ]),
+        ),
+        const SizedBox(height: PlannerSpace.md),
+        CalendarMonthChart(
+          key: ValueKey('calendar-month-${month.month}'),
+          month: month,
+          selectedDate: _selectedDate,
+          onSelectDate: _chooseDate,
+          onOpenDayView: () => _chooseMode(CalendarMode.day),
+        ),
+      ],
     );
   }
 }
@@ -405,7 +434,7 @@ class _WeekChartSelector extends StatelessWidget {
         height: 30,
         padding: const EdgeInsets.only(left: 10, right: 8),
         decoration: BoxDecoration(
-          color: context.tokens.surface,
+          color: context.tokens.surfaceInset,
           borderRadius: PlannerRadius.controlRadius,
           border: Border.all(color: context.tokens.border, width: hairline),
         ),

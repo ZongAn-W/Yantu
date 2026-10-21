@@ -381,14 +381,19 @@ void main() {
     );
 
     test(
-      'completed and archived status never creates actual study minutes',
+      'completed and archived lifecycle never creates actual study minutes',
       () {
         final base = plannerFixture();
-        for (final status in [TaskStatus.completed, TaskStatus.archived]) {
+        final fixtures = [
+          base.tasks.single.copyWith(
+            completedAt: '2026-10-16T00:00:00.000Z',
+            completedMinutes: 999,
+          ),
+          base.tasks.single.copyWith(archived: true, completedMinutes: 999),
+        ];
+        for (final task in fixtures) {
           final data = base.copyWith(
-            tasks: [
-              base.tasks.single.copyWith(status: status, completedMinutes: 999),
-            ],
+            tasks: [task],
             blocks: [
               base.blocks.single.copyWith(
                 status: BlockStatus.completed,

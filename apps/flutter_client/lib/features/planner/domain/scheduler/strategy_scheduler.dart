@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import '../../../../shared/models/planner_models.dart';
+import '../../../../shared/models/task_lifecycle.dart';
 import '../capacity.dart' as capacity_core;
 import 'planner_scheduler.dart' as base;
 
@@ -54,8 +55,10 @@ List<JsonMap> dependenciesOf(Task task) =>
         .map(JsonMap.from)
         .toList();
 
-/// A planned ordering is a forecast; starting dependent content still needs confirmation.
+/// A planned ordering is a forecast; starting dependent content still needs the
+/// predecessor to be completed (completed_at or time budget exhausted).
 String? strategyExecutionError(PlannerData data, Task task, String date) {
+  data = normalizeTaskLifecycle(data);
   final activity = activityOf(task);
   if (activity?['state'] == 'paused' || activity?['state'] == 'ended') {
     return '该持续活动已暂停或结束，请先确认学习策略';
@@ -72,8 +75,8 @@ String? strategyExecutionError(PlannerData data, Task task, String date) {
         .firstOrNull;
     if (prior == null ||
         prior.userId != task.userId ||
-        prior.status == TaskStatus.archived) {
-      return '前置内容${prior == null ? '' : '「${prior.title}」'}尚未确认完成，请先核对内容进度';
+        prior.isArchived) {
+      return '前置事项${prior == null ? '' : '「${prior.title}」'}尚未完成';
     }
     // Execution never accepts a forecast: only real content confirmation unlocks timing.
     if (!base.dependencySatisfied(
@@ -84,7 +87,7 @@ String? strategyExecutionError(PlannerData data, Task task, String date) {
       remaining: 0,
       allowForecast: false,
     )) {
-      return '前置内容「${prior.title}」尚未确认完成，请先核对内容进度';
+      return '前置事项「${prior.title}」尚未完成';
     }
   }
   return null;
@@ -186,6 +189,9 @@ StrategyResult scheduleStrategy(
   base.SchedulerRuntime runtime = const base.SchedulerRuntime(),
 }) {
   if (from.compareTo(to) > 0) throw StateError('规划结束日期不能早于开始日期');
+  // Shared contract fixtures carry raw completed_at rows; normalize once so the
+  // time-only lifecycle drives every downstream status check.
+  data = normalizeTaskLifecycle(data);
   from = _maxDate([
     from,
     data.profile.planStartDate.isEmpty ? from : data.profile.planStartDate,
@@ -275,7 +281,7 @@ StrategyResult scheduleStrategy(
       final prior = byId[dependency['task_id']];
       if (prior == null ||
           prior.userId != task.userId ||
-          prior.status == TaskStatus.archived) {
+          prior.isArchived) {
         invalid.add(task.id);
       } else {
         visit(prior);
@@ -317,8 +323,8 @@ StrategyResult scheduleStrategy(
       .where(
         (task) =>
             task.userId == data.profile.userId &&
-            task.status != TaskStatus.completed &&
-            task.status != TaskStatus.archived &&
+            !task.isCompleted &&
+            !task.isArchived &&
             !base.contentConfirmed(task) &&
             activityOf(task)?['state'] != 'paused' &&
             activityOf(task)?['state'] != 'ended',
@@ -664,14 +670,14 @@ StrategyResult scheduleStrategy(
               : dependenciesOf(task).any(
                   (d) =>
                       d['mode'] == 'confirmed' &&
-                      byId[d['task_id']]?.status != TaskStatus.completed,
+                      !(byId[d['task_id']]?.isCompleted ?? false),
                 )
               ? 'DEPENDENCY_UNCONFIRMED'
               : 'WORK_UNSCHEDULED',
           task.id,
           task.estimatedMinutes,
           task.estimatedMinutes - left,
-          '还有$left分钟未安排；请核对容量、事项日期和前置内容进度',
+          '还有$left分钟未安排；请核对容量、事项日期和前置事项完成情况',
         ),
       );
     }

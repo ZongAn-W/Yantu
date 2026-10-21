@@ -2,6 +2,7 @@ import { z } from "zod";
 import { AI_REQUEST_TIMEOUT_MS, requestStructuredAI } from "./ai-json.js";
 import { adoptedWeeklyCapacity, plusDays } from "./capacity.js";
 import { config } from "./config.js";
+import { taskArchived } from "./planning-scheduler.js";
 import type { PlannerDocument } from "./sync-contracts.js";
 
 const date = z
@@ -80,11 +81,11 @@ const RULES = {
     "新的每周分钟模板必须可排程（每日 0–1440，考虑近期实际执行，避免一次提高超过 2 倍）；周期结束日不得晚于 target_date（若有），且不得早于今天",
   real_hours:
     "required_minutes/required_max_minutes 必须为整数分钟，表示达成目标的现实总学习时长区间",
+  progress:
+    "进度只按时间口径：progress = 实际学习分钟 / estimated_minutes，预算用完即完成；不存在内容量、内容进度、困难反馈或难度字段，也不要用它们做判断",
 } as const;
 
 type Row = Record<string, unknown>;
-const rows = (value: unknown): Row[] =>
-  Array.isArray(value) ? value.filter((item): item is Row => Boolean(item) && typeof item === "object") : [];
 const text = (value: unknown) => (typeof value === "string" ? value : "");
 const finite = (value: unknown) => (typeof value === "number" && Number.isFinite(value) ? value : 0);
 
@@ -142,7 +143,7 @@ function futureLoad(document: PlannerDocument, today: string) {
     return { date: value, planned_minutes: plannedByDate.get(value) ?? 0 };
   });
   const scheduledRemaining = document.tasks
-    .filter((task) => task.status !== "archived")
+    .filter((task) => !taskArchived(task))
     .reduce((sum, task) => sum + Math.max(0, task.estimated_minutes - task.completed_minutes), 0);
   return { next14_days: next14, scheduled_remaining_minutes: scheduledRemaining };
 }
@@ -170,7 +171,7 @@ export function buildAdjustmentContext(document: PlannerDocument, today: string)
   const baseline = document.profile.weekly_baseline_minutes ?? null;
   const rangeMin = document.profile.weekly_range_min_minutes ?? null;
   const rangeMax = document.profile.weekly_range_max_minutes ?? null;
-  const activeTasks = document.tasks.filter((task) => task.status !== "archived");
+  const activeTasks = document.tasks.filter((task) => !taskArchived(task));
   const tagName = new Map(document.tags.map((tag) => [tag.id, tag.name]));
   const tagTotals = document.tags
     .map((tag) => {
@@ -189,14 +190,14 @@ export function buildAdjustmentContext(document: PlannerDocument, today: string)
   const tasks = activeTasks.slice(0, 500).map((task) => {
     const planning = task.planning ?? null;
     const activity = planning?.activity ?? null;
-    const workload = planning?.workload ?? null;
-    const contentProgress = planning?.content_progress ?? null;
-    const feedback = planning?.feedback ?? null;
     return {
       task_id: task.id,
       tags: task.tag_ids.map(id => tagName.get(id)).filter((name): name is string => Boolean(name)),
       title: task.title,
-      status: task.status,
+      /** 主字段：归档布尔（阶段 3b）；status 仅作旧客户端/旧文档兼容参考。 */
+      archived: taskArchived(task),
+      status: task.status ?? null,
+      completed_at: task.completed_at ?? null,
       estimated_minutes: task.estimated_minutes,
       completed_minutes: task.completed_minutes,
       remaining_minutes: Math.max(0, task.estimated_minutes - task.completed_minutes),
@@ -215,16 +216,6 @@ export function buildAdjustmentContext(document: PlannerDocument, today: string)
             ...(activity.state ? { state: activity.state } : {}),
           }
         : null,
-      workload_components: rows(workload?.components)
-        .filter((component) => component.selected !== false)
-        .slice(0, 20)
-        .map((component) => ({
-          label: text(component.label),
-          quantity: finite(component.quantity),
-          minutes_per_unit: finite(component.minutes_per_unit),
-        })),
-      content_progress: contentProgress ?? null,
-      feedback: feedback ?? null,
     };
   });
   return {
@@ -278,9 +269,9 @@ const ADJUSTMENT_INSTRUCTIONS = [
   "一、目标审查（硬性要求）：先依据 goal 与 foundation 估算达成目标所需的现实总学习时长区间 required_minutes（整数分钟，单位是分钟，min 不得大于 max）。交大计算机考研（数学+408+英语+政治+真题复盘）通常需要约 1500–3000 小时；当前计划只有 400 小时属于明显不合理，应判 too_light 并真正增加总学习量。verdict 只能是 reasonable（合理）/ too_light（偏轻）/ too_heavy（偏重）。assessment 用中文说明判断依据、当前计划与目标的差距，以及本次调整如何修正。",
   "二、周期：cycle.end_date 是新的规划周期结束日期（YYYY-MM-DD），必须不早于 today；若 goal.target_date 存在且不早于 today，则不得晚于 target_date；从当前周期开始日算起总跨度不得超过 1095 天。开始日期不可修改。cycle.reason 用中文说明理由。",
   '三、学习强度：intensity.weekly_minutes 是一周七天可用分钟模板，键为 "0"(周日) 到 "6"(周六)，每天 0–1440 的整数，0 表示休息；提高强度时必须参考 recent_execution 的实际执行，避免一次提高超过 2 倍；确实不需要调整时 intensity 填 null。intensity.reason 用中文说明理由。',
-  "四、事项预算：task_updates 只能修改现有未归档事项的 estimated_minutes（整数 30–1000000，包含已完成用时的总预算），不得低于该事项的 completed_minutes；不得修改真实截止日期、最早开始日期、固定事项、已完成事项或归档事项；task_id 必须来自 tasks。reason 用中文说明理由。",
+  "四、事项预算：task_updates 只能修改现有未归档、未完成事项的 estimated_minutes（整数 30–1000000，包含已完成用时的总预算），不得低于该事项的 completed_minutes；不得修改真实截止日期、最早开始日期、固定事项、已完成事项或归档事项；task_id 必须来自 tasks。完成只按时间口径：completed_at 非空或预计时长已用完即完成，不需要内容确认。reason 用中文说明理由。",
   '五、新增事项：当现有事项不足以达成目标时，用 new_tasks 新增事项，tag_names 是零个或多个可选标签名称。只返回名称，不填任何数据库ID；已有名称请沿用 current_plan.tags 中的拼写。deadline_kind="plan_end" 表示截止日期跟随新周期结束日（deadline 可省略）；deadline_kind="deadline" 表示真实截止日期，此时必须给出 deadline 且不早于 today；earliest_date 可选且不得晚于 deadline；estimated_minutes 为整数分钟；reason 用中文说明理由。',
-  "六、禁止事项：不得删除或归档既有事项；不得改动固定事项和已完成记录；不得编造用户没有提供的事实、资料或已完成进度；目标所需时长和新增事项都要有依据。warnings 只写用户需要知道的取舍、风险或无法满足的目标。",
+  "六、禁止事项：不得删除或归档既有事项；不得改动固定事项和已完成记录；不得编造用户没有提供的事实、资料或已完成进度；目标所需时长和新增事项都要有依据。不要输出数量×单价的工作量、内容进度、困难反馈或难度字段；warnings 只写用户需要知道的取舍、风险或无法满足的目标。",
   "七、一致性：调整后总时长 = 所有未归档事项预算之和（含新增事项）。verdict=too_light 时必须在周期、强度、事项预算或新增事项上真正增加学习量；too_heavy 时适当下调强度或预算。建议量力而行，不要把每天排满到 1440 分钟。",
   "八、只返回严格符合以下结构的 JSON（字段名固定）：",
   '{"assessment":"中文审查结论","verdict":"reasonable|too_light|too_heavy","required_minutes":{"min":整数分钟,"max":整数分钟},"cycle":{"end_date":"YYYY-MM-DD","reason":"中文理由"},"intensity":{"weekly_minutes":{"0":0,"1":0,"2":0,"3":0,"4":0,"5":0,"6":0},"reason":"中文理由"}或null,"task_updates":[{"task_id":"现有事项id","estimated_minutes":整数,"reason":"中文理由"}],"new_tasks":[{"key":"短标识","tag_names":["可选标签名"],"title":"事项标题","description":"范围","estimated_minutes":整数,"earliest_date":"可选","deadline_kind":"deadline|plan_end","deadline":"可选","priority":1,"reason":"中文理由"}],"warnings":["中文提示"]}',

@@ -5,7 +5,7 @@ const today = '2026-10-16';
 const stamp = '2026-09-01T00:00:00Z';
 export const goldenClock = '2026-10-16T08:09:10.123Z';
 const profile: Profile = { user_id: 'user-1', planning_mode: 'daily', goal_text: '', goal_type: 'other', goal_subtype: '', target_date: '', target_date_confirmed: false, plan_start_date: '2026-10-16', plan_end_date: '2026-11-12', weekly_minutes: Object.fromEntries([0, 1, 2, 3, 4, 5, 6].map(day => [String(day), 480])), constraints: '', target_school: '上海交通大学', target_program: '408', exam_date: '2027-12-25', exam_end_date: '2027-12-26', daily_limit_minutes: 480, granularity_minutes: 30, buffer_minutes: 30, study_start_minute: 480, study_end_minute: 1200, foundation: '' };
-const task = (id = 'math', changes: Partial<Task> = {}): Task => ({ id, user_id: 'user-1', tag_ids: [], title: `任务 ${id}`, estimated_minutes: 600, completed_minutes: 0, priority: 3, deadline: '2026-11-30', deadline_kind: 'deadline', is_fixed: false, status: 'not_started', created_at: stamp, updated_at: stamp, ...changes });
+const task = (id = 'math', changes: Partial<Task> = {}): Task => ({ id, user_id: 'user-1', tag_ids: [], title: `任务 ${id}`, estimated_minutes: 600, completed_minutes: 0, priority: 3, deadline: '2026-11-30', deadline_kind: 'deadline', is_fixed: false, archived: false, created_at: stamp, updated_at: stamp, ...changes });
 const block = (id = 'today', changes: Partial<ScheduleBlock> = {}): ScheduleBlock => ({ id, user_id: 'user-1', task_id: 'math', date: today, start_minute: 480, duration_minutes: 60, actual_minutes: 0, is_fixed: false, status: 'planned', created_at: stamp, updated_at: stamp, ...changes });
 const log = (id = 'log', changes: Partial<TimeLog> = {}): TimeLog => ({ id, user_id: 'user-1', task_id: 'math', block_id: 'today', date: today, minutes: 30, started_at: stamp, ended_at: stamp, source: 'manual', ...changes });
 const event = (id = 'event', changes: Partial<FixedEvent> = {}): FixedEvent => ({ id, user_id: 'user-1', title: id, date: today, start_minute: 480, duration_minutes: 60, kind: 'course', repeat: 'none', created_at: stamp, updated_at: stamp, ...changes });
@@ -24,7 +24,7 @@ export function goldenInputs(): GoldenCase[] {
   add('clipped event union', 'capacity', { profile, date: today, events: [event('negative', { start_minute: -30 }), event('adjacent', { start_minute: 30 }), event('late', { start_minute: 1410 }), event('duplicate', { start_minute: 30 })] });
   for (const planning_mode of ['daily', 'timed'] as const) {
     add(`${planning_mode} rest capacity`, 'capacity', { profile: { ...profile, planning_mode }, events: recurring, date: today });
-    preview(`${planning_mode} partial completion`, { profile: { ...profile, planning_mode }, tasks: [task('math', { estimated_minutes: 120, completed_minutes: 60, status: 'in_progress' })], blocks: [block('today', { duration_minutes: 120, actual_minutes: 60, advice_text: '保留建议', advice_topics: ['范围'], completion_status: 'partial', feedback: '卡点' })], logs: [log('actual', { minutes: 60 })] });
+    preview(`${planning_mode} partial completion`, { profile: { ...profile, planning_mode }, tasks: [task('math', { estimated_minutes: 120, completed_minutes: 60 })], blocks: [block('today', { duration_minutes: 120, actual_minutes: 60, advice_text: '保留建议', advice_topics: ['范围'], completion_status: 'partial', feedback: '卡点' })], logs: [log('actual', { minutes: 60 })] });
     preview(`${planning_mode} hard daily limit across untagged tasks`, { profile: { ...profile, planning_mode, daily_limit_minutes: 1200, buffer_minutes: 0 }, tasks: [task(), task('english')], blocks: [block('math', { duration_minutes: 600 }), block('english', { task_id: 'english', duration_minutes: 600 })] });
     preview(`${planning_mode} fixed overlapping events`, { profile: { ...profile, planning_mode }, blocks: [block('today', { duration_minutes: 120 })], fixed_events: [event('course', { date: '2026-10-17', duration_minutes: 120 }), event('rest', { date: '2026-10-17', start_minute: 540, duration_minutes: 120, kind: 'rest' }), event('official', { date: '2026-10-18', duration_minutes: 720, kind: 'official_exam' })] });
     place(`${planning_mode} overlapping block`, { profile: { ...profile, planning_mode } });
@@ -44,8 +44,8 @@ export function goldenInputs(): GoldenCase[] {
   place('linked log not double counted', { blocks: [block('used', { duration_minutes: 30 })], logs: [log('linked', { block_id: 'used', minutes: 210 })] }, { duration_minutes: 30 });
   place('before earliest', { tasks: [task('math', { earliest_date: '2026-10-17' })] });
   place('after deadline', { tasks: [task('math', { deadline: '2026-10-15' })] });
-  place('completed task', { tasks: [task('math', { status: 'completed' })] });
-  place('archived task', { tasks: [task('math', { status: 'archived' })] });
+  place('completed task', { tasks: [task('math', { completed_at: stamp })] });
+  place('archived task', { tasks: [task('math', { archived: true })] });
   place('zero duration', {}, { duration_minutes: 0 });
   place('invalid placement date', {}, { date: 'bad' });
   place('invalid placement month', {}, { date: '2026-13-01' });
@@ -59,8 +59,8 @@ export function goldenInputs(): GoldenCase[] {
   preview('immutable records and reserved future', { tasks: [task(), task('fixed-task', { is_fixed: true })], blocks: [block('today'), block('past', { date: '2026-10-15' }), block('fixed', { is_fixed: true, date: '2026-10-17' }), block('completed', { status: 'completed', actual_minutes: 60, date: '2026-10-17' }), block('fixed-task-block', { task_id: 'fixed-task', date: '2026-10-17' }), block('unknown-task', { task_id: 'missing' }), block('far', { date: '2026-10-31' })] });
   preview('short remainder 15', { tasks: [task('math', { estimated_minutes: 75, completed_minutes: 60 })], blocks: [block('today', { duration_minutes: 75, actual_minutes: 60 })], logs: [log('actual', { minutes: 60 })] });
   preview('completed by logs', { logs: [log('actual', { minutes: 700 })] });
-  preview('completed by status', { tasks: [task('math', { status: 'completed' })] });
-  for (const mode of ['unfinished', 'overcompleted']) preview(`archived history ${mode}`, { tasks: [task('math', { status: 'archived', completed_minutes: 600 })], blocks: [block('past', { date: '2026-10-15' }), block('actual', { actual_minutes: 20 }), block('fixed', { is_fixed: true, date: '2026-10-17' }), block('completed', { status: 'completed', date: '2026-10-17' }), block('unstarted'), block('future', { date: '2026-10-17' })], logs: [log('actual-log', { block_id: 'actual', minutes: 20 })] }, mode, 60);
+  preview('completed by status', { tasks: [task('math', { completed_at: stamp })] });
+  for (const mode of ['unfinished', 'overcompleted']) preview(`archived history ${mode}`, { tasks: [task('math', { archived: true, completed_minutes: 600 })], blocks: [block('past', { date: '2026-10-15' }), block('actual', { actual_minutes: 20 }), block('fixed', { is_fixed: true, date: '2026-10-17' }), block('completed', { status: 'completed', date: '2026-10-17' }), block('unstarted'), block('future', { date: '2026-10-17' })], logs: [log('actual-log', { block_id: 'actual', minutes: 20 })] }, mode, 60);
   preview('remaining subtracts immutable reservation', { tasks: [task('math', { estimated_minutes: 90 })], blocks: [block('today', { duration_minutes: 90 }), block('fixed', { date: '2026-10-17', is_fixed: true, duration_minutes: 60 })] });
   preview('future placement identity and guidance retained', { blocks: [block('future', { date: '2026-10-17', duration_minutes: 30, advice_text: '建议', advice_topics: [], completion_status: 'not_started', feedback: '' })] });
   preview('stable source ties', { blocks: [block('z-source'), block('a-source')] });
@@ -73,15 +73,15 @@ export function goldenInputs(): GoldenCase[] {
   preview('overcompleted stable eligible ties', { blocks: [block('z-source', { date: '2026-10-17' }), block('a-source', { date: '2026-10-17' })] }, 'overcompleted', 30);
   preview('overcompleted stable eligible ties large array', { blocks: Array.from({ length: 40 }, (_, index) => block(`source-${40 - index}`, { date: '2026-10-17' })) }, 'overcompleted', 30);
   preview('overcompleted respects actual orphan capacity', { tasks: [task(), task('english')], blocks: [block('future', { date: '2026-10-17' })], logs: [log('orphan', { task_id: 'english', block_id: null, minutes: 420 })] }, 'overcompleted', 60);
-  preview('overcompleted fixed completed and earliest', { tasks: [task('math', { earliest_date: '2026-10-17' }), task('done', { status: 'completed' })], blocks: [block('fixed', { date: '2026-10-17', is_fixed: true }), block('actual', { date: '2026-10-17', actual_minutes: 5 }), block('completed', { date: '2026-10-17', status: 'completed' }), block('early', { date: '2026-10-18' }), block('done', { task_id: 'done', date: '2026-10-18' })] }, 'overcompleted', 120);
+  preview('overcompleted fixed completed and earliest', { tasks: [task('math', { earliest_date: '2026-10-17' }), task('done', { completed_at: stamp })], blocks: [block('fixed', { date: '2026-10-17', is_fixed: true }), block('actual', { date: '2026-10-17', actual_minutes: 5 }), block('completed', { date: '2026-10-17', status: 'completed' }), block('early', { date: '2026-10-18' }), block('done', { task_id: 'done', date: '2026-10-18' })] }, 'overcompleted', 120);
   preview('legacy missing planning mode', { profile: { ...profile, planning_mode: undefined } });
   add('task totals use max not sum', 'totals', { task: task('math', { estimated_minutes: 120, completed_minutes: 60 }), logs: [log('a', { minutes: 60 }), log('b', { task_id: 'other', minutes: 500 })] });
   add('task totals clamped', 'totals', { task: task('math', { estimated_minutes: 120, completed_minutes: 180 }), logs: [log('a', { minutes: 180 })] });
   for (const minutes of [0, 20, 90, 150, 1440, -1, 1441]) add(`record daily total ${minutes}`, 'record', { data: data({ tasks: [task('math', { estimated_minutes: 120 }), task('other')], logs: [log('old'), log('other', { task_id: 'other', block_id: null, minutes: 45 })] }), taskId: 'math', date: today, minutes });
   add('record distributes in input block order', 'record', { data: data({ blocks: [block('z', { duration_minutes: 30 }), block('a', { duration_minutes: 60 })] }), taskId: 'math', date: today, minutes: 150 });
   add('record without blocks', 'record', { data: data({ blocks: [] }), taskId: 'math', date: today, minutes: 45 });
-  add('record completed stays completed', 'record', { data: data({ tasks: [task('math', { status: 'completed' })] }), taskId: 'math', date: today, minutes: 10 });
-  add('record archived stays archived', 'record', { data: data({ tasks: [task('math', { status: 'archived' })] }), taskId: 'math', date: today, minutes: 10 });
+  add('record completed stays completed', 'record', { data: data({ tasks: [task('math', { completed_at: stamp })] }), taskId: 'math', date: today, minutes: 10 });
+  add('record archived stays archived', 'record', { data: data({ tasks: [task('math', { archived: true })] }), taskId: 'math', date: today, minutes: 10 });
   add('record missing task', 'record', { data: data(), taskId: 'missing', date: today, minutes: 30 });
   add('repeat record replaces same task day', 'records', { data: data(), entries: [{ taskId: 'math', date: today, minutes: 90 }, { taskId: 'math', date: today, minutes: 20 }, { taskId: 'math', date: '2026-10-17', minutes: 35 }] });
   add('merge task day corrections order', 'merge', { base: [log('base')], local: [log('local', { minutes: 20 })], remote: [log('remote', { minutes: 35 }), log('other', { task_id: 'other', block_id: null, minutes: 45 })] });

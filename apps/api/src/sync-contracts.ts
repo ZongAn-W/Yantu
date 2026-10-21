@@ -14,6 +14,15 @@ const date = z
 const minutes = z.number().int().min(0).max(10000000);
 const priority = z.union([z.literal(1), z.literal(2), z.literal(3)]);
 const stamp = z.string().datetime({ offset: true });
+/**
+ * 完成时间（ISO 时间戳，JSON 字段 `completed_at`）。
+ * 空字符串按 null 处理（旧客户端的空值写法）；字段缺失表示写入方不认识该字段，
+ * 由同步层按“缺失=保留云端值”处理。完成是粘性的：记录后不因预算调整自动回到未完成。
+ */
+const completedAt = z.preprocess(
+  (value) => (value === "" ? null : value),
+  stamp.nullable().optional(),
+);
 const owned = { id, user_id: id };
 const timestamped = { created_at: stamp, updated_at: stamp };
 const status = z.enum([
@@ -233,7 +242,18 @@ export const PlannerDocumentSchema = z.preprocess(normalizeLegacyTagDocument, z
             deadline_kind: z.enum(["deadline", "plan_end"]).optional(),
             earliest_date: date.optional(),
             is_fixed: z.boolean(),
-            status,
+            /**
+             * 归档布尔事实（阶段 3b 目标字段）：true=不再安排、保留历史，与完成正交。
+             * 缺失=保留云端值（旧客户端用 status 表达归档），显式 false=取消归档。
+             */
+            archived: z.boolean().optional(),
+            /**
+             * 旧状态投影：阶段 3b-A 起可选（新客户端可省略），旧客户端仍发送；
+             * 枚举继续容忍 delayed/conflict 等历史值，服务端一律归一化后再存储/返回。
+             */
+            status: status.optional(),
+            /** 完成时间；null/缺失表示未完成。 */
+            completed_at: completedAt,
             planning: ItemPlanningSchema.nullable().optional(),
           })
           .passthrough(),
@@ -375,14 +395,6 @@ export const PlannerDocumentSchema = z.preprocess(normalizeLegacyTagDocument, z
     for (const monday of Object.keys(data.profile.week_capacity_overrides ?? {})) MondayKey.parse(monday);
     for (const day of Object.keys(data.profile.date_capacity_overrides ?? {})) date.parse(day);
     for (const task of data.tasks) {
-      const workload = task.planning?.workload;
-      if (data.planning && workload) {
-        const calculated = Math.ceil(workload.components.filter(component => component.selected !== false)
-          .reduce((sum, component) => sum + component.quantity * component.minutes_per_unit, 0));
-        const expected = task.planning?.activity?.kind === "recurring" ? task.planning.activity.session_minutes : task.estimated_minutes;
-        if (calculated !== expected)
-          ctx.addIssue({ code: "custom", path: ["tasks", task.id, "planning", "workload"], message: "事项预算与结构化工作量不一致，请先修改工作量或重新评估" });
-      }
       if (
         task.tag_ids.some((tagId) => !tags.has(tagId)) ||
         new Set(task.tag_ids).size !== task.tag_ids.length ||

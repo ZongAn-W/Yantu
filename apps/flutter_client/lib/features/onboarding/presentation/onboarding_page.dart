@@ -434,7 +434,6 @@ class _OnboardingPageState extends ConsumerState<OnboardingPage> {
                     padding: const EdgeInsets.only(top: 4),
                     child: Text('标签：${item.tagNames.join('、')}'),
                   ),
-                WorkloadDetails(planning: item.planning),
               ],
             ),
             trailing: Row(

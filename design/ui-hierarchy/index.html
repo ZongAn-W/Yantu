@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>今日页 · 层次与配色对比稿</title>
+<style>
+  /* ============================================================
+     Mist Ink 2.0 · L2 静态对比稿（今日页）
+     只做设计稿，不改 Flutter 代码。
+     变体：base = 现状复刻；a = 纵深优先；b = 均衡（推荐）；c = 品牌优先
+     ============================================================ */
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    width: 1366px; height: 780px; overflow: hidden;
+    font-family: "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+    font-size: 13.5px; color: var(--text); background: var(--canvas);
+    -webkit-font-smoothing: antialiased;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* ---------------- 变体令牌 ---------------- */
+  body[data-variant="base"] {
+    --canvas:#F6F7F9; --sidebar:#F3F5F8; --surface:#FFFFFF;
+    --surface-2:#F0F3F7; --inset:#F0F3F7; --hover:#F1F3F6; --selected:#E9F1F8;
+    --text:#1C2530; --muted:#5A6675; --subtle:#8B96A5;
+    --border:#E4E8EE; --border-strong:#CDD5DF;
+    --accent:#2F5D8A; --accent-strong:#244A70; --accent-soft:#E9F1F8; --accent-border:#B8CFE4;
+    --success:#2E7D66; --success-ink:#1F5F4A; --warning:#B7791F; --warning-ink:#8A5A12;
+    --danger:#B54747; --danger-ink:#8F3733;
+    --panel-shadow:none; --btn-shadow:none;
+    --tag-fill:8%; --tag-border:22%; --tag-ink:100%;
+    --pill-fill:8%; --pill-border:22%;
+    --bar:none; --bar-w:0px;
+    --goal-shadow:none;
+  }
+
+  body[data-variant="a"] {
+    --canvas:#EEF2F8; --sidebar:#E3ECF5; --surface:#FFFFFF;
+    --surface-2:#EEF3F9; --inset:#F1F5FA; --hover:#EDF2F8; --selected:#E2EDF8;
+    --text:#1C2530; --muted:#5A6675; --subtle:#8B96A5;
+    --border:#E1E8F0; --border-strong:#C8D4E2;
+    --accent:#2F5D8A; --accent-strong:#244A70; --accent-soft:#E4EFF9; --accent-border:#B0CBE4;
+    --success:#2E7D66; --success-ink:#1F5F4A; --warning:#B7791F; --warning-ink:#8A5A12;
+    --danger:#B54747; --danger-ink:#8F3733;
+    --panel-shadow:0 1px 3px rgba(15,23,42,.08), 0 1px 2px rgba(15,23,42,.04); --btn-shadow:0 1px 2px rgba(15,23,42,.12);
+    --tag-fill:12%; --tag-border:30%; --tag-ink:70%;
+    --pill-fill:10%; --pill-border:26%;
+    --bar:#2F5D8A; --bar-w:3px;
+    --goal-shadow:0 1px 2px rgba(15,23,42,.05);
+  }
+
+  body[data-variant="b"] {
+    --canvas:#E8F0F7; --sidebar:#E1EBF5; --surface:#FFFFFF;
+    --surface-2:#EAF1F9; --inset:#EDF3F9; --hover:#E9F1F9; --selected:#DCEAF7;
+    --text:#1C2530; --muted:#5A6675; --subtle:#8B96A5;
+    --border:#DDE7F1; --border-strong:#C3D2E2;
+    --accent:#2F5D8A; --accent-strong:#244A70; --accent-soft:#E2EEF9; --accent-border:#A9C7E2;
+    --success:#2E7D66; --success-ink:#1F5F4A; --warning:#B7791F; --warning-ink:#8A5A12;
+    --danger:#B54747; --danger-ink:#8F3733;
+    --panel-shadow:0 1px 2px rgba(15,23,42,.08), 0 4px 12px rgba(15,23,42,.05);
+    --btn-shadow:0 1px 2px rgba(36,74,112,.22);
+    --tag-fill:14%; --tag-border:34%; --tag-ink:68%;
+    --pill-fill:14%; --pill-border:30%;
+    --bar:#2F5D8A; --bar-w:3px;
+    --goal-shadow:0 1px 2px rgba(15,23,42,.06);
+  }
+
+  body[data-variant="c"] {
+    --canvas:#DCE9F7; --sidebar:#D4E5F4; --surface:#FFFFFF;
+    --surface-2:#E3EEFA; --inset:#E5EFFA; --hover:#E2EDFA; --selected:#C9DFF4;
+    --text:#1C2530; --muted:#54627A; --subtle:#7D8CA0;
+    --border:#CFE0F1; --border-strong:#B7CCE1;
+    --accent:#2F5D8A; --accent-strong:#244A70; --accent-soft:#D9E9F8; --accent-border:#9ABFDF;
+    --success:#2E7D66; --success-ink:#1F5F4A; --warning:#B7791F; --warning-ink:#8A5A12;
+    --danger:#B54747; --danger-ink:#8F3733;
+    --panel-shadow:0 1px 2px rgba(15,23,42,.08), 0 6px 18px rgba(15,23,42,.06);
+    --btn-shadow:0 1px 3px rgba(36,74,112,.26);
+    --tag-fill:16%; --tag-border:38%; --tag-ink:64%;
+    --pill-fill:16%; --pill-border:34%;
+    --bar:#2F5D8A; --bar-w:4px;
+    --goal-shadow:0 1px 2px rgba(15,23,42,.07);
+  }
+
+  /* 暗色（仅均衡版 B） */
+  body[data-theme="dark"][data-variant="b"] {
+    --canvas:#0E141B; --sidebar:#111925; --surface:#171F29;
+    --surface-2:#1C2632; --inset:#1D2733; --hover:#22303F; --selected:#1E3346;
+    --text:#E7EAF0; --muted:#A8B2C0; --subtle:#808C9B;
+    --border:#283240; --border-strong:#3A4655;
+    --accent:#7FAAD8; --accent-strong:#9AC0E8; --accent-soft:#1B2B3D; --accent-border:#3E5A78;
+    --success:#6CC7A6; --success-ink:#8FD9BE; --warning:#E0AE5A; --warning-ink:#E8C177;
+    --danger:#E68A8A; --danger-ink:#EDA39C;
+    --panel-shadow:0 1px 2px rgba(0,0,0,.45); --btn-shadow:0 1px 2px rgba(0,0,0,.5);
+    --tag-fill:16%; --tag-border:38%; --tag-ink:70%;
+    --pill-fill:16%; --pill-border:34%;
+    --bar:#7FAAD8; --bar-w:3px;
+    --goal-shadow:0 1px 2px rgba(0,0,0,.35);
+  }
+
+  /* ---------------- 布局骨架 ---------------- */
+  .app { display: flex; height: 100%; }
+  .ico {
+    width: 16px; height: 16px; flex: 0 0 auto;
+    fill: none; stroke: currentColor; stroke-width: 1.7;
+    stroke-linecap: round; stroke-linejoin: round;
+  }
+
+  /* ---------------- 侧栏 ---------------- */
+  .sidebar {
+    width: 240px; flex: 0 0 240px; height: 100%;
+    background: var(--sidebar); border-right: 1px solid var(--border);
+    display: flex; flex-direction: column; padding-bottom: 12px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 18px 10px 0 16px; }
+  .logo {
+    width: 32px; height: 32px; border-radius: 9px; background: var(--accent);
+    color: #fff; display: flex; align-items: center; justify-content: center;
+    box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 26%, transparent);
+  }
+  .logo .ico { width: 18px; height: 18px; }
+  .brand-text { flex: 1; min-width: 0; }
+  .brand-name { font-size: 14.5px; font-weight: 600; line-height: 1.35; color: var(--text); }
+  .brand-sub { font-size: 11px; line-height: 1.4; color: var(--subtle); }
+  .collapse { border: 0; background: transparent; color: var(--subtle); width: 24px; height: 24px;
+    border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+
+  .group-label { margin: 18px 20px 6px; font-size: 11px; letter-spacing: .6px; color: var(--subtle); }
+  nav { display: flex; flex-direction: column; gap: 2px; padding: 0 8px; }
+  .nav-item {
+    position: relative; display: flex; align-items: center; gap: 10px;
+    height: 34px; padding: 0 12px; border-radius: 8px;
+    color: var(--muted); font-size: 13px; text-decoration: none;
+  }
+  .nav-item .ico { color: var(--muted); width: 16px; height: 16px; }
+  .nav-item.active { background: var(--selected); color: var(--accent); font-weight: 600; }
+  .nav-item.active .ico { color: var(--accent); }
+  .nav-item.active::before {
+    content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 3px;
+    border-radius: 2px; background: var(--accent);
+  }
+
+  .spacer { flex: 1; }
+  .goal-card {
+    margin: 0 12px; padding: 12px; border-radius: 10px;
+    background: var(--surface); border: 1px solid var(--border); box-shadow: var(--goal-shadow);
+  }
+  .goal-head { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--subtle); }
+  .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--accent); flex: 0 0 auto; }
+  .goal-title { margin-top: 5px; font-size: 12.5px; font-weight: 600; line-height: 1.45; }
+  .goal-meta { margin-top: 2px; font-size: 11.5px; line-height: 1.45; color: var(--muted); }
+  .sync { display: flex; align-items: center; gap: 6px; margin: 10px 16px 0; font-size: 12px; color: var(--muted); }
+  .sync .ico { width: 14px; height: 14px; }
+
+  /* ---------------- 主内容 ---------------- */
+  .content { flex: 1; min-width: 0; overflow: hidden; }
+  .page { padding: 24px 28px 40px; }
+
+  .panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; box-shadow: var(--panel-shadow);
+  }
+
+  .section-head { display: flex; align-items: center; gap: 8px; }
+  .section-head.first { margin-bottom: 12px; }
+  .section-bar {
+    width: var(--bar-w); height: 15px; border-radius: 2px; background: var(--bar); flex: 0 0 auto;
+  }
+  .section-title { font-size: 15px; font-weight: 600; line-height: 1.4; color: var(--text); }
+  body[data-variant="c"] .section-title { color: var(--accent-strong); }
+  body[data-variant="b"] .count-chip,
+  body[data-variant="c"] .count-chip {
+    background: var(--accent-soft); color: var(--accent-strong);
+    border-color: var(--accent-border);
+  }
+  .count-chip {
+    min-width: 19px; height: 19px; padding: 0 6px; border-radius: 6px;
+    background: var(--surface-2); color: var(--muted); font-size: 11px; font-weight: 500;
+    display: inline-flex; align-items: center; justify-content: center;
+    border: 1px solid transparent;
+  }
+  .flex { flex: 1; }
+
+  /* 按钮 */
+  .btn {
+    height: 32px; border-radius: 8px; border: 1px solid transparent;
+    display: inline-flex; align-items: center; gap: 6px; padding: 0 12px;
+    font-family: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; white-space: nowrap;
+  }
+  .btn.primary { background: var(--accent); color: #fff; box-shadow: var(--btn-shadow); }
+  .btn.primary .ico { width: 14px; height: 14px; }
+  .btn.soft { background: var(--accent-soft); color: var(--accent-strong); border-color: var(--accent-border); }
+  body[data-theme="dark"] .btn.primary { color: var(--canvas); }
+  .icon-btn {
+    width: 28px; height: 28px; border-radius: 7px; border: 1px solid transparent;
+    background: transparent; color: var(--muted); display: inline-flex; align-items: center;
+    justify-content: center; cursor: pointer; padding: 0; flex: 0 0 auto;
+  }
+  body[data-variant="a"] .icon-btn { background: var(--inset); border-color: var(--border); }
+  body[data-variant="b"] .icon-btn { background: var(--accent-soft); border-color: var(--accent-border); color: var(--accent-strong); }
+  body[data-variant="c"] .icon-btn { background: var(--accent-soft); border-color: var(--accent-border); color: var(--accent-strong); }
+  body[data-variant="base"] .icon-btn { background: transparent; }
+  .icon-btn .ico { width: 17px; height: 17px; }
+
+  /* 学习安排 · 计时卡 */
+  .timer-card { margin-bottom: 32px; padding: 13px 16px; display: flex; align-items: center; gap: 14px; position: relative; }
+  body[data-variant="c"] .timer-card {
+    box-shadow: inset 3px 0 0 0 var(--accent), var(--panel-shadow);
+  }
+  .task-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--task); flex: 0 0 auto; margin-top: 7px; }
+  .timer-main { flex: 1; min-width: 0; display: flex; align-items: flex-start; gap: 8px; }
+  .timer-info { min-width: 0; flex: 1; }
+  .timer-title { font-size: 14px; font-weight: 600; line-height: 1.45; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .timer-progress { display: flex; align-items: center; gap: 10px; margin-top: 7px; }
+  .track { width: 200px; height: 6px; border-radius: 3px; background: var(--surface-2); overflow: hidden; }
+  .track > i { display: block; height: 100%; border-radius: 3px; background: var(--task); }
+  .progress-text { font-size: 12px; color: var(--muted); white-space: nowrap; }
+  .extra { color: var(--warning-ink); font-weight: 600; margin-left: 2px; }
+  .timer-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+  .elapsed { font-size: 13px; font-weight: 600; color: var(--text); min-width: 62px; text-align: right; }
+  body[data-variant="c"] .elapsed {
+    color: var(--accent-strong); background: var(--accent-soft);
+    border: 1px solid var(--accent-border); border-radius: 6px;
+    padding: 3px 8px; min-width: auto;
+  }
+
+  /* 全部事项 · 工具条 */
+  .list-head { margin-bottom: 12px; }
+  .list-head .btn.primary { margin-left: 8px; }
+  .filter-row { display: flex; align-items: center; gap: 7px; margin-bottom: 10px; }
+  body[data-variant="b"] .filter-row {
+    background: var(--inset); border: 1px solid var(--border); border-radius: 9px;
+    padding: 6px 10px;
+  }
+  body[data-variant="c"] .filter-row {
+    background: var(--accent-soft); border: 1px solid var(--accent-border); border-radius: 9px;
+    padding: 6px 10px;
+  }
+  .filter-label { font-size: 12.5px; color: var(--muted); margin-right: 4px; }
+
+  /* 标签 */
+  .chip {
+    --fill: var(--tag-fill); --line: var(--tag-border);
+    display: inline-flex; align-items: center; height: 22px; padding: 0 8px; border-radius: 7px;
+    font-size: 11.5px; font-weight: 500; white-space: nowrap;
+    background: color-mix(in srgb, var(--tag) var(--fill), var(--surface));
+    border: 1px solid color-mix(in srgb, var(--tag) var(--line), var(--surface));
+    color: color-mix(in srgb, var(--tag) var(--tag-ink), var(--text));
+  }
+  body[data-theme="dark"] .chip {
+    background: color-mix(in srgb, var(--tag) var(--tag-fill), var(--surface));
+    color: color-mix(in srgb, var(--tag) var(--tag-ink), var(--text));
+  }
+
+  /* 状态胶囊 */
+  .pill {
+    display: inline-flex; align-items: center; height: 20px; padding: 0 7px; border-radius: 6px;
+    font-size: 11px; font-weight: 500; white-space: nowrap;
+    background: color-mix(in srgb, var(--tone) var(--pill-fill), var(--surface));
+    border: 1px solid color-mix(in srgb, var(--tone) var(--pill-border), var(--surface));
+    color: var(--ink);
+  }
+  .pill.todo  { --tone: var(--muted);   --ink: var(--muted); }
+  .pill.doing { --tone: var(--accent);  --ink: var(--accent-strong); }
+  .pill.done  { --tone: var(--success); --ink: var(--success-ink); }
+  .pill.over  { --tone: var(--warning); --ink: var(--warning-ink); }
+  body[data-variant="base"] .pill { --ink: var(--tone); }
+  body[data-theme="dark"] .pill { --ink: color-mix(in srgb, var(--tone) 72%, var(--text)); }
+
+  /* 事项列表 */
+  .list-panel { overflow: hidden; }
+  .task-row {
+    height: 72px; display: flex; align-items: center; gap: 10px; padding: 0 16px;
+    border-bottom: 1px solid var(--border); background: var(--surface);
+  }
+  .task-row:last-child { border-bottom: 0; }
+  .task-title { font-size: 13.5px; font-weight: 500; line-height: 1.45; flex: 1; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+  .task-row.done .task-title { color: var(--subtle); }
+  .task-row .chip { flex: 0 0 auto; }
+  .row-actions { display: flex; align-items: center; gap: 2px; margin-left: 6px; }
+  .row-actions .icon-btn { width: 26px; height: 26px; }
+  .row-actions .icon-btn .ico { width: 16px; height: 16px; }
+
+  body[data-variant="c"] .filter-row .chip { border-color: color-mix(in srgb, var(--tag) 44%, var(--surface)); }
+</style>
+</head>
+<body data-variant="base" data-theme="light">
+<script>
+  (function () {
+    var q = new URLSearchParams(location.search);
+    document.body.dataset.variant = q.get('v') || 'base';
+    document.body.dataset.theme = q.get('theme') || 'light';
+  })();
+</script>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-book" viewBox="0 0 24 24"><path d="M12 7v14"/><path d="M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="m8.5 12 2.5 2.5 4.5-5"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18M8 2v4M16 2v4"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h10M18 6h2M4 12h2M10 12h10M4 18h10M18 18h2"/><circle cx="16" cy="6" r="2"/><circle cx="8" cy="12" r="2"/><circle cx="16" cy="18" r="2"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></symbol>
+  <symbol id="i-chevron-left" viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></symbol>
+  <symbol id="i-chevron-down" viewBox="0 0 24 24"><path d="m6 9 6 6 6-6"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M17.5 19a4.5 4.5 0 0 0 .5-8.97A6 6 0 0 0 6.2 9.7 4 4 0 0 0 7 19z"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="m7 4 12.5 8L7 20z" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="12" cy="12" r="1.6" fill="currentColor" stroke="none"/><circle cx="19" cy="12" r="1.6" fill="currentColor" stroke="none"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M12.6 3H5a2 2 0 0 0-2 2v7.6a2 2 0 0 0 .6 1.4l7.4 7.4a2 2 0 0 0 2.8 0l7.2-7.2a2 2 0 0 0 0-2.8L13.9 3.6A2 2 0 0 0 12.6 3z"/><circle cx="8.3" cy="8.3" r="1.2"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+</svg>
+
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand">
+      <div class="logo"><svg class="ico"><use href="#i-book"/></svg></div>
+      <div class="brand-text">
+        <div class="brand-name">不白学</div>
+        <div class="brand-sub">学习执行台</div>
+      </div>
+      <button class="collapse" aria-label="收起侧栏"><svg class="ico"><use href="#i-chevron-left"/></svg></button>
+    </div>
+
+    <div class="group-label">工作台</div>
+    <nav>
+      <a class="nav-item active" href="#"><svg class="ico"><use href="#i-check"/></svg>今日</a>
+      <a class="nav-item" href="#"><svg class="ico"><use href="#i-calendar"/></svg>日历</a>
+      <a class="nav-item" href="#"><svg class="ico"><use href="#i-sliders"/></svg>调整</a>
+      <a class="nav-item" href="#"><svg class="ico"><use href="#i-gear"/></svg>设置</a>
+    </nav>
+
+    <div class="spacer"></div>
+
+    <div class="goal-card">
+      <div class="goal-head"><span class="dot"></span>当前目标</div>
+      <div class="goal-title">四周基础巩固（日历演示）</div>
+      <div class="goal-meta">目标日期 2026-11-08 · 还有 18 天</div>
+    </div>
+    <div class="sync"><svg class="ico"><use href="#i-cloud"/></svg>云端已同步</div>
+  </aside>
+
+  <main class="content">
+    <div class="page">
+      <!-- 学习安排 -->
+      <div class="section-head first">
+        <span class="section-bar"></span>
+        <span class="section-title">学习安排</span>
+        <span class="count-chip">1</span>
+      </div>
+
+      <div class="panel timer-card" style="--task:#A06145">
+        <div class="timer-main">
+          <span class="task-dot"></span>
+          <div class="timer-info">
+            <div class="timer-title">随机变量与分布：典型题第一轮（虚拟·原定未学满并加学）</div>
+            <div class="timer-progress">
+              <span class="track"><i style="width:50%"></i></span>
+              <span class="progress-text">30/60 分<span class="extra">+加学 25分钟</span></span>
+            </div>
+          </div>
+        </div>
+        <div class="timer-actions">
+          <button class="btn primary"><svg class="ico"><use href="#i-play"/></svg>继续计时</button>
+          <button class="icon-btn"><svg class="ico"><use href="#i-chevron-down"/></svg></button>
+          <span class="elapsed">00:55:00</span>
+        </div>
+      </div>
+
+      <!-- 全部事项 -->
+      <div class="section-head list-head">
+        <span class="section-bar"></span>
+        <span class="section-title">全部事项</span>
+        <span class="count-chip">18</span>
+        <span class="flex"></span>
+        <button class="icon-btn" aria-label="标签管理"><svg class="ico"><use href="#i-tag"/></svg></button>
+        <button class="btn primary"><svg class="ico"><use href="#i-plus"/></svg>新建事项</button>
+      </div>
+
+      <div class="filter-row">
+        <span class="filter-label">标签</span>
+        <span class="chip" style="--tag:#2F5D8A">高数</span>
+        <span class="chip" style="--tag:#2E7D66">英语</span>
+        <span class="chip" style="--tag:#B7791F">数据结构</span>
+        <span class="chip" style="--tag:#7D629F">概率统计</span>
+        <span class="chip" style="--tag:#B54747">操作系统</span>
+      </div>
+
+      <div class="panel list-panel">
+        <div class="task-row">
+          <span class="task-title">2019 年英语阅读 Text 1–4：精读与长难句（虚拟·计划未学满）</span>
+          <span class="pill doing">25%</span>
+          <span class="chip" style="--tag:#2E7D66">英语</span>
+          <span class="row-actions">
+            <button class="icon-btn"><svg class="ico"><use href="#i-clock"/></svg></button>
+            <button class="icon-btn"><svg class="ico"><use href="#i-more"/></svg></button>
+          </span>
+        </div>
+        <div class="task-row done">
+          <span class="task-title">导数与微分：计算方法及错题复盘（虚拟·周一超额完成）</span>
+          <span class="pill done">完成</span>
+          <span class="chip" style="--tag:#2F5D8A">高数</span>
+          <span class="row-actions">
+            <button class="icon-btn"><svg class="ico"><use href="#i-clock"/></svg></button>
+            <button class="icon-btn"><svg class="ico"><use href="#i-more"/></svg></button>
+          </span>
+        </div>
+        <div class="task-row">
+          <span class="task-title">操作系统：文件系统索引结构（inode、多级索引）计算题（虚拟演示）</span>
+          <span class="pill todo">未开始</span>
+          <span class="chip" style="--tag:#B54747">操作系统</span>
+          <span class="row-actions">
+            <button class="icon-btn"><svg class="ico"><use href="#i-clock"/></svg></button>
+            <button class="icon-btn"><svg class="ico"><use href="#i-more"/></svg></button>
+          </span>
+        </div>
+        <div class="task-row">
+          <span class="task-title">操作系统：页面置换算法（FIFO、LRU、CLOCK）对比与手算练习（虚拟演示）</span>
+          <span class="pill todo">未开始</span>
+          <span class="chip" style="--tag:#B54747">操作系统</span>
+          <span class="row-actions">
+            <button class="icon-btn"><svg class="ico"><use href="#i-clock"/></svg></button>
+            <button class="icon-btn"><svg class="ico"><use href="#i-more"/></svg></button>
+          </span>
+        </div>
+        <div class="task-row">
+          <span class="task-title">数据结构与算法专题：二叉树非递归遍历、线索化与平衡旋转的综合练习及错题复盘（虚拟演示超长标题）</span>
+          <span class="pill todo">未开始</span>
+          <span class="chip" style="--tag:#B7791F">数据结构</span>
+          <span class="row-actions">
+            <button class="icon-btn"><svg class="ico"><use href="#i-clock"/></svg></button>
+            <button class="icon-btn"><svg class="ico"><use href="#i-more"/></svg></button>
+          </span>
+        </div>
+        <div class="task-row">
+          <span class="task-title">栈与队列：循环队列、括号匹配与单调栈综合（虚拟·临时学习已转正式事项）</span>
+          <span class="pill doing">50%</span>
+          <span class="chip" style="--tag:#B7791F">数据结构</span>
+          <span class="row-actions">
+            <button class="icon-btn"><svg class="ico"><use href="#i-clock"/></svg></button>
+            <button class="icon-btn"><svg class="ico"><use href="#i-more"/></svg></button>
+          </span>
+        </div>
+        <div class="task-row">
+          <span class="task-title">概率统计：多维随机变量联合分布与边缘分布（第一轮）（虚拟演示）</span>
+          <span class="pill todo">未开始</span>
+          <span class="chip" style="--tag:#7D629F">概率统计</span>
+          <span class="row-actions">
+            <button class="icon-btn"><svg class="ico"><use href="#i-clock"/></svg></button>
+            <button class="icon-btn"><svg class="ico"><use href="#i-more"/></svg></button>
+          </span>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

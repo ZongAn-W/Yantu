@@ -150,7 +150,7 @@ void main() {
       final date = shanghaiToday();
       final data = base.copyWith(
         tasks: [
-          task.copyWith(status: TaskStatus.completed),
+          task.copyWith(completedAt: '2026-10-16T00:00:00.000Z'),
           other,
         ],
         blocks: [base.blocks.single.copyWith(durationMinutes: 60)],

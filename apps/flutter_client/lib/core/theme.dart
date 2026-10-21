@@ -15,7 +15,8 @@ export 'theme/tokens.dart'
         PlannerSpace,
         PlannerTokens,
         PlannerTokensBuildContext,
-        plannerPageMaxWidth;
+        plannerPageMaxWidth,
+        plannerShellBreakpoint;
 
 /// Legacy colour aliases kept byte-compatible with the W1/W2 widgets.
 ///
@@ -67,6 +68,18 @@ BorderSide plannerBorderSide(
 /// Soft, single-purpose elevation for floating layers only (never on cards).
 List<BoxShadow> plannerShadow() => const [
   BoxShadow(color: Color(0x0f0f172a), blurRadius: 16, offset: Offset(0, 4)),
+];
+
+/// Mist Ink 2.0 panel micro shadow: one hairline-like edge under raised paper.
+///
+/// Panels stack as canvas → surface → inset; only the panel plane gets this
+/// 1 px shadow (plus its hairline). Floating layers keep [plannerShadow].
+List<BoxShadow> plannerPanelShadow(BuildContext context) => [
+  BoxShadow(
+    color: context.tokens.panelShadow,
+    blurRadius: 3,
+    offset: const Offset(0, 1),
+  ),
 ];
 
 /// Digits in time and quantity columns line up, matching tabular-nums on the Web.

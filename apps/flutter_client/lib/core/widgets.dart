@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:planner_ui_vendor/planner_ui_vendor.dart';
 
+import '../shared/models/task_lifecycle.dart';
 import 'motion.dart';
 import 'theme.dart';
 
@@ -135,7 +136,7 @@ class PageHeader extends StatelessWidget {
 }
 
 /// One white panel (`一层面板仅分割不同功能区域`): 12 px radius, hairline border,
-/// no shadow. Sections inside a panel use dividers, not nested cards.
+/// 1 px micro shadow. Sections inside a panel use dividers, not nested cards.
 class PlannerPanel extends StatelessWidget {
   const PlannerPanel({
     required this.child,
@@ -160,7 +161,7 @@ class PlannerPanel extends StatelessWidget {
     final hasHeader = title != null || leading != null || trailing != null;
     // W7: a panel is a long-lived section; page rebuilds must not repaint it.
     return RepaintBoundary(
-      child: Card(
+      child: PlannerSurface(
         child: Padding(
           padding: padding,
           child: Column(
@@ -207,6 +208,26 @@ class PlannerPanel extends StatelessWidget {
   }
 }
 
+/// White paper surface with the panel hairline and micro shadow.
+///
+/// Use this for the rare panel that is not a [PlannerPanel] (for example the
+/// flat task list card) instead of a bare [Card], so every panel in a page
+/// shares the same edge in both themes.
+class PlannerSurface extends StatelessWidget {
+  const PlannerSurface({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => Container(
+    decoration: BoxDecoration(
+      borderRadius: PlannerRadius.cardRadius,
+      boxShadow: plannerPanelShadow(context),
+    ),
+    child: Card(child: child),
+  );
+}
+
 /// Section heading inside a page (e.g. 今日学习 / 全部事项).
 class SectionHeader extends StatelessWidget {
   const SectionHeader({
@@ -214,6 +235,7 @@ class SectionHeader extends StatelessWidget {
     this.subtitle,
     this.count,
     this.trailing,
+    this.centered = false,
     super.key,
   });
 
@@ -222,48 +244,57 @@ class SectionHeader extends StatelessWidget {
   final int? count;
   final Widget? trailing;
 
+  /// Centers the title/count group inside the full width (used by the merged
+  /// 「今日安排」 and 「全部事项」 blocks).
+  final bool centered;
+
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
+    final content = Wrap(
+      crossAxisAlignment: WrapCrossAlignment.center,
+      alignment: centered ? WrapAlignment.center : WrapAlignment.start,
+      spacing: PlannerSpace.sm,
+      runSpacing: 2,
+      children: [
+        Semantics(header: true, child: Text(title, style: text.titleMedium)),
+        if (count != null && count! > 0)
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+            decoration: BoxDecoration(
+              color: context.tokens.surfaceMuted,
+              borderRadius: BorderRadius.circular(PlannerRadius.xs),
+            ),
+            child: Text(
+              '$count',
+              style: text.labelSmall?.copyWith(
+                color: context.tokens.muted,
+                fontFeatures: const [FontFeature.tabularFigures()],
+              ),
+            ),
+          ),
+        if (subtitle != null)
+          Text(
+            subtitle!,
+            style: text.bodySmall?.copyWith(color: context.tokens.muted),
+          ),
+      ],
+    );
+    if (centered) {
+      // True page centering even when the block keeps right-aligned actions.
+      return Stack(
+        alignment: Alignment.center,
+        children: [
+          Center(child: content),
+          if (trailing != null)
+            Align(alignment: Alignment.centerRight, child: trailing!),
+        ],
+      );
+    }
     return Row(
       crossAxisAlignment: CrossAxisAlignment.center,
       children: [
-        Expanded(
-          child: Wrap(
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: PlannerSpace.sm,
-            runSpacing: 2,
-            children: [
-              Semantics(
-                header: true,
-                child: Text(title, style: text.titleMedium),
-              ),
-              if (count != null && count! > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 6,
-                    vertical: 1,
-                  ),
-                  decoration: BoxDecoration(
-                    color: context.tokens.surfaceMuted,
-                    borderRadius: BorderRadius.circular(PlannerRadius.xs),
-                  ),
-                  child: Text(
-                    '$count',
-                    style: text.labelSmall?.copyWith(
-                      color: context.tokens.muted,
-                      fontFeatures: const [FontFeature.tabularFigures()],
-                    ),
-                  ),
-                ),
-              if (subtitle != null)
-                Text(
-                  subtitle!,
-                  style: text.bodySmall?.copyWith(color: context.tokens.muted),
-                ),
-            ],
-          ),
-        ),
+        Expanded(child: content),
         if (trailing != null) ...[
           const SizedBox(width: PlannerSpace.md),
           trailing!,
@@ -271,6 +302,17 @@ class SectionHeader extends StatelessWidget {
       ],
     );
   }
+}
+
+/// Semantic tone for a task time-progress pill.
+///
+/// Completed → success, already started → accent, not started/archived → muted.
+/// The pill then carries state colour without adding a second accent hue.
+Color taskProgressTone(TaskTimeProgress progress, PlannerTokens tokens) {
+  if (progress.archived) return tokens.muted;
+  if (progress.completed) return tokens.success;
+  if (progress.started) return tokens.accent;
+  return tokens.muted;
 }
 
 /// Inline message used for sync/offline/error states.
@@ -622,19 +664,22 @@ class PlannerTag extends StatefulWidget {
 class _PlannerTagState extends State<PlannerTag> {
   @override
   Widget build(BuildContext context) {
-    final tone = widget.color ?? context.tokens.muted;
-    final foreground = widget.selected ? context.tokens.accent : tone;
+    final tokens = context.tokens;
+    final tone = widget.color ?? tokens.muted;
+    final explicitTone = widget.color;
+    // Mist Ink 2.0: 12% fill + 30% border keeps tags readable on white, while the
+    // label is mixed 70/30 with body ink so 11–11.5 px Chinese still clears 4.5:1.
+    final foreground = widget.selected
+        ? tokens.accent
+        : (explicitTone == null
+              ? tone
+              : Color.lerp(explicitTone, tokens.text, 0.30)!);
     final background = widget.selected
-        ? context.tokens.accentSoft
-        : Color.alphaBlend(
-            tone.withValues(alpha: 0.08),
-            context.tokens.surface,
-          );
+        ? tokens.accentSoft
+        : Color.alphaBlend(tone.withValues(alpha: 0.12), tokens.surface);
     final borderColor = widget.selected
-        ? context.tokens.accentBorder
-        : (widget.color == null
-              ? context.tokens.border
-              : tone.withValues(alpha: 0.22));
+        ? tokens.accentBorder
+        : (explicitTone == null ? tokens.border : tone.withValues(alpha: 0.30));
     final content = Padding(
       padding: EdgeInsets.symmetric(
         horizontal: widget.dense ? 6 : 7,
@@ -840,7 +885,7 @@ class _PlannerSegmentedState<T> extends State<PlannerSegmented<T>> {
                 width: constraints.maxWidth.isFinite ? null : count * 64.0,
                 padding: const EdgeInsets.all(2),
                 decoration: BoxDecoration(
-                  color: context.tokens.surfaceMuted,
+                  color: context.tokens.surfaceInset,
                   borderRadius: BorderRadius.circular(PlannerRadius.small),
                   border: Border.all(color: context.tokens.border),
                 ),
@@ -941,6 +986,23 @@ class _PlannerSegmentedState<T> extends State<PlannerSegmented<T>> {
   }
 }
 
+/// Compact icon-button chrome on the inset plane.
+///
+/// Mirrors [PlannerIconAction] so bare [IconButton]s in dense rows (expand,
+/// undo, move) share the same 30 px inset square as the planner actions.
+ButtonStyle plannerIconButtonStyle(BuildContext context) =>
+    IconButton.styleFrom(
+      foregroundColor: context.tokens.muted,
+      backgroundColor: context.tokens.surfaceInset,
+      minimumSize: const Size(30, 30),
+      padding: EdgeInsets.zero,
+      iconSize: 17,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(PlannerRadius.xs),
+        side: BorderSide(color: context.tokens.border),
+      ),
+    );
+
 /// Compact icon action with a desktop hover state, used inside dense rows.
 class PlannerIconAction extends StatelessWidget {
   const PlannerIconAction({
@@ -962,18 +1024,21 @@ class PlannerIconAction extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final tokens = context.tokens;
     final enabled = onPressed != null;
-    final color = enabled
-        ? (tone ?? context.tokens.muted)
-        : context.tokens.subtle;
+    final color = enabled ? (tone ?? tokens.muted) : tokens.subtle;
     return Tooltip(
       message: tooltip,
       child: Material(
-        color: Colors.transparent,
+        color: enabled ? tokens.surfaceInset : Colors.transparent,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(PlannerRadius.xs),
+          side: BorderSide(color: enabled ? tokens.border : Colors.transparent),
+        ),
         child: InkWell(
           onTap: onPressed,
           borderRadius: BorderRadius.circular(PlannerRadius.xs),
-          hoverColor: context.tokens.hover,
+          hoverColor: tokens.hover,
           child: SizedBox.square(
             dimension: size,
             child: Icon(icon, size: iconSize, color: color),

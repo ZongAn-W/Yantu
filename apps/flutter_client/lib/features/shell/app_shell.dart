@@ -12,6 +12,7 @@ import '../planner/application/planner_session.dart';
 import '../planner/application/study_timer.dart';
 import '../planner/domain/planner_format.dart';
 import '../planner/domain/study_day.dart' show timeLogRelationLabels;
+import '../tasks/presentation/task_quick_actions.dart';
 
 const syncLabels = <SyncStatus, String>{
   SyncStatus.demo: '本地计划',
@@ -68,7 +69,7 @@ class AppShell extends StatefulWidget {
   final Widget child;
 
   /// Below this width the sidebar is replaced by the bottom navigation bar.
-  static const sidebarBreakpoint = 900.0;
+  static const sidebarBreakpoint = plannerShellBreakpoint;
 
   @override
   State<AppShell> createState() => _AppShellState();
@@ -135,7 +136,10 @@ class _AppShellState extends State<AppShell> {
             ),
           ],
         ),
-        actions: const [_SyncAction(), SizedBox(width: 6)],
+        actions: const [
+          TaskQuickActions(iconSize: 19, buttonSize: 34),
+          SizedBox(width: 8),
+        ],
         bottom: const PreferredSize(
           preferredSize: Size.fromHeight(1),
           child: Divider(height: 1),
@@ -461,6 +465,7 @@ class _SidebarState extends ConsumerState<_Sidebar> {
                               borderRadius: BorderRadius.circular(
                                 PlannerRadius.control,
                               ),
+                              boxShadow: plannerPanelShadow(context),
                             ),
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
@@ -510,20 +515,9 @@ class _SidebarState extends ConsumerState<_Sidebar> {
                             ),
                           ),
                         ),
-                      Padding(
-                        padding: EdgeInsets.fromLTRB(
-                          collapsed ? 8 : 12,
-                          8,
-                          collapsed ? 8 : 12,
-                          12,
-                        ),
-                        child: _SyncTile(
-                          status: snapshot.status,
-                          pending: snapshot.pending,
-                          collapsed: collapsed,
-                          onTap: () => context.go('/settings'),
-                        ),
-                      ),
+                      // Sync status lives in Settings; the sidebar ends after
+                      // the current-goal card.
+                      const SizedBox(height: PlannerSpace.md),
                     ],
                   ),
                 ),
@@ -765,123 +759,6 @@ class _SidebarTileState extends State<_SidebarTile> {
               : const [],
         ),
         child: tile,
-      ),
-    );
-  }
-}
-
-class _SyncTile extends StatefulWidget {
-  const _SyncTile({
-    required this.status,
-    required this.pending,
-    required this.collapsed,
-    required this.onTap,
-  });
-
-  final SyncStatus status;
-  final bool pending;
-  final bool collapsed;
-  final VoidCallback onTap;
-
-  @override
-  State<_SyncTile> createState() => _SyncTileState();
-}
-
-class _SyncTileState extends State<_SyncTile> {
-  bool _hover = false;
-
-  @override
-  Widget build(BuildContext context) {
-    final label = syncLabels[widget.status] ?? '等待同步';
-    final icon = Icon(
-      LucideIcons.cloud,
-      size: widget.collapsed ? 17 : 15,
-      color: syncTone(widget.status, context.tokens),
-    );
-    final Widget content = widget.collapsed
-        ? Tooltip(
-            message: widget.pending ? '$label · 有待同步修改' : label,
-            child: SizedBox(
-              height: 34,
-              child: Stack(
-                alignment: Alignment.center,
-                children: [
-                  icon,
-                  if (widget.pending)
-                    Positioned(
-                      right: 2,
-                      top: 2,
-                      child: StatusDot(color: context.tokens.warning, size: 5),
-                    ),
-                ],
-              ),
-            ),
-          )
-        : Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-            child: Row(
-              children: [
-                icon,
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                    label,
-                    style: TextStyle(
-                      fontSize: 12,
-                      height: 1.4,
-                      color: context.tokens.muted,
-                    ),
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
-                if (widget.pending)
-                  Tooltip(
-                    message: '有待同步修改',
-                    child: Icon(
-                      LucideIcons.cloudOff,
-                      size: 14,
-                      color: context.tokens.warning,
-                    ),
-                  ),
-              ],
-            ),
-          );
-    return Material(
-      color: _hover ? context.tokens.hover : Colors.transparent,
-      borderRadius: BorderRadius.circular(PlannerRadius.small),
-      child: InkWell(
-        onTap: widget.onTap,
-        onHover: (hovering) => setState(() => _hover = hovering),
-        borderRadius: BorderRadius.circular(PlannerRadius.small),
-        hoverColor: Colors.transparent,
-        child: content,
-      ),
-    );
-  }
-}
-
-/// Compact sync indicator for the app bar on narrow screens.
-class _SyncAction extends ConsumerWidget {
-  const _SyncAction();
-
-  @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final snapshot = ref.watch(plannerDataProvider);
-    return Tooltip(
-      message: snapshot.message.isEmpty
-          ? (syncLabels[snapshot.status] ?? '等待同步')
-          : snapshot.message,
-      child: TextButton.icon(
-        onPressed: () => context.go('/settings'),
-        icon: Icon(
-          snapshot.pending ? LucideIcons.cloudOff : LucideIcons.cloud,
-          size: 16,
-          color: syncTone(snapshot.status, context.tokens),
-        ),
-        label: Text(
-          syncLabels[snapshot.status] ?? '等待同步',
-          style: const TextStyle(fontSize: 12),
-        ),
       ),
     );
   }

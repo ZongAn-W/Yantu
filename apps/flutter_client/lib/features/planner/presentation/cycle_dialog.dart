@@ -6,6 +6,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../core/theme.dart';
 import '../../../core/widgets.dart';
 import '../../../shared/models/planner_models.dart';
+import '../../../shared/models/task_lifecycle.dart';
 import '../application/planner_session.dart';
 import '../domain/capacity.dart' as capacity;
 import '../domain/plan_cycle.dart';
@@ -187,8 +188,8 @@ class _ContinueCycleDialogState extends ConsumerState<ContinueCycleDialog> {
     );
     final pendingItems = extended.tasks.where(
       (task) =>
-          task.status != TaskStatus.completed &&
-          task.status != TaskStatus.archived &&
+          !task.isCompleted &&
+          !task.isArchived &&
           task.estimatedMinutes > task.completedMinutes,
     );
     final remaining = pendingItems.fold<int>(

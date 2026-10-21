@@ -1,5 +1,3 @@
-export type TaskStatus =
-  "not_started" | "in_progress" | "completed" | "delayed" | "conflict" | "archived";
 export type Priority = 1 | 2 | 3;
 export interface Tag {
   id: string;
@@ -22,7 +20,10 @@ export interface Task {
   deadline_kind?: "deadline" | "plan_end";
   earliest_date?: string;
   is_fixed: boolean;
-  status: TaskStatus;
+  /** 不再安排但保留历史；与完成正交。 */
+  archived: boolean;
+  /** 完成时间（ISO 时间戳）；非空即完成，时间口径的唯一完成标记。 */
+  completed_at?: string | null;
   created_at: string;
   updated_at: string;
   planning?: import("../../../apps/api/src/planning-scheduler").StrategyTask["planning"];

@@ -1,4 +1,5 @@
 import '../../../shared/models/planner_models.dart';
+import '../../../shared/models/task_lifecycle.dart';
 import 'capacity.dart' as capacity;
 import 'planner_format.dart';
 import 'scheduler/planner_scheduler.dart' as scheduler;
@@ -227,8 +228,8 @@ PlanCompletion completePlanPeriod(
   final impacts = <String>[
     for (final task in data.tasks)
       if (task.deadlineKind == ItemDateKind.deadline &&
-          task.status != TaskStatus.archived &&
-          task.status != TaskStatus.completed &&
+          !task.isArchived &&
+          !task.isCompleted &&
           task.deadline.compareTo(end) <= 0 &&
           scheduler.forecastRemainingMinutes(
                 task,
@@ -265,8 +266,8 @@ PlannerData extendPlanCycle(
     tasks: [
       for (final task in data.tasks)
         if (task.deadlineKind == ItemDateKind.planEnd &&
-            task.status != TaskStatus.completed &&
-            task.status != TaskStatus.archived)
+            !task.isCompleted &&
+            !task.isArchived)
           () {
             final earliest = task.earliestDate ?? today;
             final deadline = end.compareTo(earliest) < 0 ? task.deadline : end;
@@ -358,8 +359,8 @@ ScheduleAdjustment reschedulePlan(
     if (loggedBlocks.contains(block.id)) return false;
     if (loggedTaskDays.contains('${block.taskId}:${block.date}')) return false;
     if (task == null || task.isFixed) return false;
-    if (task.status == TaskStatus.completed ||
-        task.status == TaskStatus.archived) {
+    if (task.isCompleted ||
+        task.isArchived) {
       return false;
     }
     return true;
@@ -451,8 +452,8 @@ ScheduleAdjustment reschedulePlan(
   final realDeadlineImpacts = <String>[];
   for (final task in data.tasks) {
     if (task.deadlineKind != ItemDateKind.deadline) continue;
-    if (task.status == TaskStatus.archived ||
-        task.status == TaskStatus.completed) {
+    if (task.isArchived ||
+        task.isCompleted) {
       continue;
     }
     int plannedInRange(Iterable<ScheduleBlock> blocks) => blocks

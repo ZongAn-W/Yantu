@@ -220,66 +220,6 @@ class PlanningRouteView extends StatelessWidget {
       .join('；');
 }
 
-class WorkloadDetails extends StatelessWidget {
-  const WorkloadDetails({required this.planning, super.key});
-  final JsonMap? planning;
-
-  @override
-  Widget build(BuildContext context) {
-    if (planning == null) return const SizedBox.shrink();
-    final workload = planning!['workload'] is Map
-        ? JsonMap.from(planning!['workload'] as Map)
-        : <String, dynamic>{};
-    final activity = planning!['activity'] is Map
-        ? JsonMap.from(planning!['activity'] as Map)
-        : <String, dynamic>{};
-    final dependencies = planningEntries(planning!['dependencies']);
-    return Padding(
-      padding: const EdgeInsets.only(top: 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (final component in planningEntries(workload['components']))
-            Text(
-              '${component['selected'] == false ? '备选，未计入：' : ''}${planningText(component['label'])} '
-              '${component['quantity'] ?? ''} ${planningText(component['unit'])} × '
-              '${component['minutes_per_unit'] ?? ''} 分钟',
-            ),
-          if (planningText(workload['source']).isNotEmpty)
-            Text('估算依据：${workload['source']}'),
-          if (planningText(workload['confidence']).isNotEmpty)
-            Text(
-              '估算可信度：${switch (workload['confidence']) {
-                'high' => '较高',
-                'medium' => '一般',
-                'low' => '待校准',
-                _ => workload['confidence'],
-              }}',
-            ),
-          if (planningText(workload['calibration']).isNotEmpty)
-            Text('校准方式：${workload['calibration']}'),
-          if (activity['kind'] == 'recurring')
-            Text(
-              '持续练习：每周 ${activity['sessions_per_week'] ?? '?'} 次，每次 '
-              '${activity['session_minutes'] ?? '?'} 分钟；'
-              '${activity['starts_on'] ?? '待定'} 至 ${activity['ends_on'] ?? '待定'}'
-              '${activity['state'] == 'paused'
-                  ? '（已暂停）'
-                  : activity['state'] == 'ended'
-                  ? '（已结束）'
-                  : ''}',
-            ),
-          if (dependencies.isNotEmpty)
-            Text(
-              '前置条件：${dependencies.length} 项，其中 '
-              '${dependencies.where((d) => d['mode'] == 'confirmed').length} 项需要确认内容完成',
-            ),
-        ],
-      ),
-    );
-  }
-}
-
 class PlanningPreviewView extends StatelessWidget {
   const PlanningPreviewView({required this.preview, super.key});
   final JsonMap preview;

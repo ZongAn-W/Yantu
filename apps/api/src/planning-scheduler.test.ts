@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { resolveDayCapacity, resolveWeekCapacity, scheduleStrategy, type CapacityProfile, type StrategyInput } from "./planning-scheduler.js";
+import { dependencySatisfied, deriveTaskStatus, resolveDayCapacity, resolveWeekCapacity, scheduleStrategy, taskArchived, taskCompleted, type CapacityProfile, type StrategyInput } from "./planning-scheduler.js";
 
 /**
  * The API owns the production copy of the strategy scheduler. It is checked against the
@@ -258,5 +258,86 @@ describe("flexible capacity scheduling (net / overrides / priority mixing)", () 
     expect(week.budget_override_minutes).toBe(100);
     expect(week.days["2026-10-19"]).toBe(150);
     expect(week.conflicts).toEqual([{ code: "WEEK_TOTAL_EXCEEDED", total: 100, resolved: 150 }]);
+  });
+});
+
+describe("time-based completion rules", () => {
+  const base = { estimated_minutes: 120, completed_minutes: 0 };
+
+  it("treats completed_at, legacy completed status and an exhausted time budget as completed", () => {
+    expect(taskCompleted({ ...base })).toBe(false);
+    expect(taskCompleted({ ...base, completed_at: "2026-10-18T00:00:00.000Z" })).toBe(true);
+    expect(taskCompleted({ ...base, status: "completed" })).toBe(true);
+    expect(taskCompleted({ ...base, completed_minutes: 120 })).toBe(true);
+    expect(taskCompleted({ ...base, completed_minutes: 90 })).toBe(false);
+  });
+
+  it("derives the legacy status projection from time facts and keeps archived independent", () => {
+    const derive = (extra: Record<string, unknown>) => deriveTaskStatus({ stored_status: "not_started",
+      actual_minutes: 0, estimated_minutes: 120, ...extra } as Parameters<typeof deriveTaskStatus>[0]);
+    expect(derive({})).toBe("not_started");
+    expect(derive({ actual_minutes: 30 })).toBe("in_progress");
+    expect(derive({ actual_minutes: 120 })).toBe("completed");
+    expect(derive({ actual_minutes: 30, completed_at: "2026-10-18T00:00:00.000Z" })).toBe("completed");
+    expect(deriveTaskStatus({ stored_status: "archived", completed_at: "2026-10-18T00:00:00.000Z",
+      actual_minutes: 500, estimated_minutes: 120 })).toBe("archived");
+    // 阶段 3b-A：新 archived 字段优先于旧 status；显式 false 可取消归档。
+    expect(deriveTaskStatus({ archived: true, stored_status: "not_started",
+      actual_minutes: 0, estimated_minutes: 120 })).toBe("archived");
+    expect(deriveTaskStatus({ archived: false, stored_status: "archived",
+      actual_minutes: 0, estimated_minutes: 120 })).toBe("not_started");
+    expect(deriveTaskStatus({ archived: false, stored_status: "archived",
+      actual_minutes: 30, estimated_minutes: 120 })).toBe("in_progress");
+    // delayed / conflict 不再作为事项状态：读取时按时间规则重新派生。
+    expect(deriveTaskStatus({ stored_status: "delayed", actual_minutes: 0, estimated_minutes: 120 })).toBe("not_started");
+    expect(deriveTaskStatus({ stored_status: "conflict", actual_minutes: 0, estimated_minutes: 120 })).toBe("not_started");
+    expect(deriveTaskStatus({ stored_status: "conflict", actual_minutes: 30, estimated_minutes: 120 })).toBe("in_progress");
+  });
+
+  it("resolves the archived dual form with the new field taking priority", () => {
+    expect(taskArchived({})).toBe(false);
+    // 旧 status 兼容：仅当新字段缺失时才生效。
+    expect(taskArchived({ status: "archived" })).toBe(true);
+    expect(taskArchived({ status: "not_started" })).toBe(false);
+    // 新字段显式优先，可取消旧 status 的归档投影。
+    expect(taskArchived({ archived: true, status: "not_started" })).toBe(true);
+    expect(taskArchived({ archived: false, status: "archived" })).toBe(false);
+  });
+
+  it("never schedules archived tasks even when status is missing or stale", () => {
+    const input = {
+      profile: { user_id: "user", planning_mode: "daily" as const, daily_limit_minutes: 480, buffer_minutes: 0,
+        granularity_minutes: 30, study_start_minute: 480, study_end_minute: 1320,
+        plan_start_date: "2026-10-19", plan_end_date: "2026-10-25",
+        weekly_minutes: { "0": 0, "1": 120, "2": 120, "3": 120, "4": 120, "5": 120, "6": 0 } },
+      tasks: [{ id: "archived", user_id: "user", title: "archived", estimated_minutes: 120, completed_minutes: 0,
+        priority: 2, deadline: "2026-10-25", is_fixed: false, archived: true }],
+      blocks: [], logs: [], fixed_events: [],
+    } as StrategyInput;
+    const result = scheduleStrategy(input, "2026-10-19", "2026-10-25", { now: () => new Date(clock), newId: () => "new" });
+    expect(result.scheduled_minutes).toBe(0);
+    expect(result.blocks).toHaveLength(0);
+  });
+
+  it("does not schedule tasks whose time budget is already exhausted", () => {
+    const input = {
+      profile: { user_id: "user", planning_mode: "daily" as const, daily_limit_minutes: 480, buffer_minutes: 0,
+        granularity_minutes: 30, study_start_minute: 480, study_end_minute: 1320,
+        plan_start_date: "2026-10-19", plan_end_date: "2026-10-25",
+        weekly_minutes: { "0": 0, "1": 120, "2": 120, "3": 120, "4": 120, "5": 120, "6": 0 } },
+      tasks: [{ id: "done", user_id: "user", title: "done", estimated_minutes: 120, completed_minutes: 120,
+        priority: 2, deadline: "2026-10-25", is_fixed: false, status: "in_progress" }],
+      blocks: [], logs: [], fixed_events: [],
+    } as StrategyInput;
+    const result = scheduleStrategy(input, "2026-10-19", "2026-10-25", { now: () => new Date(clock), newId: () => "new" });
+    expect(result.scheduled_minutes).toBe(0);
+    expect(result.unscheduled_minutes).toBe(0);
+  });
+
+  it("unlocks dependencies when the predecessor's time budget is exhausted", () => {
+    const prior = { id: "prior", user_id: "user", title: "prior", estimated_minutes: 120, completed_minutes: 120,
+      priority: 2, deadline: "2026-10-25", is_fixed: false, status: "in_progress" };
+    expect(dependencySatisfied({ prior, dependency: { mode: "confirmed" }, priorBlocks: [],
+      date: "2026-10-20", remaining: 0 })).toBe(true);
   });
 });

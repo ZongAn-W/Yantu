@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -6,6 +8,7 @@ import '../../../core/theme.dart';
 import '../../../core/widgets.dart';
 import '../../../core/sync/sync_state.dart';
 import '../../../shared/models/planner_models.dart';
+import '../../../shared/models/task_lifecycle.dart';
 import '../../dashboard/presentation/today_scroll.dart';
 import '../../planner/application/planner_session.dart';
 import '../../planner/domain/capacity.dart' as capacity;
@@ -317,7 +320,7 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
     final tasks =
         [
           for (final task in data.tasks)
-            if (task.status != TaskStatus.archived) task,
+            if (!taskIsArchived(task)) task,
         ]..sort((a, b) {
           final deadline = a.deadline.compareTo(b.deadline);
           if (deadline != 0) return deadline;
@@ -375,6 +378,7 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
             for (var index = 0; index < shown.length; index++) ...[
               if (index > 0) const _PanelDivider(),
               _TaskProgressRow(
+                data: data,
                 task: shown[index],
                 tagNames: [
                   for (final id in shown[index].tagIds)
@@ -502,8 +506,8 @@ class _AdjustPlanPageState extends ConsumerState<AdjustPlanPage> {
     final remainingDays = ended ? 0 : daysBetween(today, end) + 1;
     final pendingTasks = [
       for (final task in data.tasks)
-        if (task.status != TaskStatus.archived &&
-            task.status != TaskStatus.completed &&
+        if (!taskIsArchived(task) &&
+            !taskIsCompleted(data, task) &&
             task.estimatedMinutes > task.completedMinutes)
           task,
     ];
@@ -627,22 +631,24 @@ class _DayCapacityStat extends StatelessWidget {
   );
 }
 
-/// 一个未归档事项的完成度：完成分钟 / 预算分钟、百分比与日期语义。
+/// 一个未归档事项的时间进度：实际用时 / 预算、百分比与日期语义。
 class _TaskProgressRow extends StatelessWidget {
-  const _TaskProgressRow({required this.task, required this.tagNames});
+  const _TaskProgressRow({
+    required this.data,
+    required this.task,
+    required this.tagNames,
+  });
 
+  final PlannerData data;
   final Task task;
   final List<String> tagNames;
 
   @override
   Widget build(BuildContext context) {
+    final progress = taskTimeProgress(data, task);
     final estimated = task.estimatedMinutes;
-    final completed = task.completedMinutes;
-    // 实际完成分钟可能超过预算，进度条与百分比都封顶到 100%。
-    final ratio = estimated <= 0
-        ? 0.0
-        : (completed / estimated).clamp(0.0, 1.0);
-    final percent = (ratio * 100).round();
+    final actual = progress.actualMinutes;
+    final percent = progress.percent ?? 0;
     final dateLabel = task.deadlineKind == ItemDateKind.deadline
         ? '真实截止'
         : '本期边界';
@@ -651,7 +657,7 @@ class _TaskProgressRow extends StatelessWidget {
         : '$dateLabel ${task.deadline}';
     final meta = [
       if (tagNames.isNotEmpty) tagNames.join('、'),
-      statusLabels[task.status] ?? '进行中',
+      progress.statusLabel,
     ].join(' · ');
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
@@ -679,7 +685,7 @@ class _TaskProgressRow extends StatelessWidget {
           const SizedBox(height: 6),
           TimeProgressTrack(
             planned: estimated,
-            actual: completed,
+            actual: math.min(actual, estimated),
             color: context.tokens.accent,
             semanticsLabel: '${task.title}完成度',
           ),
@@ -689,8 +695,7 @@ class _TaskProgressRow extends StatelessWidget {
             runSpacing: 2,
             children: [
               Text(
-                '完成 ${duration(completed)} / 预算 ${duration(estimated)} · '
-                '$percent%',
+                '已学 ${duration(actual)} / 预算 ${duration(estimated)} · $percent%',
                 style: tabularFigures.copyWith(fontSize: 12.5),
               ),
               Text(deadline, style: _metaStyle(context.tokens)),

@@ -31,6 +31,6 @@ export function recordTaskDayMinutes(data: PlannerData, taskId: string, date: st
   }
   if (remaining > 0) logs.push({ id: runtime.newId(), user_id: task.user_id, task_id: taskId, block_id: blocks.at(-1)?.id ?? null, date, minutes: remaining, started_at: stamp, ended_at: stamp, source: "manual" });
   const total = logs.filter((log) => log.task_id === taskId).reduce((sum, log) => sum + log.minutes, 0);
-  return { ...data, logs, tasks: data.tasks.map((item) => item.id === taskId ? { ...item, completed_minutes: Math.min(item.estimated_minutes, total), status: item.status === "archived" || item.status === "completed" ? item.status : total > 0 ? "in_progress" : "not_started", updated_at: stamp } : item),
+  return { ...data, logs, tasks: data.tasks.map((item) => item.id === taskId ? { ...item, completed_minutes: Math.min(item.estimated_minutes, total), updated_at: stamp } : item),
     blocks: data.blocks.map((block) => block.task_id === taskId && block.date === date ? { ...block, actual_minutes: logs.filter((log) => log.block_id === block.id).reduce((sum, log) => sum + log.minutes, 0), updated_at: stamp } : block) };
 }

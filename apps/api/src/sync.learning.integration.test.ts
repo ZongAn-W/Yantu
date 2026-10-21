@@ -167,6 +167,15 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       }
     }
 
+    /** 阶段 3b-A：服务端总会把 archived 归一化进任务，比较输入文档时需补齐该字段。 */
+    const withArchived = (document: any) => ({
+      ...document,
+      tasks: document.tasks.map((task: any) => ({
+        ...task,
+        archived: task.archived === true || (task.archived == null && task.status === "archived"),
+      })),
+    });
+
     beforeAll(async () => {
       vi.stubEnv("DATABASE_URL", process.env.AUTH_TEST_DATABASE_URL!);
       vi.stubEnv("JWT_ACCESS_SECRET", secret);
@@ -196,8 +205,8 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
 
       // 1) 同步文档往返：容量与执行关系字段一个都不能丢。
       const pulled = await pull(user);
-      expect(pulled.data).toEqual(data);
-      expect((await pull(user)).data).toEqual(data);
+      expect(pulled.data).toEqual(withArchived(data));
+      expect((await pull(user)).data).toEqual(withArchived(data));
       // 原样回传不产生伪冲突。
       const resync = await put(user, {
         data: pulled.data,
@@ -206,7 +215,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
         writer_learning_version: 1,
       });
       expect(resync.statusCode, resync.body).toBe(200);
-      expect(resync.json().data).toEqual(data);
+      expect(resync.json().data).toEqual(withArchived(data));
 
       // 2) 关系投影：执行关系、会话与额度、容量列全部落库；不再有临时学习结构。
       const native = await nativeSnapshot(user);
@@ -295,7 +304,7 @@ describe.skipIf(!process.env.AUTH_TEST_DATABASE_URL)(
       });
       expect(legacySaved.statusCode, legacySaved.body).toBe(200);
       const legacyPulled = await pull(legacyUser);
-      expect(legacyPulled.data).toEqual(legacyData);
+      expect(legacyPulled.data).toEqual(withArchived(legacyData));
       const legacyProjection = (
         await db.query<any>(
           `select (select count(*)::int from study_logs where user_id=$1 and item_id is null) as missing_item,

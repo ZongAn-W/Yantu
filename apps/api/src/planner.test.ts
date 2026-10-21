@@ -45,6 +45,11 @@ describe("interview replanning", () => {
     const result = replanDocument(document, session);
     expect(PlannerDocumentSchema.safeParse(result.document).success).toBe(true);
     expect(result.document.tasks.find(task => task.id === "old")?.status).toBe("archived");
+    // 阶段 3b-A：归档同时写新布尔字段；保留/复用的事项显式 archived=false。
+    expect(result.document.tasks.find(task => task.id === "old")?.archived).toBe(true);
+    expect(result.document.tasks.find(task => task.id === "reuse")?.archived).toBe(false);
+    expect(result.document.tasks.find(task => task.id === "fixed")?.archived).toBe(false);
+    expect(result.document.tasks.every(task => typeof task.archived === "boolean")).toBe(true);
     expect(result.document.tasks.find(task => task.id === "reuse")?.completed_minutes).toBe(30);
     for (const id of ["past", "actual", "completed", "fixed-block"]) expect(result.document.blocks.find(block => block.id === id)).toEqual(document.blocks.find(block => block.id === id));
     expect(result.document.blocks.some(block => block.id === "future-old")).toBe(false);
@@ -53,6 +58,20 @@ describe("interview replanning", () => {
     const firstDay = result.document.blocks.filter(block => block.date === "2026-10-18");
     expect(firstDay.reduce((sum, block) => sum + block.duration_minutes, 0)).toBeLessThanOrEqual(210);
     expect(document).toEqual(before);
+  });
+
+  it("keeps archived and time-completed tasks correct when they leave the plan", () => {
+    const { document, session } = replanFixture();
+    // 已经归档的事项退出计划后保持 archived=true。
+    document.tasks.push({ ...document.tasks[0], id: "shelved", title: "shelved", archived: true, status: "archived" });
+    // 时间预算已用完的事项保留完成事实，但不会被标记归档。
+    document.tasks.push({ ...document.tasks[0], id: "finished", title: "finished", estimated_minutes: 120, completed_minutes: 120, status: "in_progress" });
+    const result = replanDocument(document, session);
+    expect(result.document.tasks.find(task => task.id === "shelved")?.archived).toBe(true);
+    expect(result.document.tasks.find(task => task.id === "finished")).toMatchObject({
+      archived: false, status: "completed", completed_minutes: 120,
+    });
+    expect(PlannerDocumentSchema.safeParse(result.document).success).toBe(true);
   });
 
   it("rejects deleting or changing protected fixed tasks and budgets below completed work", () => {

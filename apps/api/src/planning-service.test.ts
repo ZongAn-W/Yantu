@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { newSession, type OnboardingSession } from "./onboarding-contracts.js";
 import { ProfileSchema } from "./contracts.js";
 import { advanceOnboarding } from "./onboarding.js";
-import { buildPlanningDocument, checkLearningStrategy, checkScheduledPlan, evaluatePlanning, existingPlanMode, frozenInputs, newPlanning, normalizePlanningMetadata, planningHash, workloadMinutes } from "./planning-service.js";
+import { buildPlanningDocument, checkLearningStrategy, checkScheduledPlan, evaluatePlanning, existingPlanMode, frozenInputs, newPlanning, normalizePlanningMetadata, planningHash } from "./planning-service.js";
 import { checkAndRepair } from "./planning-repair.js";
 
 const settings = vi.hoisted(() => ({ aiApiKey: "" }));
@@ -14,8 +14,7 @@ function fixture(): OnboardingSession {
       plan_start_date: "2026-10-17", plan_end_date: "2026-11-13" }),
     items: [{ id: "project", tag_names: ["Python"], title: "CSV数据清理成果", description: "清理样例数据", completion_criteria: "脚本运行通过",
       estimated_minutes: 120, earliest_date: "2026-10-17", deadline: "2026-11-13", deadline_kind: "plan_end", priority: 2,
-      planning: { workload: { components: [{ id: "build", label: "实现", quantity: 2, unit: "功能", minutes_per_unit: 60 }],
-        source: "初始估算", confidence: "low", calibration: "比较三次实践后的内容速度" }, activity: { kind: "finite" }, dependencies: [] } }],
+      planning: { activity: { kind: "finite" }, dependencies: [] } }],
     planning: { ...newPlanning(), route: [{ id: "deliver", title: "数据清理成果", item_ids: ["project"], outcome: "可运行脚本", check: "通过样例" }] } };
 }
 
@@ -57,21 +56,13 @@ describe("learning budget and strategy quality", () => {
       .toEqual(expect.arrayContaining(["SCHEDULE_BOUNDARY", "REST_DAY", "DAILY_CAPACITY"]));
   });
 
-  it("does not let generated content confirmation stand in for a user's execution feedback", () => {
+  it("no longer blocks or warns on time-only estimates without structured workload", () => {
     const session = fixture();
-    session.items[0].planning!.content_progress = { confirmed: true };
-    expect(checkLearningStrategy(session)).toEqual(expect.arrayContaining([expect.objectContaining({ code: "EXECUTION_FACT_CHANGED" })]));
-  });
-  it("rejects 2400 minutes for 21 papers at 180 minutes, and adds review separately", () => {
-    const session = fixture(), item = session.items[0];
-    item.estimated_minutes = 2400;
-    item.planning!.workload!.components = [{ id: "papers", label: "作答", quantity: 21, unit: "套", minutes_per_unit: 180 }];
-    expect(workloadMinutes(item.planning!.workload)).toBe(3780);
-    expect(checkLearningStrategy(session)).toContainEqual(expect.objectContaining({ code: "WORKLOAD_MISMATCH", expected: 3780, actual: 2400 }));
-    item.planning!.workload!.components.push({ id: "review", label: "复盘", quantity: 21, unit: "套", minutes_per_unit: 60 });
-    item.planning!.workload!.components.push({ id: "alternative", label: "备选题库", quantity: 100, unit: "题", minutes_per_unit: 20, selected: false });
-    item.estimated_minutes = 5040;
-    expect(workloadMinutes(item.planning!.workload)).toBe(5040);
+    // 纯时间口径：没有 planning 元数据、也没有内容量字段时不再出现工作量/内容进度类问题。
+    session.items[0].planning = undefined;
+    const removedCodes = ["LEGACY_ESTIMATE", "WORKLOAD_UNKNOWN", "WORKLOAD_MISMATCH", "EXECUTION_FACT_CHANGED", "WORKLOAD_RANGE"];
+    expect(checkLearningStrategy(session).filter(issue => removedCodes.includes(issue.code))).toEqual([]);
+    session.items[0].planning = { activity: { kind: "finite" }, dependencies: [] };
     expect(checkLearningStrategy(session).filter(issue => issue.severity === "error")).toEqual([]);
   });
 
@@ -115,7 +106,6 @@ describe("learning budget and strategy quality", () => {
     session.profile.plan_end_date = session.end_date;
     session.items[0].deadline = session.end_date;
     session.items[0].estimated_minutes = 30;
-    session.items[0].planning!.workload!.components = [{ id: "practice", label: "练习", quantity: 1, unit: "次", minutes_per_unit: 30 }];
     session.items[0].planning!.activity = { kind: "recurring", starts_on: session.start_date, ends_on: session.end_date, sessions_per_week: 2, session_minutes: 30 };
     session.planning!.rolling = false;
     const trial = buildPlanningDocument(session);
@@ -150,21 +140,27 @@ describe("learning budget and strategy quality", () => {
     expect(preview.preview!.status).toBe("ready");
   });
 
-  it("finishes at most two model repairs and retains hard failures", async () => {
+  it("finishes at most two model repairs and keeps hard failures", async () => {
     const session = fixture();
-    session.items[0].estimated_minutes = 30;
+    // 缺失前置事项是硬错误；修复不补全时重试两次后保留最后一次结果。
+    session.items[0].planning!.dependencies = [{ task_id: "prereq", mode: "planned" }];
     settings.aiApiKey = "test";
     const revise = vi.fn(async () => ({ items: session.items, planning: session.planning!, summary: "", assumptions: [], warnings: [] }));
     const result = await checkAndRepair(session, null, revise);
     expect(revise).toHaveBeenCalledTimes(2);
     expect(result.preview!.status).toBe("blocked");
     expect(result.preview!.repairs).toBe(2);
-    expect(session.items[0].estimated_minutes).toBe(30);
+    expect(result.items).toEqual(session.items);
   });
 
   it("accepts the first repaired candidate and stops, but preserves drafts on network errors", async () => {
-    const session = fixture(); session.items[0].estimated_minutes = 30; settings.aiApiKey = "test";
-    const revise = vi.fn(async () => ({ items: session.items.map(item => ({ ...item, estimated_minutes: 120 })), planning: session.planning!, summary: "", assumptions: [], warnings: [] }));
+    const session = fixture();
+    session.items[0].planning!.dependencies = [{ task_id: "prereq", mode: "planned" }];
+    settings.aiApiKey = "test";
+    // 修复补全缺失的前置事项：这是不改变已确认预算与活动策略的合法修复。
+    const prereq = { ...session.items[0], id: "prereq", title: "先修章节", estimated_minutes: 30,
+      planning: { activity: { kind: "finite" as const }, dependencies: [] } };
+    const revise = vi.fn(async () => ({ items: [...session.items, prereq], planning: session.planning!, summary: "", assumptions: [], warnings: [] }));
     expect((await checkAndRepair(session, null, revise)).preview!.status).toBe("ready");
     expect(revise).toHaveBeenCalledTimes(1);
     const failed = await checkAndRepair(session, null, async () => { throw new Error("AI 请求超时"); });
@@ -172,23 +168,18 @@ describe("learning budget and strategy quality", () => {
     expect(failed.preview!.issues).toEqual(expect.arrayContaining([expect.objectContaining({ code: "REPAIR_FAILED" })]));
   });
 
-  it.each(["unit duration", "quantity", "selected component", "frequency", "pause"])("keeps scope unchanged when a repair proposes changing %s", async change => {
+  it.each(["frequency", "pause"])("keeps scope unchanged when a repair proposes changing %s", async change => {
     const session = fixture();
-    session.items[0].estimated_minutes = 30;
-    if (change === "frequency" || change === "pause") session.items[0].planning!.activity = {
+    session.items[0].planning!.activity = {
       kind: "recurring", starts_on: session.start_date, ends_on: session.end_date,
       sessions_per_week: 3, session_minutes: 120, state: "active",
     };
     session.profile.weekly_minutes = { "0": 0, "1": 60, "2": 0, "3": 0, "4": 0, "5": 0, "6": 0 };
     settings.aiApiKey = "test";
     const revise = vi.fn(async () => {
-      const items = structuredClone(session.items), item = items[0], component = item.planning!.workload!.components[0];
-      if (change === "unit duration") component.minutes_per_unit = 15;
-      if (change === "quantity") component.quantity = 0.5;
-      if (change === "selected component") component.selected = false;
+      const items = structuredClone(session.items), item = items[0];
       if (change === "frequency") item.planning!.activity!.sessions_per_week = 1;
       if (change === "pause") item.planning!.activity!.state = "paused";
-      item.estimated_minutes = workloadMinutes(item.planning!.workload)! || 30;
       return { items, planning: session.planning!, summary: "", assumptions: [], warnings: [] };
     });
     const result = await checkAndRepair(session, null, revise);
@@ -197,20 +188,36 @@ describe("learning budget and strategy quality", () => {
     expect(result.preview!.issues).toEqual(expect.arrayContaining([expect.objectContaining({ code: "SCOPE_CHANGE_PROPOSAL" })]));
     expect(result.preview!.fingerprint).toBe(planningHash(frozenInputs(result)));
     expect(revise).toHaveBeenCalledTimes(1);
-    if (change !== "frequency" && change !== "pause") expect(result.preview!.status).toBe("blocked");
+  });
+
+  it("refuses a repair that silently reduces a confirmed time budget", async () => {
+    const session = fixture();
+    session.items[0].planning!.activity = {
+      kind: "recurring", starts_on: session.start_date, ends_on: session.end_date,
+      sessions_per_week: 3, session_minutes: 120, state: "active",
+    };
+    session.profile.weekly_minutes = { "0": 0, "1": 60, "2": 0, "3": 0, "4": 0, "5": 0, "6": 0 };
+    settings.aiApiKey = "test";
+    const revise = vi.fn(async () => ({ items: session.items.map(item => ({ ...item, estimated_minutes: 60 })),
+      planning: session.planning!, summary: "", assumptions: [], warnings: [] }));
+    const result = await checkAndRepair(session, null, revise);
+    expect(result.items).toEqual(session.items);
+    expect(result.planning!.risks).toEqual(expect.arrayContaining([expect.stringContaining("范围取舍尚未应用")]));
+    expect(result.preview!.issues).toEqual(expect.arrayContaining([expect.objectContaining({ code: "SCOPE_CHANGE_PROPOSAL" })]));
   });
 
   it("does not relabel a real deadline as the planning boundary during a repair", async () => {
     const session = fixture();
+    // 真实截止日期过近导致未排完，触发一次修复尝试。
     session.items[0].deadline_kind = "deadline";
-    session.items[0].estimated_minutes = 30;
+    session.items[0].estimated_minutes = 300;
+    session.items[0].deadline = session.start_date;
     settings.aiApiKey = "test";
     const result = await checkAndRepair(session, null, async () => ({
-      items: session.items.map(item => ({ ...item, deadline_kind: "plan_end" as const, estimated_minutes: 120 })),
+      items: session.items.map(item => ({ ...item, deadline_kind: "plan_end" as const, deadline: session.end_date })),
       planning: session.planning!, summary: "", assumptions: [], warnings: [],
     }));
     expect(result.items[0].deadline_kind).toBe("deadline");
-    expect(result.preview!.status).toBe("blocked");
     expect(result.preview!.issues).toEqual(expect.arrayContaining([expect.objectContaining({ code: "REPAIR_FAILED", message: expect.stringContaining("真实截止日期") })]));
   });
 
@@ -221,8 +228,7 @@ describe("learning budget and strategy quality", () => {
     const original = structuredClone(current);
     const unchanged = buildPlanningDocument(session, current);
     expect(unchanged.document.tasks[0].estimated_minutes).toBe(current.tasks[0].estimated_minutes);
-    session.items[0].planning = { workload: { components: [{ id: "practice", label: "练习", quantity: 1, unit: "次", minutes_per_unit: 30 }],
-      source: "估算", confidence: "low", calibration: "核对实际" }, activity: { kind: "recurring", starts_on: session.start_date,
+    session.items[0].planning = { activity: { kind: "recurring", starts_on: session.start_date,
         ends_on: session.end_date, sessions_per_week: 1, session_minutes: 30 } };
     const result = evaluatePlanning(session, current);
     expect(result.preview.status).toBe("blocked");

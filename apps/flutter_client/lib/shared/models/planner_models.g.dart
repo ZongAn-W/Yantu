@@ -341,12 +341,10 @@ _Task _$TaskFromJson(Map<String, dynamic> json) => $checkedCreate(
       ),
       earliestDate: $checkedConvert('earliest_date', (v) => v as String?),
       isFixed: $checkedConvert('is_fixed', (v) => v as bool),
-      status: $checkedConvert(
-        'status',
-        (v) => $enumDecode(_$TaskStatusEnumMap, v),
-      ),
+      archived: $checkedConvert('archived', (v) => v as bool? ?? false),
       createdAt: $checkedConvert('created_at', (v) => v as String),
       updatedAt: $checkedConvert('updated_at', (v) => v as String),
+      completedAt: $checkedConvert('completed_at', (v) => v as String?),
       planning: $checkedConvert('planning', (v) => v as Map<String, dynamic>?),
     );
     return val;
@@ -361,6 +359,7 @@ _Task _$TaskFromJson(Map<String, dynamic> json) => $checkedCreate(
     'isFixed': 'is_fixed',
     'createdAt': 'created_at',
     'updatedAt': 'updated_at',
+    'completedAt': 'completed_at',
   },
 );
 
@@ -377,24 +376,16 @@ Map<String, dynamic> _$TaskToJson(_Task instance) => <String, dynamic>{
   'deadline_kind': _$ItemDateKindEnumMap[instance.deadlineKind]!,
   'earliest_date': ?instance.earliestDate,
   'is_fixed': instance.isFixed,
-  'status': _$TaskStatusEnumMap[instance.status]!,
+  'archived': instance.archived,
   'created_at': instance.createdAt,
   'updated_at': instance.updatedAt,
+  'completed_at': ?instance.completedAt,
   'planning': ?instance.planning,
 };
 
 const _$ItemDateKindEnumMap = {
   ItemDateKind.deadline: 'deadline',
   ItemDateKind.planEnd: 'plan_end',
-};
-
-const _$TaskStatusEnumMap = {
-  TaskStatus.notStarted: 'not_started',
-  TaskStatus.inProgress: 'in_progress',
-  TaskStatus.completed: 'completed',
-  TaskStatus.delayed: 'delayed',
-  TaskStatus.conflict: 'conflict',
-  TaskStatus.archived: 'archived',
 };
 
 _ScheduleBlock _$ScheduleBlockFromJson(Map<String, dynamic> json) =>
@@ -805,24 +796,6 @@ Map<String, dynamic> _$DayChangeToJson(_DayChange instance) =>
       'after_minutes': instance.afterMinutes,
     };
 
-_TaskStatusSnapshot _$TaskStatusSnapshotFromJson(Map<String, dynamic> json) =>
-    $checkedCreate('_TaskStatusSnapshot', json, ($checkedConvert) {
-      final val = _TaskStatusSnapshot(
-        id: $checkedConvert('id', (v) => v as String),
-        status: $checkedConvert(
-          'status',
-          (v) => $enumDecode(_$TaskStatusEnumMap, v),
-        ),
-      );
-      return val;
-    });
-
-Map<String, dynamic> _$TaskStatusSnapshotToJson(_TaskStatusSnapshot instance) =>
-    <String, dynamic>{
-      'id': instance.id,
-      'status': _$TaskStatusEnumMap[instance.status]!,
-    };
-
 _ReplanPreview _$ReplanPreviewFromJson(Map<String, dynamic> json) =>
     $checkedCreate(
       '_ReplanPreview',
@@ -944,18 +917,6 @@ _ReplanRun _$ReplanRunFromJson(Map<String, dynamic> json) => $checkedCreate(
         'status',
         (v) => $enumDecode(_$ReplanStatusEnumMap, v),
       ),
-      taskStatusBefore: $checkedConvert(
-        'task_status_before',
-        (v) => (v as List<dynamic>?)
-            ?.map((e) => TaskStatusSnapshot.fromJson(e as Map<String, dynamic>))
-            .toList(),
-      ),
-      taskStatusAfter: $checkedConvert(
-        'task_status_after',
-        (v) => (v as List<dynamic>?)
-            ?.map((e) => TaskStatusSnapshot.fromJson(e as Map<String, dynamic>))
-            .toList(),
-      ),
       localUndoGuard: $checkedConvert(
         'local_undo_guard',
         (v) => v as Map<String, dynamic>?,
@@ -967,8 +928,6 @@ _ReplanRun _$ReplanRunFromJson(Map<String, dynamic> json) => $checkedCreate(
     'userId': 'user_id',
     'createdAt': 'created_at',
     'dailyChanges': 'daily_changes',
-    'taskStatusBefore': 'task_status_before',
-    'taskStatusAfter': 'task_status_after',
     'localUndoGuard': 'local_undo_guard',
   },
 );
@@ -986,12 +945,6 @@ Map<String, dynamic> _$ReplanRunToJson(_ReplanRun instance) =>
       'conflicts': instance.conflicts.map((e) => e.toJson()).toList(),
       'daily_changes': instance.dailyChanges.map((e) => e.toJson()).toList(),
       'status': _$ReplanStatusEnumMap[instance.status]!,
-      'task_status_before': ?instance.taskStatusBefore
-          ?.map((e) => e.toJson())
-          .toList(),
-      'task_status_after': ?instance.taskStatusAfter
-          ?.map((e) => e.toJson())
-          .toList(),
       'local_undo_guard': ?instance.localUndoGuard,
     };
 

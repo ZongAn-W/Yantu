@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import '../../../shared/models/planner_models.dart';
+import '../../../shared/models/task_lifecycle.dart';
 import 'planner_format.dart';
 import 'scheduler/planner_scheduler.dart' as scheduler;
 import 'task_editing.dart';
@@ -462,7 +463,7 @@ AdHocConvertResult linkAdHocToTask(
   if (learning == null) throw StateError('临时学习已不存在，请刷新后重试');
   final task = data.tasks.where((item) => item.id == taskId).firstOrNull;
   if (task == null) throw StateError('所选事项不存在，请刷新后重试');
-  if (task.status == TaskStatus.archived) throw StateError('已归档事项不可关联学习记录');
+  if (task.isArchived) throw StateError('已归档事项不可关联学习记录');
   if (learning.archived) {
     if (learning.convertedTaskId == taskId) {
       return AdHocConvertResult(data, taskId);
@@ -538,39 +539,36 @@ int taskDayPlannedMinutes(PlannerData data, String taskId, String date) => data
     .where((block) => block.taskId == taskId && block.date == date)
     .fold<int>(0, (sum, block) => sum + block.durationMinutes);
 
-/// Recomputes `completed_minutes` from the study log, mirroring `refreshTaskProgress`.
+/// Recomputes the time-only completion facts from the study log.
 ///
-/// A task that the user marked completed stays completed unless its id is listed in
-/// [correctedTaskIds]; otherwise a task with progress becomes in progress and one
-/// that lost all progress falls back to not started.
+/// `completed_minutes = min(estimate, actual)`; reaching the estimate fills
+/// `completed_at` (sticky). [correctedTaskIds] clears a completion marker when a
+/// record is corrected, then re-derives it from the remaining actual minutes.
 PlannerData refreshTaskProgress(
   PlannerData data, {
   List<String> correctedTaskIds = const [],
   String? updatedAt,
 }) {
   final stamp = updatedAt ?? nowIso();
+  final corrected = correctedTaskIds.toSet();
+  final totals = actualMinutesByTask(data);
   return data.copyWith(
     tasks: [
       for (final task in data.tasks)
         () {
-          final actual = taskTotalMinutes(data, task.id);
-          final completed = math.min(task.estimatedMinutes, actual);
-          final TaskStatus status;
-          if (task.status == TaskStatus.archived) {
-            status = TaskStatus.archived;
-          } else if (task.status == TaskStatus.completed &&
-              !correctedTaskIds.contains(task.id)) {
-            status = TaskStatus.completed;
-          } else if (completed > 0) {
-            status = TaskStatus.inProgress;
-          } else if (task.status == TaskStatus.completed) {
-            status = TaskStatus.notStarted;
-          } else {
-            status = task.status;
-          }
+          final isCorrected = corrected.contains(task.id);
+          final actual = totals[task.id] ?? 0;
+          final archived = task.isArchived;
+          final reachedBudget =
+              task.estimatedMinutes > 0 && actual >= task.estimatedMinutes;
+          final completedAt = archived
+              ? task.completedAt
+              : isCorrected
+              ? (reachedBudget ? stamp : null)
+              : (task.completedAt ?? (reachedBudget ? stamp : null));
           return task.copyWith(
-            completedMinutes: completed,
-            status: status,
+            completedMinutes: math.min(task.estimatedMinutes, actual),
+            completedAt: completedAt,
             updatedAt: stamp,
           );
         }(),
@@ -588,7 +586,7 @@ int unscheduledTaskMinutes(
   Task task, {
   required String from,
 }) {
-  if (task.status == TaskStatus.archived) return 0;
+  if (task.isArchived) return 0;
   final planned = data.blocks
       .where(
         (block) =>
@@ -674,7 +672,7 @@ MoveResult moveTaskDayByIds(
   final task = data.tasks
       .where((item) => item.id == current.first.taskId)
       .firstOrNull;
-  if (task?.status == TaskStatus.archived) {
+  if (task?.isArchived ?? false) {
     return const MoveResult.failure('已归档事项不可安排');
   }
   if (task != null && taskDayMinutes(data, task.id, sourceDate) > 0) {
@@ -741,8 +739,10 @@ MoveResult moveTaskDayByIds(
   return MoveResult.success([...remaining, ...placed]);
 }
 
-/// Marks a task complete: records the reported minutes, keeps history, drops future
-/// planned blocks and completes the remaining ones.
+/// Marks a task complete early: records the reported minutes, keeps history, drops
+/// future planned blocks and completes the remaining ones. In the time-only model
+/// an explicit completion is stored as [Task.completedAt]; exhausting the time
+/// budget completes a task automatically without this call.
 PlannerData completeTask(
   PlannerData data,
   String taskId, {
@@ -752,7 +752,7 @@ PlannerData completeTask(
 }) {
   final stamp = updatedAt ?? nowIso();
   if (data.tasks.any(
-    (task) => task.id == taskId && task.status == TaskStatus.archived,
+    (task) => task.id == taskId && task.isArchived,
   )) {
     throw StateError('已归档事项不能标记完成');
   }
@@ -772,14 +772,16 @@ PlannerData completeTask(
   ];
   final refreshed = refreshTaskProgress(
     next.copyWith(blocks: kept),
-    correctedTaskIds: [taskId],
     updatedAt: stamp,
   );
   return refreshed.copyWith(
     tasks: [
       for (final task in refreshed.tasks)
         task.id == taskId
-            ? task.copyWith(status: TaskStatus.completed, updatedAt: stamp)
+            ? task.copyWith(
+                completedAt: task.completedAt ?? stamp,
+                updatedAt: stamp,
+              )
             : task,
     ],
   );
